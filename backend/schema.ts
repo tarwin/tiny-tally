@@ -1,0 +1,323 @@
+// Ordered migrations. Index + 1 is the schema_version it produces.
+// Never edit a shipped migration — append a new one.
+//
+// Single-entry model: every money movement is one `entries` row naming the
+// money account it hits and the category it belongs to. Both sides are
+// recorded, so a double-entry ledger can be derived later without data loss.
+// Amounts are integer minor units (cents), always positive; `kind` says which
+// way the money went.
+export const migrations: string[] = [
+  `
+  CREATE TABLE accounts (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('bank', 'credit_card', 'cash')),
+    opening_balance INTEGER NOT NULL DEFAULT 0,
+    opening_date TEXT NOT NULL,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE categories (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('income', 'expense')),
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    sort INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (kind, name)
+  );
+
+  CREATE TABLE contacts (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('customer', 'vendor')),
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    address TEXT,
+    notes TEXT,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE entries (
+    id INTEGER PRIMARY KEY,
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    to_account_id INTEGER REFERENCES accounts(id),
+    category_id INTEGER REFERENCES categories(id),
+    contact_id INTEGER REFERENCES contacts(id),
+    memo TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (
+      (kind = 'transfer' AND to_account_id IS NOT NULL AND category_id IS NULL)
+      OR (kind <> 'transfer' AND to_account_id IS NULL)
+    )
+  );
+  CREATE INDEX entries_account_date ON entries (account_id, date);
+  CREATE INDEX entries_to_account ON entries (to_account_id);
+  CREATE INDEX entries_category ON entries (category_id);
+  `,
+  `
+  CREATE INDEX entries_date ON entries (date, id);
+  CREATE INDEX entries_contact ON entries (contact_id);
+  `,
+  // v3: GST, invoices, invoice templates, BAS returns.
+  // Invoice payments are income entries with invoice_id set and no category;
+  // the ledger views spread each one across its invoice's lines so reports
+  // see real categories and GST.
+  `
+  ALTER TABLE categories ADD COLUMN tax_code TEXT;
+
+  CREATE TABLE invoice_templates (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    style TEXT NOT NULL DEFAULT 'classic' CHECK (style IN ('classic', 'modern', 'minimal')),
+    accent TEXT NOT NULL DEFAULT '#2f6fde',
+    logo TEXT,
+    title TEXT NOT NULL DEFAULT 'Tax Invoice',
+    payment_details TEXT,
+    footer TEXT,
+    show_tax_column INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE invoices (
+    id INTEGER PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    contact_id INTEGER NOT NULL REFERENCES contacts(id),
+    issue_date TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'void')),
+    reference TEXT,
+    notes TEXT,
+    template_id INTEGER REFERENCES invoice_templates(id),
+    prices_include_tax INTEGER NOT NULL DEFAULT 1,
+    net INTEGER NOT NULL DEFAULT 0,
+    tax INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    sent_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX invoices_contact ON invoices (contact_id);
+  CREATE INDEX invoices_issue ON invoices (issue_date);
+
+  CREATE TABLE invoice_lines (
+    id INTEGER PRIMARY KEY,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    sort INTEGER NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
+    qty_milli INTEGER NOT NULL DEFAULT 1000,
+    unit_price INTEGER NOT NULL DEFAULT 0,
+    category_id INTEGER REFERENCES categories(id),
+    tax_code TEXT,
+    net INTEGER NOT NULL DEFAULT 0,
+    tax INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX invoice_lines_invoice ON invoice_lines (invoice_id);
+
+  ALTER TABLE entries ADD COLUMN tax_code TEXT;
+  ALTER TABLE entries ADD COLUMN tax_amount INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE entries ADD COLUMN invoice_id INTEGER REFERENCES invoices(id);
+  CREATE INDEX entries_invoice ON entries (invoice_id);
+
+  CREATE TABLE bas_returns (
+    id INTEGER PRIMARY KEY,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    basis TEXT NOT NULL CHECK (basis IN ('cash', 'accrual')),
+    figures TEXT NOT NULL,
+    w1 INTEGER NOT NULL DEFAULT 0,
+    w2 INTEGER NOT NULL DEFAULT 0,
+    t7 INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'lodged')),
+    lodged_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (period_start, period_end)
+  );
+
+  -- One row per reportable amount. gross is GST-inclusive.
+  CREATE VIEW ledger_cash AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, e.kind, e.category_id, e.contact_id,
+           e.amount AS gross, e.tax_amount AS tax, e.tax_code, e.memo
+    FROM entries e
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT e.id, i.id, e.date, 'income', l.category_id, i.contact_id,
+           CAST(ROUND(1.0 * e.amount * (l.net + l.tax) / i.total) AS INTEGER),
+           CAST(ROUND(1.0 * e.amount * l.tax / i.total) AS INTEGER),
+           l.tax_code, 'Payment for ' || i.number
+    FROM entries e
+    JOIN invoices i ON i.id = e.invoice_id
+    JOIN invoice_lines l ON l.invoice_id = i.id
+    WHERE i.total > 0;
+
+  CREATE VIEW ledger_accrual AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, e.kind, e.category_id, e.contact_id,
+           e.amount AS gross, e.tax_amount AS tax, e.tax_code, e.memo
+    FROM entries e
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT NULL, i.id, i.issue_date, 'income', l.category_id, i.contact_id,
+           l.net + l.tax, l.tax, l.tax_code, i.number || CASE WHEN l.description <> '' THEN ': ' || l.description ELSE '' END
+    FROM invoices i
+    JOIN invoice_lines l ON l.invoice_id = i.id
+    WHERE i.status = 'sent';
+
+  UPDATE categories SET tax_code = 'GST';
+  UPDATE categories SET tax_code = 'INP' WHERE name = 'Interest Income';
+  UPDATE categories SET tax_code = 'FRE' WHERE name IN ('Bank Fees', 'Taxes & Licences');
+  UPDATE categories SET tax_code = 'CAP' WHERE name = 'Equipment';
+
+  INSERT INTO invoice_templates (name, is_default) VALUES ('Standard', 1);
+  `,
+  // v4: imports remember where each entry came from, so re-importing skips duplicates.
+  `
+  ALTER TABLE entries ADD COLUMN import_ref TEXT;
+  CREATE UNIQUE INDEX entries_import_ref ON entries(account_id, import_ref) WHERE import_ref IS NOT NULL;
+  `,
+  // v5: money that isn't profit or loss, bills/quotes/credit notes, bank
+  // reconciliation, recurring schedules, import rules.
+  //
+  // categories.class keeps balance-sheet movements (GST paid to the ATO,
+  // owner drawings, loans, asset purchases) out of Profit & Loss.
+  //
+  // Bills, quotes and credit notes share the invoices table (doc_type) and its
+  // lines, payments and templates. Each type numbers itself with its own
+  // prefix, so the table-wide UNIQUE(number) still holds; a bill's supplier
+  // number goes in `reference`.
+  //
+  // The ledger views now give each document line its share of a payment by
+  // cumulative rounding, so the shares always add up to the payment exactly.
+  `
+  ALTER TABLE categories ADD COLUMN class TEXT NOT NULL DEFAULT 'pnl'
+    CHECK (class IN ('pnl', 'tax', 'owner', 'loan', 'asset'));
+
+  INSERT OR IGNORE INTO categories (name, kind, class, tax_code, sort) VALUES
+    ('GST Refund', 'income', 'tax', 'NTR', 90),
+    ('Owner Contribution', 'income', 'owner', 'NTR', 91),
+    ('Loan Received', 'income', 'loan', 'NTR', 92),
+    ('GST / BAS Payment', 'expense', 'tax', 'NTR', 90),
+    ('Income Tax Payment', 'expense', 'tax', 'NTR', 91),
+    ('Owner Drawings', 'expense', 'owner', 'NTR', 92),
+    ('Loan Repayment', 'expense', 'loan', 'NTR', 93);
+
+  ALTER TABLE invoices ADD COLUMN doc_type TEXT NOT NULL DEFAULT 'invoice'
+    CHECK (doc_type IN ('invoice', 'bill', 'quote', 'credit'));
+  ALTER TABLE invoices ADD COLUMN source_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL;
+  ALTER TABLE invoices ADD COLUMN schedule_id INTEGER;
+  CREATE INDEX invoices_type ON invoices (doc_type, issue_date);
+  CREATE INDEX invoices_source ON invoices (source_id);
+
+  -- A credit note used against an invoice. No money moves; the invoice owes less.
+  CREATE TABLE credit_allocations (
+    id INTEGER PRIMARY KEY,
+    credit_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX credit_allocations_credit ON credit_allocations (credit_id);
+  CREATE INDEX credit_allocations_invoice ON credit_allocations (invoice_id);
+
+  CREATE TABLE reconciliations (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    statement_date TEXT NOT NULL,
+    statement_balance INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX reconciliations_account ON reconciliations (account_id, statement_date);
+  -- A transfer touches two accounts, so each side is ticked off separately.
+  ALTER TABLE entries ADD COLUMN rec_id INTEGER REFERENCES reconciliations(id);
+  ALTER TABLE entries ADD COLUMN to_rec_id INTEGER REFERENCES reconciliations(id);
+
+  CREATE TABLE schedules (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('entry', 'invoice', 'bill')),
+    name TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'fortnightly', 'monthly', 'quarterly', 'yearly')),
+    -- Occurrence n falls on start_date + n periods (so the 31st stays month-end).
+    start_date TEXT NOT NULL,
+    occurrences INTEGER NOT NULL DEFAULT 0,
+    next_date TEXT NOT NULL,
+    end_date TEXT,
+    auto_approve INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    last_created TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  ALTER TABLE entries ADD COLUMN schedule_id INTEGER REFERENCES schedules(id) ON DELETE SET NULL;
+
+  -- "Description contains X" -> category (and contact). Used by imports and bank feeds.
+  CREATE TABLE rules (
+    id INTEGER PRIMARY KEY,
+    pattern TEXT NOT NULL,
+    kind TEXT CHECK (kind IN ('income', 'expense')),
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  DROP VIEW ledger_cash;
+  DROP VIEW ledger_accrual;
+
+  -- Document lines with running totals, for exact payment shares.
+  CREATE VIEW doc_lines AS
+    SELECT l.id AS line_id, l.invoice_id, l.category_id, l.tax_code, l.net, l.tax, l.description,
+           d.doc_type, d.status AS doc_status, d.number, d.issue_date, d.contact_id, d.total AS doc_total,
+           CASE d.doc_type WHEN 'bill' THEN 'expense' ELSE 'income' END AS kind,
+           CASE d.doc_type WHEN 'credit' THEN -1 ELSE 1 END AS sign,
+           SUM(l.net + l.tax) OVER w AS cum_gross,
+           SUM(l.tax) OVER w AS cum_tax
+    FROM invoice_lines l JOIN invoices d ON d.id = l.invoice_id
+    WHERE d.doc_type IN ('invoice', 'bill', 'credit')
+    WINDOW w AS (PARTITION BY l.invoice_id ORDER BY l.sort, l.id ROWS UNBOUNDED PRECEDING);
+
+  -- One row per reportable amount. gross is GST-inclusive; credit notes are negative.
+  CREATE VIEW ledger_cash AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, e.kind, e.category_id, e.contact_id,
+           e.amount AS gross, e.tax_amount AS tax, e.tax_code, e.memo
+    FROM entries e
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT e.id, l.invoice_id, e.date, l.kind, l.category_id, l.contact_id,
+           l.sign * (CAST(ROUND(1.0 * e.amount * l.cum_gross / l.doc_total) AS INTEGER)
+                   - CAST(ROUND(1.0 * e.amount * (l.cum_gross - l.net - l.tax) / l.doc_total) AS INTEGER)),
+           l.sign * (CAST(ROUND(1.0 * e.amount * l.cum_tax / l.doc_total) AS INTEGER)
+                   - CAST(ROUND(1.0 * e.amount * (l.cum_tax - l.tax) / l.doc_total) AS INTEGER)),
+           l.tax_code,
+           CASE l.doc_type WHEN 'bill' THEN 'Bill payment ' WHEN 'credit' THEN 'Refund for ' ELSE 'Payment for ' END || l.number
+    FROM entries e
+    JOIN doc_lines l ON l.invoice_id = e.invoice_id
+    WHERE l.doc_total > 0;
+
+  CREATE VIEW ledger_accrual AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, e.kind, e.category_id, e.contact_id,
+           e.amount AS gross, e.tax_amount AS tax, e.tax_code, e.memo
+    FROM entries e
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT NULL, l.invoice_id, l.issue_date, l.kind, l.category_id, l.contact_id,
+           l.sign * (l.net + l.tax), l.sign * l.tax, l.tax_code,
+           l.number || CASE WHEN l.description <> '' THEN ': ' || l.description ELSE '' END
+    FROM doc_lines l
+    WHERE l.doc_status = 'sent';
+  `,
+
+  // v6: editable template wording, details and section layout (JSON, see
+  // src/shared/templateLayout.ts). NULL means the defaults.
+  `
+  ALTER TABLE invoice_templates ADD COLUMN layout TEXT;
+  `,
+];

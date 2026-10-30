@@ -1,0 +1,291 @@
+<script setup lang="ts">
+// A customer statement: opening balance, every invoice, credit and payment in
+// the period, the closing balance, and how overdue it is. Printable.
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { Card, CardSection, DatePicker, FormLayoutGroup, Page, toast } from '@octans/ui';
+import PaperPreview from '../components/PaperPreview.vue';
+import { api, errorMessage, type InvoiceTemplate, type Statement } from '../lib/api';
+import { addDays, formatDay, today } from '../lib/dates';
+import { docPath } from '../lib/documents';
+import { formatMoney } from '../lib/money';
+import { printElement } from '../lib/print';
+import { session } from '../lib/session';
+
+const route = useRoute();
+const router = useRouter();
+const contactId = computed(() => Number(route.params.id));
+const company = computed(() => session.company!);
+const money = (v: number) => formatMoney(v, company.value.currency);
+
+const from = ref(addDays(today(), -90));
+const to = ref(today());
+const statement = ref<Statement | null>(null);
+const template = ref<InvoiceTemplate | null>(null);
+const paper = ref<HTMLElement | null>(null);
+
+const TYPE_LABEL = { invoice: 'Invoice', credit: 'Credit note', payment: 'Payment', refund: 'Refund' } as const;
+const BUCKETS = [
+  { key: 'current', label: 'Not yet due' },
+  { key: 'd30', label: '1–30 days' },
+  { key: 'd60', label: '31–60 days' },
+  { key: 'd90', label: '61–90 days' },
+  { key: 'older', label: '90+ days' },
+] as const;
+
+async function load() {
+  try {
+    const [s, templates] = await Promise.all([
+      api.statement({ contactId: contactId.value, from: from.value, to: to.value }),
+      api.listTemplates(),
+    ]);
+    statement.value = s;
+    template.value = templates.find((t) => t.isDefault) ?? templates[0] ?? null;
+  } catch (e) {
+    toast({ title: errorMessage(e), tone: 'error' });
+  }
+}
+watch([contactId, from, to], load);
+onMounted(load);
+
+function print() {
+  void printElement(paper.value?.querySelector('.Doc') as HTMLElement | null);
+}
+
+function email() {
+  const s = statement.value!;
+  const subject = `Statement from ${company.value.name}`;
+  const body = [
+    `Hi ${s.contact.name},`,
+    '',
+    `Here is your statement for ${formatDay(s.from)} to ${formatDay(s.to)}. The balance owing is ${money(s.closing)}.`,
+    template.value?.paymentDetails ? `\n${template.value.paymentDetails}` : '',
+    '',
+    'Thanks,',
+    company.value.name,
+  ].join('\n');
+  void tiny.app.shell.open(`mailto:${encodeURIComponent(s.contact.email ?? '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+  toast({ title: 'Email drafted', content: 'Print to PDF and attach the statement before sending.' });
+}
+</script>
+
+<template>
+  <Page
+    :title="statement ? `Statement · ${statement.contact.name}` : 'Statement'"
+    :breadcrumbs="[{ label: 'Contacts', onAction: () => router.push('/contacts') }]"
+    size="wide"
+    :primary-action="{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: print }"
+    :secondary-actions="[
+      { label: 'Email', icon: 'mdi:email-outline', onAction: email },
+      { label: 'New invoice', icon: 'mdi:file-document-plus-outline', onAction: () => router.push(`/invoices/new?contact=${contactId}`) },
+    ]"
+    :loading="!statement"
+  >
+    <Card>
+      <CardSection>
+        <FormLayoutGroup>
+          <DatePicker v-model="from" type="date" model-format="YYYY-MM-DD" label="From" />
+          <DatePicker v-model="to" type="date" model-format="YYYY-MM-DD" label="To" />
+        </FormLayoutGroup>
+      </CardSection>
+    </Card>
+
+    <div v-if="statement" ref="paper" class="Paper">
+      <PaperPreview>
+        <article class="Doc" :style="{ '--accent': template?.accent ?? '#2f6fde' }">
+          <header class="Doc__head">
+            <div>
+              <img v-if="template?.logo" :src="template.logo" alt="" class="Doc__logo" />
+              <div class="Doc__company">{{ company.name }}</div>
+              <div v-if="company.abn && company.taxEnabled">ABN {{ company.abn }}</div>
+              <div v-if="company.businessAddress" class="Doc__pre">{{ company.businessAddress }}</div>
+              <div class="Doc__muted">{{ [company.businessEmail, company.businessPhone].filter(Boolean).join(' · ') }}</div>
+            </div>
+            <div class="Doc__titleBlock">
+              <h1 class="Doc__title">Statement</h1>
+              <div>{{ formatDay(statement.from) }} – {{ formatDay(statement.to) }}</div>
+            </div>
+          </header>
+
+          <section>
+            <div class="Doc__label">For</div>
+            <div class="Doc__to">{{ statement.contact.name }}</div>
+            <div v-if="statement.contact.address" class="Doc__pre">{{ statement.contact.address }}</div>
+          </section>
+
+          <table class="Doc__table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Details</th>
+                <th class="num">Charges</th>
+                <th class="num">Credits</th>
+                <th class="num">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="Doc__opening">
+                <td>{{ formatDay(statement.from) }}</td>
+                <td>Balance brought forward</td>
+                <td />
+                <td />
+                <td class="num">{{ money(statement.opening) }}</td>
+              </tr>
+              <tr v-for="(l, i) in statement.lines" :key="i" class="Doc__row" @click="router.push(docPath(l.type === 'refund' || l.type === 'credit' ? 'credit' : 'invoice', l.docId))">
+                <td>{{ formatDay(l.date) }}</td>
+                <td>
+                  {{ TYPE_LABEL[l.type] }} {{ l.ref }}
+                  <span v-if="l.dueDate" class="Doc__muted"> · due {{ formatDay(l.dueDate) }}</span>
+                </td>
+                <td class="num">{{ l.amount > 0 ? money(l.amount) : '' }}</td>
+                <td class="num">{{ l.amount < 0 ? money(-l.amount) : '' }}</td>
+                <td class="num">{{ money(l.balance) }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <section class="Doc__aging">
+            <div v-for="b in BUCKETS" :key="b.key">
+              <div class="Doc__label">{{ b.label }}</div>
+              <div>{{ money(statement.aging[b.key]) }}</div>
+            </div>
+            <div class="Doc__due">
+              <div class="Doc__label">Balance owing</div>
+              <div>{{ money(statement.closing) }}</div>
+            </div>
+          </section>
+
+          <footer v-if="template?.paymentDetails" class="Doc__foot">
+            <div class="Doc__label">Payment</div>
+            <div class="Doc__pre">{{ template.paymentDetails }}</div>
+          </footer>
+        </article>
+      </PaperPreview>
+    </div>
+  </Page>
+</template>
+
+<style scoped>
+.Paper {
+  margin-top: 16px;
+  background: var(--octans-surface-sunken);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+/* Paper colours on purpose: it must print the same in dark mode. */
+.Doc {
+  --ink: #1d1f24;
+  --muted: #6b6f78;
+  --rule: #e3e5e9;
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 18mm 16mm;
+  background: #fff;
+  color: var(--ink);
+  font: 13px/1.45 -apple-system, 'Helvetica Neue', 'Segoe UI', Roboto, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 9mm;
+}
+
+.Doc__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12mm;
+}
+
+.Doc__logo {
+  max-height: 20mm;
+  max-width: 60mm;
+  display: block;
+  margin-bottom: 4mm;
+}
+
+.Doc__company {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.Doc__titleBlock {
+  text-align: right;
+}
+
+.Doc__title {
+  margin: 0 0 2mm;
+  font-size: 26px;
+  color: var(--accent);
+}
+
+.Doc__pre {
+  white-space: pre-line;
+}
+
+.Doc__muted {
+  color: var(--muted);
+}
+
+.Doc__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.Doc__to {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.Doc__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.Doc__table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 2px solid var(--accent);
+  padding: 2mm 1.5mm;
+}
+
+.Doc__table td {
+  padding: 2mm 1.5mm;
+  border-bottom: 1px solid var(--rule);
+}
+
+.Doc__table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.Doc__opening td {
+  color: var(--muted);
+}
+
+.Doc__row {
+  cursor: pointer;
+}
+
+.Doc__aging {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3mm;
+  font-variant-numeric: tabular-nums;
+}
+
+.Doc__due {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.Doc__foot {
+  margin-top: auto;
+  padding-top: 5mm;
+  border-top: 1px solid var(--rule);
+}
+</style>

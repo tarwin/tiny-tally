@@ -1,0 +1,138 @@
+html,
+body,
+#app {
+  height: 100%;
+}
+
+.money {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.money.negative {
+  color: var(--octans-text-error);
+}
+
+/* Octans puts a margin between stacked cards. Inside these flex/grid layouts the gap already does that. */
+:is(.Side, .Main, .Tiles, .Grid, .Stack, .Columns) > * {
+  margin-top: 0 !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.subdued {
+  color: var(--octans-text-subdued);
+}
+
+/* ---- printing (see lib/print.ts) ---- */
+#print-root {
+  display: none;
+}
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+  }
+
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+
+  /* Paper is white whatever the app theme: pin the tokens reports use. */
+  #print-root {
+    display: block;
+    color: #1d1f24;
+    background: #fff;
+    --octans-text: #1d1f24;
+    --octans-text-subdued: #5f636b;
+    --octans-text-error: #b42318;
+    --octans-text-success: #1d7a3a;
+    --octans-border: #dcdfe4;
+    --octans-surface: #fff;
+    --octans-surface-sunken: #f4f5f7;
+    padding: 14mm;
+  }
+
+  #print-root .Doc {
+    margin: -14mm;
+  }
+
+  #print-root .no-print {
+    display: none !important;
+  }
+}
+
+/* ---- report tables (P&L, BAS, receivables) ---- */
+.Report {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.Report th,
+.Report td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--octans-border);
+}
+
+.Report th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--octans-text-subdued);
+}
+
+.Report .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.Report .Report__section td {
+  padding-top: 18px;
+  font-weight: 600;
+  border-bottom: 0;
+}
+
+.Report .Report__total td {
+  font-weight: 600;
+  border-top: 1px solid var(--octans-text-subdued);
+}
+
+.Report .Report__grand td {
+  font-weight: 700;
+  font-size: 16px;
+  border-top: 2px solid var(--octans-text);
+  border-bottom: 0;
+}
+
+.Report .Report__indent {
+  padding-left: 28px;
+}
+
+.ReportHead {
+  margin-bottom: 12px;
+}
+
+.ReportHead h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.ReportHead p {
+  margin: 2px 0 0;
+  color: var(--octans-text-subdued);
+}

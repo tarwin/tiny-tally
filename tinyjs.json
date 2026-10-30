@@ -1,0 +1,18 @@
+{
+  "$schema": "https://tinyjs.app/schema/tinyjs.schema.json",
+  "name": "tiny-tally",
+  "title": "Tiny Tally",
+  "size": "1180x780",
+  "id": "com.tarwin.tiny-tally",
+  "version": "0.1.0",
+  "backend": "backend/main.ts",
+  "frontend": {
+    "build": "pnpm run build",
+    "dist": "dist",
+    "dev": "pnpm run dev",
+    "devUrl": "http://127.0.0.1:5173"
+  },
+  "fileExtensions": [
+    "tally"
+  ]
+}
