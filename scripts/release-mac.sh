@@ -4,7 +4,7 @@
 #   sh scripts/release-mac.sh [arm64] [x86_64]     # no arch = both
 #
 # Needs TINYJS_SIGN_IDENTITY (a Developer ID) and TINYJS_NOTARY_PROFILE.
-# Per arch it leaves in dist/release/:
+# Per arch it leaves in release/ (outside dist/, which each build empties):
 #   tiny-tally-<ver>-macos-<arch>.dmg   the download
 #   tiny-tally-<ver>-macos-<arch>.zip   the stapled .app, for updates
 # The zip is made from the STAPLED app rather than by `tinyjs publish`,
@@ -20,18 +20,16 @@ field() { sed -n "s/^ *\"$1\": *\"\([^\"]*\)\".*/\1/p" tinyjs.json | head -1; }
 VER="$(field version)"
 NAME="$(field name)"
 TITLE="$(field title)"; TITLE="${TITLE:-$NAME}"
-OUT=dist/release
-mkdir -p "$OUT.tmp"
+OUT=release
+mkdir -p "$OUT"
 for ARCH in $ARCHS; do
   echo "==> $NAME $VER ($ARCH)"
   "$TINYJS" build --arch "$ARCH" --dmg
   "$TINYJS" notarize --arch "$ARCH" --dmg
   xcrun stapler validate -q "dist/$TITLE.app"
-  cp "dist/$NAME-$VER-macos-$ARCH.dmg" "$OUT.tmp/"
-  rm -f "$OUT.tmp/$NAME-$VER-macos-$ARCH.zip"
-  ditto -c -k --keepParent "dist/$TITLE.app" "$OUT.tmp/$NAME-$VER-macos-$ARCH.zip"
+  cp "dist/$NAME-$VER-macos-$ARCH.dmg" "$OUT/"
+  rm -f "$OUT/$NAME-$VER-macos-$ARCH.zip"
+  ditto -c -k --keepParent "dist/$TITLE.app" "$OUT/$NAME-$VER-macos-$ARCH.zip"
   echo "    staged $NAME-$VER-macos-$ARCH.{dmg,zip}"
 done
-# Each build empties dist/, so the staged files wait outside it until the end.
-mkdir -p "$OUT" && mv "$OUT.tmp"/* "$OUT"/ && rmdir "$OUT.tmp"
 ls -la "$OUT"

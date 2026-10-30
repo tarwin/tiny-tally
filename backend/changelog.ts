@@ -119,7 +119,9 @@ function withSource<T>(archive: string | null | undefined, fn: (db: Database) =>
   if (!archive) return fn(getCompany().db);
   if (!/\.tallylog$/i.test(archive)) throw new Error('Choose a Tiny Tally history file (.tallylog).');
   // Not network shares: on Windows, opening one can hand the share your login.
-  if (/^(\\\\|\/\/)/.test(archive)) throw new Error('Copy the history file to this computer first.');
+  // Either slash counts on Windows, and \\?\UNC\ and \\.\ start the same way.
+  const norm = archive.replace(/\//g, '\\');
+  if (norm.startsWith('\\\\') || /^file:/i.test(archive)) throw new Error('Copy the history file to this computer first.');
   const db = new Database(archive, { create: false, readOnly: true });
   try {
     return fn(db);

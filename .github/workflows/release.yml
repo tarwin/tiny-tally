@@ -23,8 +23,9 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Read-only by default; only the job that uploads can write.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   linux:
@@ -64,7 +65,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -126,6 +127,8 @@ jobs:
   release:
     needs: [linux, windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

@@ -11,7 +11,7 @@
 
    ```sh
    sh scripts/release-mac.sh            # arm64 and x86_64, notarized and stapled
-   gh release upload v<version> dist/release/*
+   gh release upload v<version> release/*
    ```
 
 4. Check the draft has all seven files (2 Linux, 1 Windows, 2 dmg + 2 zip for macOS), then publish it:
