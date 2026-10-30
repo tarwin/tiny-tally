@@ -20,6 +20,9 @@ const BULKY: Record<string, string[]> = { invoice_templates: ['logo'] };
 
 const BATCH = '(SELECT batch_id FROM change_context WHERE id = 1)';
 
+/** Column names come from the file's own schema; a hand-made file could carry anything. */
+const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 function q(name: string) {
   return `"${name.replace(/"/g, '""')}"`;
 }
@@ -29,7 +32,7 @@ export function installChangeLog(db: Database) {
   const old = db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'log\\_%' ESCAPE '\\'").all() as { name: string }[];
   const sql: string[] = old.map((t) => `DROP TRIGGER ${q(t.name)};`);
   for (const table of LOGGED) {
-    const cols = (db.prepare(`PRAGMA table_info(${q(table)})`).all() as { name: string }[]).map((c) => c.name);
+    const cols = (db.prepare(`PRAGMA table_info(${q(table)})`).all() as { name: string }[]).map((c) => c.name).filter((c) => IDENT.test(c));
     if (!cols.length) continue;
     const bulky = new Set(BULKY[table] ?? []);
     const value = (side: 'NEW' | 'OLD', c: string) =>
@@ -115,6 +118,8 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/;
 function withSource<T>(archive: string | null | undefined, fn: (db: Database) => T): T {
   if (!archive) return fn(getCompany().db);
   if (!/\.tallylog$/i.test(archive)) throw new Error('Choose a Tiny Tally history file (.tallylog).');
+  // Not network shares: on Windows, opening one can hand the share your login.
+  if (/^(\\\\|\/\/)/.test(archive)) throw new Error('Copy the history file to this computer first.');
   const db = new Database(archive, { create: false, readOnly: true });
   try {
     return fn(db);
