@@ -499,35 +499,55 @@ export function agedReceivables(asOf: string) {
  * A customer statement: what they owed at `from`, every invoice, credit and
  * payment in the period, and what they owe at `to`.
  */
-export function customerStatement(p: { contactId: number; from: string; to: string }) {
+/**
+ * A contact's account for a period: opening balance, every document and
+ * payment, the closing balance and its aging. Customers see invoices, credit
+ * notes, payments and refunds (+ they owe more). Suppliers see bills and our
+ * payments (+ we owe more), for checking against the statement they send.
+ */
+export function customerStatement(p: { contactId: number; from: string; to: string; side?: 'customer' | 'supplier' }) {
   const { db } = getCompany();
   if (!DATE.test(p.from) || !DATE.test(p.to)) throw new Error('Pick a date range.');
-  const contact = one<any>(db, 'SELECT id, name, email, address FROM contacts WHERE id = ?', p.contactId);
-  if (!contact) throw new Error('Choose a customer.');
+  const contact = one<any>(db, 'SELECT id, kind, name, email, address FROM contacts WHERE id = ?', p.contactId);
+  if (!contact) throw new Error('Choose a contact.');
+  const side = p.side ?? (contact.kind === 'vendor' ? 'supplier' : 'customer');
   // Every movement on the account, signed (+ owes more, − owes less).
-  const moves = all<any>(db,
-    `SELECT * FROM (
-       SELECT i.issue_date AS date, 'invoice' AS type, i.id AS docId, i.number AS ref, i.due_date AS dueDate, i.total AS amount
-       FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'invoice' AND i.status = 'sent'
-       UNION ALL
-       SELECT i.issue_date, 'credit', i.id, i.number, NULL, -i.total
-       FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'credit' AND i.status = 'sent'
-       UNION ALL
-       SELECT e.date, CASE WHEN i.doc_type = 'credit' THEN 'refund' ELSE 'payment' END, i.id, i.number, NULL,
-              CASE WHEN i.doc_type = 'credit' THEN e.amount ELSE -e.amount END
-       FROM entries e JOIN invoices i ON i.id = e.invoice_id
-       WHERE i.contact_id = ?1 AND i.doc_type IN ('invoice', 'credit')
-     ) ORDER BY date, CASE type WHEN 'invoice' THEN 0 ELSE 1 END, ref`, p.contactId);
+  const moves = side === 'supplier'
+    ? all<any>(db,
+      `SELECT * FROM (
+         SELECT i.issue_date AS date, 'bill' AS type, i.id AS docId, i.number AS ref, i.reference AS theirRef,
+                i.due_date AS dueDate, i.total AS amount
+         FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'bill' AND i.status = 'sent'
+         UNION ALL
+         SELECT e.date, 'payment', i.id, i.number, i.reference, NULL, -e.amount
+         FROM entries e JOIN invoices i ON i.id = e.invoice_id
+         WHERE i.contact_id = ?1 AND i.doc_type = 'bill'
+       ) ORDER BY date, CASE type WHEN 'bill' THEN 0 ELSE 1 END, ref`, p.contactId)
+    : all<any>(db,
+      `SELECT * FROM (
+         SELECT i.issue_date AS date, 'invoice' AS type, i.id AS docId, i.number AS ref, NULL AS theirRef,
+                i.due_date AS dueDate, i.total AS amount
+         FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'invoice' AND i.status = 'sent'
+         UNION ALL
+         SELECT i.issue_date, 'credit', i.id, i.number, NULL, NULL, -i.total
+         FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'credit' AND i.status = 'sent'
+         UNION ALL
+         SELECT e.date, CASE WHEN i.doc_type = 'credit' THEN 'refund' ELSE 'payment' END, i.id, i.number, NULL, NULL,
+                CASE WHEN i.doc_type = 'credit' THEN e.amount ELSE -e.amount END
+         FROM entries e JOIN invoices i ON i.id = e.invoice_id
+         WHERE i.contact_id = ?1 AND i.doc_type IN ('invoice', 'credit')
+       ) ORDER BY date, CASE type WHEN 'invoice' THEN 0 ELSE 1 END, ref`, p.contactId);
   const opening = moves.filter((m) => m.date < p.from).reduce((s, m) => s + m.amount, 0);
   let balance = opening;
   const lines = moves
     .filter((m) => m.date >= p.from && m.date <= p.to)
     .map((m) => ({ ...m, balance: (balance += m.amount) }));
-  const aged = agedBalances(p.to, 'invoice').find((c) => c.contactId === p.contactId) ?? {
+  const aged = agedBalances(p.to, side === 'supplier' ? 'bill' : 'invoice').find((c) => c.contactId === p.contactId) ?? {
     current: 0, d30: 0, d60: 0, d90: 0, older: 0, total: 0, invoices: [],
   };
   return {
-    contact,
+    side,
+    contact: { id: contact.id, name: contact.name, email: contact.email, address: contact.address },
     from: p.from,
     to: p.to,
     opening,
@@ -535,6 +555,35 @@ export function customerStatement(p: { contactId: number; from: string; to: stri
     lines,
     aging: { current: aged.current, d30: aged.d30, d60: aged.d60, d90: aged.d90, older: aged.older },
     open: aged.invoices,
+  };
+}
+
+/**
+ * Remittance advice for a bill payment: every bill paid to the same supplier
+ * from the same account on the same day goes on one advice, the way a batch
+ * payment arrives at their end as one deposit.
+ */
+export function remittance(entryId: number) {
+  const { db } = getCompany();
+  const e = one<any>(db,
+    `SELECT e.id, e.date, e.account_id, i.contact_id, i.doc_type FROM entries e JOIN invoices i ON i.id = e.invoice_id WHERE e.id = ?`, entryId);
+  if (!e || e.doc_type !== 'bill') throw new Error("That isn't a bill payment.");
+  const contact = one<any>(db, 'SELECT id, name, email, address FROM contacts WHERE id = ?', e.contact_id);
+  const account = one<any>(db, 'SELECT name FROM accounts WHERE id = ?', e.account_id);
+  const items = all<any>(db,
+    `SELECT p.id AS entryId, p.amount AS paid, p.memo, i.id AS billId, i.number, i.reference, i.issue_date AS issueDate,
+            i.due_date AS dueDate, i.total,
+            i.total - (SELECT COALESCE(SUM(q.amount), 0) FROM entries q
+                       WHERE q.invoice_id = i.id AND (q.date < p.date OR (q.date = p.date AND q.id <= p.id))) AS remaining
+     FROM entries p JOIN invoices i ON i.id = p.invoice_id
+     WHERE i.doc_type = 'bill' AND i.contact_id = ? AND p.date = ? AND p.account_id = ?
+     ORDER BY i.issue_date, i.id, p.id`, e.contact_id, e.date, e.account_id);
+  return {
+    date: e.date as string,
+    accountName: account?.name ?? '',
+    contact,
+    items,
+    total: items.reduce((s: number, i: any) => s + i.paid, 0),
   };
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import {
   Button,
   DatePicker,
@@ -50,6 +51,7 @@ const lastUsed: Partial<Record<EntryKind, { accountId: number | null; date: stri
 const newContact = ref<{ name: string } | null>(null);
 
 const currency = computed(() => session.company?.currency ?? 'USD');
+const router = useRouter();
 const editing = computed(() => entryEditor.entry);
 const isTransfer = computed(() => form.value.kind === 'transfer');
 
@@ -135,6 +137,49 @@ watch(
   },
 );
 
+// ---- rules -----------------------------------------------------------------------
+// Typing a description that matches an import rule fills in its category (and
+// contact) — only into empty fields, or ones an earlier suggestion filled.
+const suggested = ref<{ pattern: string; categoryId: number; contactId: number | null } | null>(null);
+let ruleTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(
+  () => [form.value.memo, form.value.kind] as const,
+  ([memo, kind]) => {
+    clearTimeout(ruleTimer);
+    if (kind === 'transfer' || editing.value) return;
+    ruleTimer = setTimeout(async () => {
+      const text = memo.trim();
+      const match = text.length >= 2 ? (await api.matchRules([{ text, kind }]).catch(() => [null]))[0] : null;
+      if (form.value.memo.trim() !== text || form.value.kind !== kind) return;
+      const prev = suggested.value;
+      const ours = (field: 'categoryId' | 'contactId') => form.value[field] === null || (!!prev && form.value[field] === prev[field]);
+      if (!match) {
+        if (prev && form.value.categoryId === prev.categoryId) form.value.categoryId = null;
+        if (prev?.contactId && form.value.contactId === prev.contactId) form.value.contactId = null;
+        suggested.value = null;
+        return;
+      }
+      if (prev?.categoryId === match.categoryId && prev.contactId === match.contactId) return;
+      const canCategory = ours('categoryId');
+      const canContact = !!match.contactId && ours('contactId');
+      if (!canCategory && !canContact) return;
+      if (canCategory) form.value.categoryId = match.categoryId;
+      if (canContact) form.value.contactId = match.contactId;
+      suggested.value = {
+        pattern: match.pattern,
+        categoryId: canCategory ? match.categoryId : -1,
+        contactId: canContact ? match.contactId : null,
+      };
+    }, 250);
+  },
+);
+
+/** Shown under the category while it still holds the rule's pick. */
+const ruleHint = computed(() =>
+  suggested.value && form.value.categoryId === suggested.value.categoryId ? `From your rule “${suggested.value.pattern}”` : '',
+);
+
 const title = computed(() => (editing.value ? `Edit ${labels.value.title}` : `New ${labels.value.title}`));
 
 // ---- repeat ---------------------------------------------------------------------
@@ -160,6 +205,8 @@ function defaultAccount(kind: EntryKind) {
 function reset() {
   errors.value = {};
   newContact.value = null;
+  suggested.value = null;
+  clearTimeout(ruleTimer);
   repeat.value = { on: false, frequency: 'monthly' };
   const e = entryEditor.entry;
   if (e) {
@@ -182,15 +229,16 @@ function reset() {
     return;
   }
   const kind = entryEditor.kind;
+  const draft = entryEditor.draft;
   form.value = {
     kind,
-    amount: '',
-    date: lastUsed[kind]?.date ?? today(),
+    amount: draft?.amount ? toInput(draft.amount, currency.value) : '',
+    date: draft?.date ?? lastUsed[kind]?.date ?? today(),
     accountId: entryEditor.accountId ?? defaultAccount(kind),
     toAccountId: entryEditor.toAccountId,
     categoryId: null,
     contactId: null,
-    memo: '',
+    memo: draft?.memo ?? '',
     taxCode: null,
     taxAmount: null,
   };
@@ -229,6 +277,12 @@ watch(
 
 function close() {
   entryEditor.visible = false;
+}
+
+function showHistory() {
+  const id = editing.value?.id;
+  close();
+  if (id) void router.push({ path: '/activity', query: { table: 'entries', id } });
 }
 
 function validate() {
@@ -303,6 +357,7 @@ async function save(andNew = false) {
     });
     if (andNew) {
       entryEditor.entry = null;
+      entryEditor.draft = null;
       entryEditor.kind = f.kind;
       entryEditor.accountId = f.accountId;
       entryEditor.toAccountId = null;
@@ -362,7 +417,7 @@ async function addContact() {
     :loading="saving"
     :primary-action="{ label: 'Save', onAction: () => save(false) }"
     :secondary-actions="editing ? [{ label: 'Cancel', onAction: close }] : [{ label: 'Save & new', onAction: () => save(true) }]"
-    :tertiary-actions="editing ? [{ label: 'Delete', type: 'destructive', onAction: remove }] : []"
+    :tertiary-actions="editing ? [{ label: 'Delete', type: 'destructive', onAction: remove }, { label: 'History', onAction: showHistory }] : []"
     :dialog-style="{ width: '560px' }"
     overflow-visible
     @close="close"
@@ -412,6 +467,7 @@ async function addContact() {
             searchable
             show-description
             required
+            :help-text="ruleHint"
             :error="errors.categoryId"
           />
         </FormLayoutGroup>

@@ -136,8 +136,9 @@ onMounted(load);
       empty-text="No contacts yet. Add one here, or while recording a transaction."
       :row-actions="(row: Contact) => [
         { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => openEditor(row) },
+        { label: 'Statement', icon: 'mdi:file-document-multiple-outline', onAction: () => router.push(`/contacts/${row.id}/statement`) },
         row.kind === 'customer'
-          ? { label: 'Statement', icon: 'mdi:file-document-multiple-outline', onAction: () => router.push(`/contacts/${row.id}/statement`) }
+          ? { label: 'New invoice', icon: 'mdi:file-document-plus-outline', onAction: () => router.push(`/invoices/new?contact=${row.id}`) }
           : { label: 'New bill', icon: 'mdi:receipt-text-plus-outline', onAction: () => router.push(`/bills/new?contact=${row.id}`) },
         row.archived
           ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => setArchived(row, false) }

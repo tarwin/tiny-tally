@@ -320,4 +320,121 @@ export const migrations: string[] = [
   `
   ALTER TABLE invoice_templates ADD COLUMN layout TEXT;
   `,
+
+  // v7: manual journal entries (depreciation, accruals, corrections).
+  //
+  // Each line hits one category, or one of the ledger's own accounts
+  // (journal_lines.system: gst, opening, accruals, prepayments, accumdep).
+  // Money accounts, receivables and payables are left out on purpose: their
+  // balances come from entries and documents, and a journal would put them
+  // out of step with registers, reconciliations and aged balances.
+  //
+  // amount is signed: debit positive, credit negative. Lines total zero.
+  // Category lines also reach the P&L through the ledger views, as NTR so
+  // they stay off the BAS.
+  `
+  CREATE TABLE journals (
+    id INTEGER PRIMARY KEY,
+    date TEXT NOT NULL,
+    reference TEXT,
+    memo TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX journals_date ON journals (date, id);
+
+  CREATE TABLE journal_lines (
+    id INTEGER PRIMARY KEY,
+    journal_id INTEGER NOT NULL REFERENCES journals(id) ON DELETE CASCADE,
+    sort INTEGER NOT NULL DEFAULT 0,
+    category_id INTEGER REFERENCES categories(id),
+    system TEXT CHECK (system IN ('gst', 'opening', 'accruals', 'prepayments', 'accumdep')),
+    amount INTEGER NOT NULL CHECK (amount <> 0),
+    memo TEXT,
+    CHECK ((category_id IS NULL) <> (system IS NULL))
+  );
+  CREATE INDEX journal_lines_journal ON journal_lines (journal_id);
+  CREATE INDEX journal_lines_category ON journal_lines (category_id);
+
+  DROP VIEW ledger_cash;
+  DROP VIEW ledger_accrual;
+
+  -- Journal lines on categories, signed the way the category's kind grows
+  -- (a debit adds to an expense, a credit to income).
+  CREATE VIEW journal_amounts AS
+    SELECT j.id AS journal_id, j.date, c.kind, c.id AS category_id,
+           CASE c.kind WHEN 'expense' THEN l.amount ELSE -l.amount END AS gross,
+           COALESCE(l.memo, j.memo, 'Journal entry') AS memo
+    FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN categories c ON c.id = l.category_id;
+
+  CREATE VIEW ledger_cash AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, e.kind, e.category_id, e.contact_id,
+           e.amount AS gross, e.tax_amount AS tax, e.tax_code, e.memo
+    FROM entries e
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT e.id, l.invoice_id, e.date, l.kind, l.category_id, l.contact_id,
+           l.sign * (CAST(ROUND(1.0 * e.amount * l.cum_gross / l.doc_total) AS INTEGER)
+                   - CAST(ROUND(1.0 * e.amount * (l.cum_gross - l.net - l.tax) / l.doc_total) AS INTEGER)),
+           l.sign * (CAST(ROUND(1.0 * e.amount * l.cum_tax / l.doc_total) AS INTEGER)
+                   - CAST(ROUND(1.0 * e.amount * (l.cum_tax - l.tax) / l.doc_total) AS INTEGER)),
+           l.tax_code,
+           CASE l.doc_type WHEN 'bill' THEN 'Bill payment ' WHEN 'credit' THEN 'Refund for ' ELSE 'Payment for ' END || l.number
+    FROM entries e
+    JOIN doc_lines l ON l.invoice_id = e.invoice_id
+    WHERE l.doc_total > 0
+    UNION ALL
+    SELECT NULL, NULL, date, kind, category_id, NULL, gross, 0, 'NTR', memo FROM journal_amounts;
+
+  CREATE VIEW ledger_accrual AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, e.kind, e.category_id, e.contact_id,
+           e.amount AS gross, e.tax_amount AS tax, e.tax_code, e.memo
+    FROM entries e
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT NULL, l.invoice_id, l.issue_date, l.kind, l.category_id, l.contact_id,
+           l.sign * (l.net + l.tax), l.sign * l.tax, l.tax_code,
+           l.number || CASE WHEN l.description <> '' THEN ': ' || l.description ELSE '' END
+    FROM doc_lines l
+    WHERE l.doc_status = 'sent'
+    UNION ALL
+    SELECT NULL, NULL, date, kind, category_id, NULL, gross, 0, 'NTR', memo FROM journal_amounts;
+  `,
+
+  // v8: change log. Triggers (installed on every open by changelog.ts, from
+  // the live column lists) record each insert, update and delete as JSON.
+  // A batch is one action in the app: an edit, an import, a recurring run.
+  // change_context holds the batch the triggers stamp rows with; it's one
+  // row, set and cleared around each call (main.ts).
+  `
+  CREATE TABLE change_batches (
+    id INTEGER PRIMARY KEY,
+    at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    action TEXT NOT NULL,
+    host TEXT,
+    summary TEXT,
+    count INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX change_batches_at ON change_batches (at);
+
+  CREATE TABLE change_log (
+    id INTEGER PRIMARY KEY,
+    batch_id INTEGER,
+    at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    table_name TEXT NOT NULL,
+    row_id INTEGER,
+    row_key TEXT,
+    action TEXT NOT NULL CHECK (action IN ('insert', 'update', 'delete')),
+    before TEXT,
+    after TEXT
+  );
+  CREATE INDEX change_log_batch ON change_log (batch_id);
+  CREATE INDEX change_log_row ON change_log (table_name, row_id);
+
+  CREATE TABLE change_context (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    batch_id INTEGER
+  );
+  INSERT INTO change_context (id, batch_id) VALUES (1, NULL);
+  `,
 ];

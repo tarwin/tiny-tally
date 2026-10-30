@@ -13,24 +13,25 @@ export const THEME_OPTIONS: { label: string; value: ThemePreferenceType; icon: s
   { label: 'Dark', value: 'dark', icon: 'mdi:weather-night' },
 ];
 
-function syncMenu() {
+export function syncThemeMenu() {
   for (const o of THEME_OPTIONS) {
-    void tiny.menu.update(`theme-${o.value}`, { checked: themePreference.value === o.value });
+    void tiny.win.menu.update(`theme-${o.value}`, { checked: themePreference.value === o.value }).catch(() => {});
   }
 }
 
 export function applyTheme(pref: ThemePreferenceType) {
   themePreference.value = pref;
   setTheme(pref);
-  syncMenu();
-  void tiny.store.set(STORE_KEY, pref);
+  syncThemeMenu();
+  // Other windows reload it (App.vue listens for app-settings-changed).
+  void tiny.store.set(STORE_KEY, pref).then(() => tiny.api.call('app.settingsChanged')).catch(() => {});
 }
 
 export async function restoreTheme() {
   const saved = (await tiny.store.get(STORE_KEY)) as ThemePreferenceType | null;
   themePreference.value = saved === 'light' || saved === 'dark' ? saved : 'system';
   setTheme(themePreference.value);
-  syncMenu();
+  syncThemeMenu();
 }
 
 /** Light ↔ dark, starting from whatever is on screen now. */

@@ -2,15 +2,17 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { AppFrame, Navigation, Spinner, UiProvider, toast, type NavigationSectionType } from '@octans/ui';
+import AppSettings from './components/AppSettings.vue';
 import EntryEditor from './components/EntryEditor.vue';
 import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
 import { api } from './lib/api';
-import { backupCompany, closeCompany, openCompanyAt, pickAndOpenCompany } from './lib/company';
+import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density } from './lib/appSettings';
+import { backupCompany, closeCompany, newCompany, openCompanyAt, pickAndOpenCompany, refreshSession } from './lib/company';
 import { today } from './lib/dates';
 import { dataChanged, newEntry } from './lib/entryEditor';
 import { session } from './lib/session';
-import { THEME_OPTIONS, applyTheme, restoreTheme } from './lib/theme';
+import { THEME_OPTIONS, applyTheme, restoreTheme, syncThemeMenu } from './lib/theme';
 
 const route = useRoute();
 const router = useRouter();
@@ -49,6 +51,7 @@ const sections = computed<NavigationSectionType[]>(() => [
       { id: 'contacts', label: 'Contacts', icon: 'mdi:account-multiple-outline', url: '/contacts' },
       { id: 'categories', label: 'Categories', icon: 'mdi:shape-outline', url: '/categories' },
       { id: 'recurring', label: 'Recurring', icon: 'mdi:repeat', url: '/recurring' },
+      { id: 'journals', label: 'Journal entries', icon: 'mdi:book-edit-outline', url: '/journals' },
     ],
   },
   {
@@ -56,6 +59,7 @@ const sections = computed<NavigationSectionType[]>(() => [
     title: 'Company',
     items: [
       { id: 'import', label: 'Import', icon: 'mdi:tray-arrow-down', url: '/import' },
+      { id: 'activity', label: 'Activity', icon: 'mdi:history', url: '/activity' },
       { id: 'settings', label: 'Settings', icon: 'mdi:cog-outline', url: '/settings' },
     ],
   },
@@ -65,15 +69,115 @@ const sections = computed<NavigationSectionType[]>(() => [
 const navMin = ref(false);
 function setNavMin(v: boolean) {
   navMin.value = v;
-  void tiny.store.set('navMin', v).catch(() => {});
+  void tiny.store.set('navMin', v).then(() => api.settingsChanged()).catch(() => {});
 }
 
+// Each window has its own company, so its own menu bar: macOS shows the
+// focused window's, Windows and Linux draw each in its window.
+const isMain = tiny.win.id === 'main';
+
 /** Menu items that need an open company. */
-const COMPANY_ITEMS = ['company-close', 'company-backup', 'import', 'new-expense', 'new-income', 'new-transfer', 'new-invoice', 'new-quote', 'new-bill', 'settings'];
+const COMPANY_ITEMS = [
+  'company-close', 'company-backup', 'company-reveal', 'company-settings', 'import',
+  'new-expense', 'new-income', 'new-transfer', 'new-invoice', 'new-quote', 'new-bill',
+];
 
 async function syncMenus() {
   const on = !!session.company;
-  await Promise.all(COMPANY_ITEMS.map((id) => tiny.menu.update(id, { enabled: on }).catch(() => {})));
+  await Promise.all(COMPANY_ITEMS.map((id) => tiny.win.menu.update(id, { enabled: on }).catch(() => {})));
+}
+
+function syncDensityMenu() {
+  for (const o of DENSITY_OPTIONS) void tiny.win.menu.update(`density-${o.value}`, { checked: appSettings.density === o.value }).catch(() => {});
+}
+
+const isMac = tiny.system.isMacOS();
+const REVEAL_LABEL = isMac ? 'Show in Finder' : tiny.system.isWindows() ? 'Show in File Explorer' : 'Show in Folder';
+
+/** Recent companies, with the folder added where two share a name. */
+function recentItems() {
+  const names = session.recent.map((r) => r.name);
+  return session.recent.map((r, i) => {
+    const folder = r.path.split(/[\\/]/).slice(-2, -1)[0];
+    const label = names.filter((n) => n === r.name).length > 1 && folder ? `${r.name} — ${folder}` : r.name;
+    return { id: `recent-${i}`, label, checked: r.path === session.company?.path };
+  });
+}
+
+// The menu is rebuilt whenever the recent list changes (Open Recent), so
+// ticks and enabled states are re-applied after each set().
+async function buildMenu() {
+  const recent = recentItems();
+  await tiny.win.menu.set([
+    { role: 'app', items: [{ id: 'app-settings', label: 'Settings…', key: ',' }] },
+    {
+      title: 'File',
+      items: [
+        { id: 'company-new', label: 'New Company…', key: 'N' },
+        { id: 'window-new', label: 'New Window', key: 'alt+n' },
+        { id: 'company-open', label: 'Open Company…', key: 'o' },
+        {
+          id: 'company-recent',
+          label: 'Open Recent',
+          submenu: recent.length
+            ? [...recent, { separator: true }, { id: 'recent-clear', label: 'Clear Menu' }]
+            : [{ id: 'recent-none', label: 'No recent companies', enabled: false }],
+        },
+        { separator: true },
+        { id: 'import', label: 'Import…' },
+        { id: 'company-backup', label: 'Back Up Now' },
+        { id: 'company-reveal', label: REVEAL_LABEL },
+        { separator: true },
+        { id: 'company-settings', label: 'Company Settings…', key: 'alt+,' },
+        // Windows and Linux have no app menu, so app settings live here too.
+        ...(isMac ? [] : [{ id: 'app-settings', label: 'App Settings…', key: ',' }]),
+        { separator: true },
+        { id: 'company-close', label: 'Close Company', key: 'W' },
+        { id: 'window-close', label: 'Close Window', key: 'w' },
+      ],
+    },
+    { role: 'edit' },
+    {
+      title: 'Transaction',
+      items: [
+        { id: 'new-expense', label: 'New Expense…', key: 'e' },
+        { id: 'new-income', label: 'New Income…', key: 'i' },
+        { id: 'new-transfer', label: 'New Transfer…', key: 't' },
+        { separator: true },
+        { id: 'new-invoice', label: 'New Invoice…', key: 'I' },
+        { id: 'new-quote', label: 'New Quote…' },
+        { id: 'new-bill', label: 'New Bill…', key: 'B' },
+      ],
+    },
+    {
+      title: 'View',
+      items: [
+        {
+          id: 'appearance',
+          label: 'Appearance',
+          submenu: THEME_OPTIONS.map((o) => ({ id: `theme-${o.value}`, label: o.label, checked: false })),
+        },
+        {
+          id: 'density',
+          label: 'Density',
+          submenu: DENSITY_OPTIONS.map((o) => ({ id: `density-${o.value}`, label: o.label, checked: false })),
+        },
+      ],
+    },
+  ]);
+  syncThemeMenu();
+  syncDensityMenu();
+  await syncMenus();
+}
+
+watch(
+  () => [session.recent.map((r) => r.path).join('\n'), session.company?.path, session.recent.map((r) => r.name).join('\n')],
+  () => void buildMenu(),
+);
+
+async function clearRecent() {
+  for (const r of [...session.recent]) await api.forgetCompany(r.path).catch(() => {});
+  await refreshSession();
 }
 
 /** Creates whatever recurring transactions, invoices and bills fell due while the app was closed. */
@@ -118,14 +222,53 @@ function onNavItem(item: { url?: string }) {
 
 const offs: Array<() => void> = [];
 
+/** Company files double-clicked in Finder (or dropped): open them. */
+function openFiles(paths: string[]) {
+  const file = paths.find((p) => p.endsWith('.tally'));
+  if (file) void openCompanyAt(file);
+}
+
+// Drop a company file to open it, or anything else to import it.
+function onDropped(paths: string[]) {
+  if (paths.some((p) => p.endsWith('.tally'))) openFiles(paths);
+  else if (paths[0] && session.company) void router.push({ path: '/import', query: { file: paths[0] } });
+}
+
 function onMenu(id: string) {
   if (id.startsWith('theme-')) {
     applyTheme(id.slice('theme-'.length) as (typeof THEME_OPTIONS)[number]['value']);
     return;
   }
+  if (id.startsWith('density-')) {
+    updateAppSettings({ density: id.slice('density-'.length) as Density });
+    syncDensityMenu();
+    return;
+  }
+  if (id.startsWith('recent-') && id !== 'recent-clear') {
+    const r = session.recent[Number(id.slice('recent-'.length))];
+    if (r && r.path !== session.company?.path) void openCompanyAt(r.path);
+    return;
+  }
   switch (id) {
+    case 'recent-clear':
+      void clearRecent();
+      break;
+    case 'app-settings':
+      appSettingsPanel.visible = true;
+      break;
+    case 'company-reveal':
+      if (session.company) void tiny.app.shell.reveal(session.company.path);
+      break;
     case 'company-new':
-      void closeCompany();
+      void newCompany();
+      break;
+    case 'window-new':
+      void api.newWindow();
+      break;
+    case 'window-close':
+      // The main window hides rather than closes: closing it would quit (main.ts).
+      if (isMain) void tiny.win.hide({ app: false });
+      else void tiny.win.close();
       break;
     case 'company-open':
       void pickAndOpenCompany();
@@ -153,66 +296,53 @@ function onMenu(id: string) {
     case 'new-bill':
       if (session.company) void router.push('/bills/new');
       break;
-    case 'settings':
+    case 'company-settings':
       if (session.company) void router.push('/settings');
       break;
   }
 }
 
 onMounted(async () => {
-  await tiny.menu.set([
-    { role: 'app', items: [{ id: 'settings', label: 'Settings…', key: ',' }] },
-    {
-      title: 'File',
-      items: [
-        { id: 'company-new', label: 'New Company…', key: 'N' },
-        { id: 'company-open', label: 'Open Company…', key: 'o' },
-        { separator: true },
-        { id: 'import', label: 'Import…' },
-        { id: 'company-backup', label: 'Back Up Now' },
-        { separator: true },
-        { id: 'company-close', label: 'Close Company', key: 'W' },
-      ],
-    },
-    { role: 'edit' },
-    {
-      title: 'Transaction',
-      items: [
-        { id: 'new-expense', label: 'New Expense…', key: 'e' },
-        { id: 'new-income', label: 'New Income…', key: 'i' },
-        { id: 'new-transfer', label: 'New Transfer…', key: 't' },
-        { separator: true },
-        { id: 'new-invoice', label: 'New Invoice…', key: 'I' },
-        { id: 'new-quote', label: 'New Quote…' },
-        { id: 'new-bill', label: 'New Bill…', key: 'B' },
-      ],
-    },
-    {
-      title: 'View',
-      items: [
-        {
-          id: 'appearance',
-          label: 'Appearance',
-          submenu: THEME_OPTIONS.map((o) => ({ id: `theme-${o.value}`, label: o.label, checked: false })),
-        },
-      ],
-    },
-  ]);
+  await restoreAppSettings();
+  await buildMenu();
   await restoreTheme();
   navMin.value = (await tiny.store.get('navMin').catch(() => false)) === true;
-  offs.push(tiny.menu.on(onMenu));
-  // Drop a company file to open it, or anything else to import it.
+  // The backend sends menu clicks, opened files and drops to one window
+  // (main.ts), since tinyjs delivers them to every window.
+  offs.push(tiny.api.on('menu', ({ id }: { id: string }) => onMenu(id)));
+  offs.push(tiny.api.on('open-files', ({ paths }: { paths: string[] }) => openFiles(paths)));
+  offs.push(tiny.api.on('drop', ({ paths }: { paths: string[] }) => onDropped(paths)));
+  let dragOverAt = 0;
+  const onDragOver = () => (dragOverAt = Date.now());
+  window.addEventListener('dragover', onDragOver);
+  offs.push(() => window.removeEventListener('dragover', onDragOver));
+  offs.push(tiny.win.onDrop((paths) => void api.claimDrop(paths, Date.now() - dragOverAt < 3000, document.hasFocus())));
+  // Main was closed (hidden): the backend let go of its company; start fresh for when it's shown again.
   offs.push(
-    tiny.win.onDrop((paths) => {
-      const company = paths.find((p) => p.endsWith('.tally'));
-      if (company) void openCompanyAt(company);
-      else if (paths[0] && session.company) void router.push({ path: '/import', query: { file: paths[0] } });
+    tiny.api.on('window-hidden', () => {
+      session.company = null;
+      notice.value = null;
+      void router.replace('/');
     }),
   );
+  if (isMain) {
+    const onVisibility = () => document.hidden && void api.windowHidden().catch(() => {});
+    document.addEventListener('visibilitychange', onVisibility);
+    offs.push(() => document.removeEventListener('visibilitychange', onVisibility));
+  }
   offs.push(
-    tiny.app.onOpenFiles((paths) => {
-      const file = paths.find((p) => p.endsWith('.tally'));
-      if (file) void openCompanyAt(file);
+    tiny.api.on('recent-changed', ({ recent }: { recent: typeof session.recent }) => {
+      session.recent = recent;
+    }),
+  );
+  // Theme, density, size or the sidebar changed in another window.
+  offs.push(
+    tiny.api.on('app-settings-changed', async ({ from }: { from: string }) => {
+      if (from === tiny.win.id) return;
+      await restoreTheme();
+      await restoreAppSettings();
+      syncDensityMenu();
+      navMin.value = (await tiny.store.get('navMin').catch(() => false)) === true;
     }),
   );
 
@@ -231,6 +361,7 @@ onMounted(async () => {
   }
   session.ready = true;
   await syncMenus();
+  if (s.openFiles.length) openFiles(s.openFiles);
 });
 
 onBeforeUnmount(() => {
@@ -267,6 +398,7 @@ onBeforeUnmount(() => {
       <RouterView :key="`${session.company.path}|${route.path}`" />
       <EntryEditor />
     </AppFrame>
+    <AppSettings :nav-min="navMin" @update:nav-min="setNavMin" />
   </UiProvider>
 </template>
 

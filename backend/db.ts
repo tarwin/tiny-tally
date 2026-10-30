@@ -1,6 +1,7 @@
 // Company file (.tally) lifecycle: open, migrate, lock, close.
 // tjs:sqlite is fully synchronous — never await a statement.
 import { Database } from 'tjs:sqlite';
+import { installChangeLog } from './changelog';
 import { migrations } from './schema';
 import { seedCompany, type CompanySetup } from './seed';
 
@@ -16,15 +17,51 @@ export interface OpenCompany {
   internal: boolean;
 }
 
-let current: OpenCompany | null = null;
+// One company per window. Each api call runs bound to its window (main.ts
+// wraps every handler), so getCompany() means "this window's company".
+//
+// Binding lasts for the handler's synchronous part only, then clears.
+// Module code is fully synchronous (tjs:sqlite never awaits), so that covers
+// it; code that awaits and then touches the database must rebind with
+// inWindow(). Unbound access throws rather than guessing a window, so a
+// mistake can't write to another window's company.
+const open = new Map<string, OpenCompany>();
+let bound: string | null = null;
+
+/** Runs fn with getCompany() meaning `win`'s company. */
+export function inWindow<T>(win: string, fn: () => T): T {
+  const prev = bound;
+  bound = win;
+  try {
+    return fn();
+  } finally {
+    bound = prev;
+  }
+}
+
+function boundWindow() {
+  if (bound === null) throw new Error('Internal error: company used outside a window call.');
+  return bound;
+}
 
 export function getCompany(): OpenCompany {
-  if (!current) throw new Error('No company file is open.');
-  return current;
+  const c = open.get(boundWindow());
+  if (!c) throw new Error('No company file is open.');
+  return c;
 }
 
 export function hasCompany() {
-  return current !== null;
+  return open.has(boundWindow());
+}
+
+/** The window that has this file open, if any. */
+export function windowWithFile(path: string) {
+  for (const [win, c] of open) if (c.path === path) return win;
+  return null;
+}
+
+export function openWindows() {
+  return [...open.keys()];
 }
 
 export function one<T = any>(db: Database, sql: string, ...args: any[]): T | null {
@@ -69,6 +106,11 @@ async function readForeignLock(path: string): Promise<string | null> {
 }
 
 let cachedHost: string | null = null;
+
+/** This computer's name, for the change log (known once a file has been opened). */
+export function currentHost() {
+  return cachedHost ?? '';
+}
 
 async function hostName() {
   if (cachedHost) return cachedHost;
@@ -119,6 +161,7 @@ function migrate(db: Database) {
       run(db, "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", String(v + 1));
     })();
   }
+  installChangeLog(db);
 }
 
 function configure(db: Database, internal: boolean) {
@@ -135,7 +178,8 @@ export interface OpenOptions {
   force?: boolean;
 }
 
-export async function openCompany({ path, internal, force }: OpenOptions) {
+/** Opens `path` in window `win`, closing whatever that window had. */
+export async function openCompany(win: string, { path, internal, force }: OpenOptions) {
   if (!(await exists(path))) throw new Error(`Can't find ${path}. It may have been moved or deleted.`);
   if (!force) {
     const holder = await readForeignLock(path);
@@ -145,7 +189,7 @@ export async function openCompany({ path, internal, force }: OpenOptions) {
       throw err;
     }
   }
-  closeCompany();
+  closeCompany(win);
   const db = new Database(path, { create: false });
   try {
     configure(db, internal);
@@ -156,31 +200,33 @@ export async function openCompany({ path, internal, force }: OpenOptions) {
   }
   await writeLock(path);
   const name = one<{ value: string }>(db, "SELECT value FROM meta WHERE key = 'company_name'")?.value ?? 'Company';
-  current = { db, path, name, internal };
-  return current;
+  const company = { db, path, name, internal };
+  open.set(win, company);
+  return company;
 }
 
-export async function createCompany(path: string, internal: boolean, setup: CompanySetup) {
+export async function createCompany(win: string, path: string, internal: boolean, setup: CompanySetup) {
   if (await exists(path)) {
     throw new Error(`A company file already exists at ${path}. Open it instead, or pick another name.`);
   }
   const dir = path.slice(0, path.lastIndexOf('/'));
   await tjs.makeDir(dir, { recursive: true });
-  closeCompany();
+  closeCompany(win);
   const db = new Database(path);
   configure(db, internal);
   migrate(db);
   db.transaction(() => seedCompany(db, setup))();
   db.close();
-  return openCompany({ path, internal });
+  return openCompany(win, { path, internal });
 }
 
-export function closeCompany() {
-  if (!current) return;
-  const { db, path } = current;
-  current = null;
-  db.close();
-  void removeLock(path);
+/** Closes the company open in `win` (default: the bound window). */
+export function closeCompany(win: string = boundWindow()) {
+  const c = open.get(win);
+  if (!c) return;
+  open.delete(win);
+  c.db.close();
+  void removeLock(c.path);
 }
 
 export function backupCompany(dest: string) {

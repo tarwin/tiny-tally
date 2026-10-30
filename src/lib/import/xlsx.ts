@@ -1,8 +1,12 @@
 // Just enough of the Excel .xlsx format to read the first sheet as rows of
 // text: the zip container (inflated with the browser's DecompressionStream),
 // shared strings, and date-formatted cells turned into YYYY-MM-DD.
+//
+// Also reads QuickBooks Online's "Export data" zip, which holds one .xlsx per
+// report (Journal, General Ledger, lists…).
 
-async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>> {
+/** Files in a zip whose names pass `keep`, inflated. */
+async function unzip(bytes: Uint8Array, keep: (name: string) => boolean = (n) => /\.(xml|rels)$/.test(n)): Promise<Map<string, Uint8Array>> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let eocd = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
@@ -11,7 +15,7 @@ async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>> {
       break;
     }
   }
-  if (eocd < 0) throw new Error("That doesn't look like an Excel file.");
+  if (eocd < 0) throw new Error("That doesn't look like an Excel or zip file.");
   const count = view.getUint16(eocd + 10, true);
   let p = view.getUint32(eocd + 16, true);
   const out = new Map<string, Uint8Array>();
@@ -26,7 +30,7 @@ async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>> {
     const local = view.getUint32(p + 42, true);
     const name = decoder.decode(bytes.subarray(p + 46, p + 46 + nameLen));
     p += 46 + nameLen + extraLen + commentLen;
-    if (!/\.(xml|rels)$/.test(name)) continue;
+    if (!keep(name)) continue;
     const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
     const data = bytes.subarray(start, start + size);
     if (method === 0) out.set(name, data);
@@ -58,6 +62,17 @@ function colIndex(ref: string) {
 
 export function looksLikeXlsx(bytes: Uint8Array) {
   return bytes[0] === 0x50 && bytes[1] === 0x4b;
+}
+
+/**
+ * A zip of Excel files (QuickBooks Online's "Export data") rather than one
+ * workbook: the .xlsx files inside it, by name without folders. Empty for an
+ * ordinary workbook.
+ */
+export async function readXlsxBundle(bytes: Uint8Array): Promise<{ name: string; bytes: Uint8Array }[]> {
+  const files = await unzip(bytes, (n) => n === 'xl/workbook.xml' || (/\.xlsx$/i.test(n) && !/(^|\/)(__MACOSX|\.)/.test(n)));
+  if (files.has('xl/workbook.xml')) return [];
+  return [...files.entries()].map(([name, b]) => ({ name: name.split('/').pop()!, bytes: b }));
 }
 
 /** Rows of the first sheet, every cell as text. */

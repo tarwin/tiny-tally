@@ -54,6 +54,12 @@ const reports = computed(() => [
     body: 'Every transaction as double-entry debits and credits, for your accountant.',
   },
   {
+    to: '/journals',
+    icon: 'mdi:book-edit-outline',
+    title: 'Journal entries',
+    body: 'Depreciation, accruals and other adjustments your accountant asks for.',
+  },
+  {
     to: '/transactions',
     icon: 'mdi:format-list-bulleted',
     title: 'Transactions',

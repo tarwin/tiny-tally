@@ -40,9 +40,9 @@ import {
   type BankMapping,
   type ContactMapping,
 } from '../lib/import/csvImport';
-import { detectDateOrder, localeDateOrder, parseCsv, type DateOrder } from '../lib/import/parse';
+import { companyDateOrder, detectDateOrder, parseCsv, type DateOrder } from '../lib/import/parse';
 import { looksLikeQboReport, parseQboReport } from '../lib/import/qboReport';
-import { readXlsx } from '../lib/import/xlsx';
+import { readXlsx, readXlsxBundle } from '../lib/import/xlsx';
 import { hashRef, type ImportCategory } from '../shared/import';
 
 const route = useRoute();
@@ -65,7 +65,7 @@ const categories = ref<Category[]>([]);
 // ---- step 1: choose a file ------------------------------------------------------
 
 async function chooseFile() {
-  const path = await tiny.dialog.openFile({ types: ['iif', 'qbo', 'qfx', 'ofx', 'csv', 'txt', 'xlsx'] });
+  const path = await tiny.dialog.openFile({ types: ['iif', 'qbo', 'qfx', 'ofx', 'csv', 'txt', 'xlsx', 'zip'] });
   if (path) await loadFile(path);
 }
 
@@ -77,7 +77,13 @@ async function loadFile(path: string) {
     fileName.value = file.name;
     excel.value = !!file.base64;
     if (file.base64) {
-      csvRows.value = await readXlsx(Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0)));
+      const bytes = Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0));
+      const bundle = await readXlsxBundle(bytes);
+      if (bundle.length) {
+        const journal = await journalFromBundle(bundle);
+        fileName.value = `${file.name} › ${journal.name}`;
+        csvRows.value = journal.rows;
+      } else csvRows.value = await readXlsx(bytes);
       text.value = '';
       format.value = looksLikeQboReport(csvRows.value) ? 'qbo' : 'csv';
     } else {
@@ -97,6 +103,28 @@ async function loadFile(path: string) {
   }
 }
 
+/**
+ * QuickBooks Online's "Export data" zip has one workbook per report. The
+ * Journal carries every transaction with its categories, so that's the one.
+ */
+async function journalFromBundle(files: { name: string; bytes: Uint8Array }[]) {
+  const ordered = [...files].sort((a, b) => Number(/journal/i.test(b.name)) - Number(/journal/i.test(a.name)));
+  for (const f of ordered) {
+    let rows: string[][];
+    try {
+      rows = await readXlsx(f.bytes);
+    } catch {
+      continue;
+    }
+    if (looksLikeQboReport(rows) && parseQboReport(rows).report === 'journal') return { name: f.name, rows };
+  }
+  const names = files.map((f) => f.name.replace(/\.xlsx$/i, '')).slice(0, 6).join(', ');
+  throw new Error(
+    `There's no Journal report in this zip (it has ${names}${files.length > 6 ? '…' : ''}). ` +
+      'In QuickBooks Online, tick Journal under Reports when exporting, or export Reports → Journal on its own.',
+  );
+}
+
 // Files dropped on the window come here as ?file=… (see App.vue).
 async function fromQuery() {
   const file = route.query.file;
@@ -109,16 +137,7 @@ onMounted(fromQuery);
 
 // ---- parsing ---------------------------------------------------------------------
 
-// Ambiguous dates (03/10/2026) follow the company's country: only US-dollar
-// books default to month-first. The webview's locale is often en-US even in
-// Australia, so it's only the tie-breaker for currencies we can't place.
-const MONTH_FIRST = new Set(['USD', 'PHP']);
-const DAY_FIRST = new Set(['AUD', 'NZD', 'GBP', 'EUR', 'ZAR', 'INR', 'SGD', 'HKD', 'MYR', 'IDR', 'THB', 'VND', 'CHF']);
-const fallbackOrder: DateOrder = MONTH_FIRST.has(company.value.currency)
-  ? 'mdy'
-  : DAY_FIRST.has(company.value.currency)
-    ? 'dmy'
-    : localeDateOrder() === 'mdy' ? 'mdy' : 'dmy';
+const fallbackOrder: DateOrder = companyDateOrder(company.value.currency);
 const iifDateOrder = ref<DateOrder>('mdy');
 const csvRows = ref<string[][]>([]);
 const csvMode = ref<'bank' | 'customer' | 'vendor'>('bank');
@@ -463,7 +482,7 @@ const importLabel = computed(() => {
             <div class="Drop">
               <Icon icon="mdi:tray-arrow-down" class="Drop__icon" />
               <p class="Drop__title">Choose a file to import, or drop it on the window</p>
-              <p class="subdued">IIF, QBO, QFX, OFX, CSV or Excel. You'll see everything before it's saved.</p>
+              <p class="subdued">IIF, QBO, QFX, OFX, CSV, Excel, or a QuickBooks Online export zip. You'll see everything before it's saved.</p>
               <Button type="primary" icon="mdi:file-search-outline" :loading="busy" @click="chooseFile">Choose file…</Button>
             </div>
           </CardSection>
@@ -487,6 +506,9 @@ const importLabel = computed(() => {
                 <strong>Reports → Journal</strong>, set the dates, then <strong>Export → Excel or CSV</strong>. That brings every
                 bank and card transaction with its categories. <strong>Transaction List by Date</strong> works too.
                 <strong>Customers</strong> or <strong>Suppliers → Export</strong> gives your contacts.
+              </p>
+              <p class="subdued Small">
+                The whole-company zip from <strong>Settings → Export data</strong> works too: Tiny Tally picks the Journal out of it.
               </p>
             </CardSection>
           </Card>

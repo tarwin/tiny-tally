@@ -11,12 +11,22 @@ export const entryEditor = reactive({
   kind: 'expense' as EntryKind,
   accountId: null as number | null,
   toAccountId: null as number | null,
+  /** Starting values for a new entry (a statement line that's missing, say). */
+  draft: null as EntryDraft | null,
 });
+
+export interface EntryDraft {
+  /** cents */
+  amount?: number;
+  date?: string;
+  memo?: string;
+}
 
 export const dataVersion = ref(0);
 
-export function newEntry(kind: EntryKind, accountId: number | null = null, toAccountId: number | null = null) {
+export function newEntry(kind: EntryKind, accountId: number | null = null, toAccountId: number | null = null, draft: EntryDraft | null = null) {
   entryEditor.entry = null;
+  entryEditor.draft = draft;
   entryEditor.kind = kind;
   entryEditor.accountId = accountId;
   entryEditor.toAccountId = toAccountId;
@@ -25,6 +35,7 @@ export function newEntry(kind: EntryKind, accountId: number | null = null, toAcc
 
 export function editEntry(entry: Entry) {
   entryEditor.entry = entry;
+  entryEditor.draft = null;
   entryEditor.kind = entry.kind;
   entryEditor.accountId = entry.accountId;
   entryEditor.toAccountId = entry.toAccountId;

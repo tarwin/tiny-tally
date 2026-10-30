@@ -20,6 +20,7 @@ import { today } from '../lib/dates';
 import { CURRENCIES } from '../lib/money';
 import { MONTHS, session } from '../lib/session';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
+import { appSettingsPanel } from '../lib/appSettings';
 import splashSvg from '../assets/tiny-tally-splash.svg?raw';
 
 // Inlined (not an <img>) so dark mode can lighten the navy lettering. The
@@ -145,7 +146,10 @@ function shortPath(path: string) {
 
 <template>
   <div class="Welcome">
-    <div class="Welcome__theme"><ThemeSwitch /></div>
+    <div class="Welcome__theme">
+      <Button type="plain" icon="mdi:tune-variant" tooltip="App settings" tooltip-position="left" @click="appSettingsPanel.visible = true" />
+      <ThemeSwitch />
+    </div>
     <div class="Welcome__inner">
       <header class="Welcome__header">
         <div class="Welcome__splash" role="img" aria-label="Tiny Tally: Simple. Free. Local." v-html="splash" />
@@ -257,6 +261,8 @@ function shortPath(path: string) {
   position: fixed;
   top: 12px;
   right: 12px;
+  display: flex;
+  gap: 4px;
 }
 
 .Welcome__inner {

@@ -4,6 +4,60 @@ body,
   height: 100%;
 }
 
+/* ---- density (App settings; lib/appSettings.ts sets html[data-density]) ----
+   Changes the room around things: page and card padding, gaps, table rows
+   and sidebar items, all through Octans tokens (1.10+). Form controls keep
+   their height so fields and buttons still line up. */
+:root {
+  --tt-cell-y: 8px;
+  --tt-cell-x: 12px;
+}
+
+html[data-density='compact'] {
+  --tt-cell-y: 4px;
+  --tt-cell-x: 10px;
+  --octans-page-padding-y: 12px;
+  --octans-appframe-page-padding-x: 24px;
+  --octans-page-margin-top: 6px;
+  --octans-page-content-gap: 12px;
+  --octans-page-title-size: 24px;
+  --octans-layout-gutter: 12px;
+  --octans-stack-gap: 10px;
+  --octans-card-padding-x: 12px;
+  --octans-card-padding-y: 10px;
+  --octans-datatable-cell-padding-x: 12px;
+  --octans-datatable-cell-padding-y: 6px;
+  --octans-datatable-compact-cell-padding-y: 4px;
+  --octans-nav-item-padding-y: 4px;
+}
+
+html[data-density='spacious'] {
+  --tt-cell-y: 13px;
+  --tt-cell-x: 16px;
+  --octans-page-padding-y: 28px;
+  --octans-appframe-page-padding-x: 56px;
+  --octans-page-margin-top: 28px;
+  --octans-page-content-gap: 28px;
+  --octans-page-title-size: 32px;
+  --octans-layout-gutter: 28px;
+  --octans-stack-gap: 22px;
+  --octans-card-padding-x: 22px;
+  --octans-card-padding-y: 22px;
+  --octans-datatable-cell-padding-x: 18px;
+  --octans-datatable-cell-padding-y: 22px;
+  --octans-datatable-compact-cell-padding-y: 12px;
+  --octans-nav-item-padding-y: 10px;
+}
+
+/* The layout gaps views set themselves (Dashboard tiles, side columns). */
+html[data-density='compact'] :is(.Side, .Main, .Tiles, .Grid, .Stack, .Columns) {
+  gap: 12px;
+}
+
+html[data-density='spacious'] :is(.Side, .Main, .Tiles, .Grid, .Stack, .Columns) {
+  gap: 28px;
+}
+
 .money {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -85,7 +139,7 @@ body,
 
 .Report th,
 .Report td {
-  padding: 8px 12px;
+  padding: var(--tt-cell-y) var(--tt-cell-x);
   text-align: left;
   border-bottom: 1px solid var(--octans-border);
 }

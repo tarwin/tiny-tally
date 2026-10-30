@@ -15,7 +15,9 @@
 //   bill payment      Dr payables     Cr money
 //   credit refund     Dr receivables  Cr money
 //   opening balance   Dr money        Cr opening balance equity
+//   manual journal    whatever its lines say (journals.ts)
 import { all, getCompany } from './db';
+import { SYSTEM_ACCOUNTS, journalLinesTo } from './journals';
 
 export type LedgerType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
 
@@ -44,6 +46,8 @@ function chart() {
   const { db } = getCompany();
   const accounts = new Map<string, LedgerAccount>();
   for (const a of [AR, AP, GST, OPENING]) accounts.set(a.key, a);
+  // Only manual journals post to these; they show once they have a balance.
+  for (const key of ['accruals', 'prepayments', 'accumdep'] as const) accounts.set(key, { key, ...SYSTEM_ACCOUNTS[key] });
   const money = all<any>(db, 'SELECT id, name, kind, opening_balance, opening_date FROM accounts');
   for (const a of money) {
     accounts.set(`acct:${a.id}`, {
@@ -136,11 +140,37 @@ export function journal(p: { from?: string; to: string }) {
     }
   }
 
+  for (const l of journalLinesTo(p.to)) {
+    const account = l.category_id !== null ? cat(l.category_id) : l.system;
+    push(l.date, l.reference || `J${l.id}`, l.memo || l.journalMemo || 'Journal entry', account, l.amount);
+  }
+
   lines.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return { accounts: [...accounts.values()], lines: p.from ? lines.filter((l) => l.date >= p.from!) : lines };
 }
 
 const ORDER: LedgerType[] = ['asset', 'liability', 'equity', 'income', 'expense'];
+
+/**
+ * What a manual journal line can post to: every category (by its ledger
+ * account) and the ledger's own accounts, but not money accounts,
+ * receivables or payables (see schema v7).
+ */
+export function journalAccounts() {
+  const { db } = getCompany();
+  const { accounts, catKey } = chart();
+  const cats = all<any>(db, 'SELECT id, name, kind, class, is_archived FROM categories ORDER BY name COLLATE NOCASE');
+  const out: { key: string; name: string; type: LedgerType; group: string; archived: boolean }[] = [];
+  for (const c of cats) {
+    const a = accounts.get(catKey.get(c.id)!)!;
+    // Several categories share GST and Loans; offer the shared account under each name.
+    out.push({ key: `cat:${c.id}`, name: c.name, type: a.type, group: a.group, archived: !!c.is_archived });
+  }
+  for (const key of Object.keys(SYSTEM_ACCOUNTS) as (keyof typeof SYSTEM_ACCOUNTS)[]) {
+    out.push({ key, ...SYSTEM_ACCOUNTS[key], archived: false });
+  }
+  return out.sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type) || a.name.localeCompare(b.name));
+}
 
 /** Balance of every account as at `asOf`. Debits and credits always total the same. */
 export function trialBalance(asOf: string) {

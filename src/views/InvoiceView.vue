@@ -350,11 +350,12 @@ const secondary = computed(() => {
   if (inv.status !== 'void' && inv.status !== 'draft' && inv.status !== 'accepted' && !inv.paid && !inv.credited) {
     acts.push({ label: inv.docType === 'quote' ? 'Declined' : 'Void', icon: 'mdi:cancel', onAction: voidInvoice });
   }
+  acts.push({ label: 'History', icon: 'mdi:history', onAction: () => router.push({ path: '/activity', query: { table: 'invoices', id: inv.id } }) });
   return acts;
 });
 
 const settledLabel = computed(() => (invoice.value?.docType === 'credit' ? 'Refunded' : 'Paid'));
-const contactLink = computed(() => (invoice.value?.docType === 'bill' ? null : `/contacts/${invoice.value?.contactId}/statement`));
+const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statement`);
 </script>
 
 <template>
@@ -460,7 +461,16 @@ const contactLink = computed(() => (invoice.value?.docType === 'bill' ? null : `
                     <div class="money">{{ money(p.amount) }}</div>
                     <div class="subdued Small">{{ formatDay(p.date) }} · {{ p.accountName }}{{ p.memo ? ` · ${p.memo}` : '' }}</div>
                   </div>
-                  <Button type="plain" icon="mdi:delete-outline" tooltip="Delete" @click="removePayment(p.id)" />
+                  <span class="PaymentActions">
+                    <Button
+                      v-if="invoice.docType === 'bill'"
+                      type="plain"
+                      icon="mdi:email-fast-outline"
+                      tooltip="Remittance advice"
+                      @click="router.push(`/bills/remittance/${p.id}`)"
+                    />
+                    <Button type="plain" icon="mdi:delete-outline" tooltip="Delete" @click="removePayment(p.id)" />
+                  </span>
                 </li>
               </ul>
             </CardSection>

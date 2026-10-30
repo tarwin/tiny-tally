@@ -10,10 +10,26 @@ async function refresh() {
   session.internalDir = s.internalDir;
 }
 
-/** Opens a company file, asking before taking over one locked elsewhere. */
+/**
+ * Opens a company file, asking before taking over one locked elsewhere.
+ * A window that already has a company opens the new one in a window of its
+ * own; a window on the welcome screen opens it in place.
+ */
 export async function openCompanyAt(path: string, force = false): Promise<boolean> {
+  if (session.company) {
+    if (session.company.path === path) return true;
+    try {
+      await api.openInNewWindow(path);
+      return true;
+    } catch (e) {
+      toast({ title: "Couldn't open company", content: errorMessage(e), tone: 'error' });
+      return false;
+    }
+  }
   try {
     const r = await api.openCompany(path, force);
+    // Open in another window, which has been brought to the front.
+    if (!r.ok && r.elsewhere) return false;
     if (r.ok) {
       await refresh();
       await router.push('/');
@@ -44,6 +60,11 @@ export async function pickAndOpenCompany() {
 export async function closeCompany() {
   await api.closeCompany();
   await refresh();
+}
+
+/** "New Company…": the welcome screen, in a new window if this one has a company open. */
+export async function newCompany() {
+  if (session.company) await api.newWindow();
 }
 
 export async function backupCompany() {

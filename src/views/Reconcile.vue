@@ -23,6 +23,7 @@ import { formatDay, formatShortDay, today } from '../lib/dates';
 import { dataChanged, dataVersion, newEntry } from '../lib/entryEditor';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { session } from '../lib/session';
+import { matchStatement, readStatement, type StatementLine } from '../lib/statementMatch';
 
 const route = useRoute();
 const router = useRouter();
@@ -104,6 +105,44 @@ async function setTicked(rows: ReconcileRow[], cleared: boolean) {
     await load();
   }
 }
+
+// ---- statement file ----------------------------------------------------------------
+// Ticks what a downloaded statement shows, and lists what it shows that the
+// books don't have yet.
+const matching = ref(false);
+const fileResult = ref<{ name: string; ticked: number; near: number; unmatched: StatementLine[] } | null>(null);
+
+async function matchFile() {
+  const s = state.value;
+  if (!s?.open) return;
+  const path = await tiny.dialog.openFile({ types: ['ofx', 'qbo', 'qfx', 'csv', 'txt', 'xlsx'] });
+  if (!path) return;
+  matching.value = true;
+  try {
+    const file = await readStatement(path, currency.value);
+    const { matched, unmatched } = matchStatement(file.lines, s.rows, s.open.statementDate);
+    await setTicked(matched.map((m) => m.row), true);
+    fileResult.value = { name: file.name, ticked: matched.length, near: matched.filter((m) => !m.exact).length, unmatched };
+  } catch (e) {
+    toast({ title: "Couldn't read that statement", content: errorMessage(e), tone: 'error' });
+  } finally {
+    matching.value = false;
+  }
+}
+
+function addMissing(line: StatementLine) {
+  newEntry(line.signed > 0 ? 'income' : 'expense', accountId.value, null, { amount: Math.abs(line.signed), date: line.date, memo: line.memo });
+}
+
+// A missing line that's since been added drops off the list.
+watch(
+  () => state.value?.rows,
+  (rows) => {
+    const r = fileResult.value;
+    if (!r || !rows) return;
+    r.unmatched = r.unmatched.filter((l) => !rows.some((row) => row.date === l.date && row.signed === l.signed && !row.ticked));
+  },
+);
 
 const allTicked = computed(() => visibleRows.value.length > 0 && visibleRows.value.every((r) => r.ticked));
 
@@ -228,6 +267,33 @@ const differenceText = computed(() => {
           or a transaction dated after the statement.
         </Banner>
 
+        <Banner
+          v-if="fileResult"
+          :status="fileResult.unmatched.length ? 'warning' : 'success'"
+          :title="`Ticked ${fileResult.ticked} from ${fileResult.name}`"
+          @close="fileResult = null"
+        >
+          <p v-if="fileResult.near" class="FileNote">
+            {{ fileResult.near }} matched on amount with a date a day or two apart. Glance over the ticks to be sure.
+          </p>
+          <template v-if="fileResult.unmatched.length">
+            <p class="FileNote">
+              {{ fileResult.unmatched.length === 1 ? 'This line is' : `These ${fileResult.unmatched.length} lines are` }}
+              on the statement but not in Tiny Tally:
+            </p>
+            <table class="Report Missing">
+              <tbody>
+                <tr v-for="(l, i) in fileResult.unmatched" :key="i">
+                  <td class="money">{{ formatShortDay(l.date) }}</td>
+                  <td>{{ l.memo || '—' }}</td>
+                  <td class="num money">{{ money(l.signed) }}</td>
+                  <td class="num"><Button size="small" type="plain" icon="mdi:plus" @click="addMissing(l)">Add</Button></td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+        </Banner>
+
         <Card>
           <CardSection>
             <div class="Toolbar">
@@ -238,7 +304,16 @@ const differenceText = computed(() => {
               />
               <ToggleSwitch v-if="laterCount" v-model="showLater" :label="`Show ${laterCount} after the statement date`" />
               <span class="Spacer" />
-              <Button size="small" icon="mdi:plus" @click="newEntry(isCard ? 'expense' : 'expense', accountId)">Add missing transaction</Button>
+              <Button
+                size="small"
+                icon="mdi:file-compare"
+                :loading="matching"
+                tooltip="Tick everything a downloaded statement (OFX, QBO, CSV or Excel) shows, matched on date and amount"
+                @click="matchFile"
+              >
+                Match statement file…
+              </Button>
+              <Button size="small" icon="mdi:plus" @click="newEntry('expense', accountId)">Add missing transaction</Button>
             </div>
             <table class="Report Rec">
               <thead>
@@ -357,6 +432,14 @@ const differenceText = computed(() => {
 
 .Spacer {
   flex: 1;
+}
+
+.FileNote {
+  margin: 0 0 6px;
+}
+
+.Missing td {
+  padding: 4px 8px;
 }
 
 .Rec__tick {

@@ -8,9 +8,12 @@ import {
   createCompany,
   getCompany,
   hasCompany,
+  inWindow,
   one,
   openCompany,
+  openWindows,
   run,
+  windowWithFile,
 } from './db';
 import {
   archiveContact,
@@ -31,6 +34,7 @@ import {
   convertQuote,
   creditInvoice,
   customerStatement,
+  remittance,
   removeAllocation,
   type DocType,
   deleteInvoice,
@@ -64,7 +68,19 @@ import { commitImport, readImportFile, suggestCategories } from './importer';
 import { cancelReconcile, finishReconcile, reconcileState, reconciledDates, startReconcile, tick, undoReconcile } from './reconcile';
 import { deleteSchedule, getSchedule, listSchedules, runSchedules, saveSchedule, skipNext, type ScheduleInput } from './schedules';
 import { deleteRule, listRules, matchRules, saveRule, type RuleInput } from './rules';
-import { balanceSheet, journal, trialBalance } from './ledger';
+import { balanceSheet, journal, journalAccounts, trialBalance } from './ledger';
+import { deleteJournal, getJournal, listJournals, saveJournal, type JournalInput } from './journals';
+import {
+  archiveCommit,
+  archivePrepare,
+  batchChanges,
+  beginBatch,
+  endBatch,
+  listBatches,
+  rowHistory,
+  sha256,
+  startHistory,
+} from './changelog';
 import type { ImportPlan } from '../src/shared/import';
 import { isTaxCode, type TaxCode } from '../src/shared/tax';
 
@@ -85,6 +101,70 @@ const MAX_RECENT = 8;
 
 let appRef: TinyApp;
 
+// ---- windows --------------------------------------------------------------------
+// Each window holds its own company (db.ts). Secondary windows are opened by
+// the backend; the company a new window should show waits here until its
+// page calls app.start.
+const pendingOpen = new Map<string, string>();
+let windowCount = 0;
+/** Where menu clicks and opened files go. */
+let focusedWindow = 'main';
+/** Files opened with the app before the main window's page was ready. */
+let pendingFiles: string[] = [];
+let mainStarted = false;
+/**
+ * The main window can't really close (that quits the app), so its close
+ * button hides it instead and it lets go of its company. Hidden and empty,
+ * it's reused for the next window anyone asks for.
+ */
+let mainHidden = false;
+
+function windowHandle(win: string) {
+  return win === 'main' ? appRef.win : appRef.window(win);
+}
+
+function setWindowTitle(win: string, name: string | null) {
+  windowHandle(win).setTitle(name ? `${name} — Tiny Tally` : 'Tiny Tally');
+}
+
+function showMain() {
+  mainHidden = false;
+  appRef.win.show();
+}
+
+/** tinyjs has no "hidden" event: check after main loses focus or its page goes hidden. */
+function checkMainHidden() {
+  setTimeout(async () => {
+    const st = await appRef.win.getState().catch(() => null);
+    if (!st || st.visible || st.minimized || mainHidden) return;
+    mainHidden = true;
+    closeCompany('main');
+    setWindowTitle('main', null);
+    appRef.win.push('window-hidden', {});
+  }, 150);
+}
+
+function openWindow(path: string | null) {
+  if (mainHidden && !openWindows().includes('main')) {
+    if (path) appRef.win.push('open-files', { paths: [path] });
+    showMain();
+    return 'main';
+  }
+  const win = `company-${++windowCount}`;
+  if (path) pendingOpen.set(win, path);
+  appRef.win.open(win, { size: '1180x780', minSize: '820x560', title: 'Tiny Tally' });
+  return win;
+}
+
+/** Brings the window that has `path` open to the front. Returns false if none has. */
+function focusFileWindow(path: string) {
+  const win = windowWithFile(path);
+  if (!win) return false;
+  if (win === 'main') showMain();
+  else windowHandle(win).show();
+  return true;
+}
+
 async function internalDir() {
   return (await appRef.paths()).data + '/companies';
 }
@@ -98,13 +178,19 @@ async function readStore(): Promise<CompanyStore> {
   return { recent: s?.recent ?? [], lastPath: s?.lastPath ?? null };
 }
 
+/** Saves the company list and tells every window, so each Open Recent menu stays current. */
+async function writeStore(s: CompanyStore) {
+  await appRef.store.set(STORE_KEY, s);
+  appRef.push('recent-changed', { recent: s.recent });
+}
+
 async function remember(path: string, name: string, color: string) {
   const s = await readStore();
   const recent = [
     { path, name, lastOpened: new Date().toISOString(), color: color || undefined },
     ...s.recent.filter((r) => r.path !== path),
   ].slice(0, MAX_RECENT);
-  await appRef.store.set(STORE_KEY, { recent, lastPath: path });
+  await writeStore({ recent, lastPath: path });
 }
 
 async function fileExists(path: string) {
@@ -121,27 +207,35 @@ function fileNameFor(name: string) {
   return (safe || 'Company') + '.' + FILE_EXT;
 }
 
-function companyInfo() {
-  if (!hasCompany()) return null;
-  const c = getCompany();
-  return { path: c.path, internal: c.internal, ...getSettings() };
+function companyInfo(win: string) {
+  return inWindow(win, () => {
+    if (!hasCompany()) return null;
+    const c = getCompany();
+    return { path: c.path, internal: c.internal, ...getSettings() };
+  });
 }
 
-async function afterOpen() {
-  const info = companyInfo()!;
+async function afterOpen(win: string) {
+  const info = companyInfo(win)!;
   await remember(info.path, info.name, info.color);
-  appRef.setTitle(`${info.name} — Tiny Tally`);
+  setWindowTitle(win, info.name);
   return info;
 }
 
 type OpenResult =
   | { ok: true; company: ReturnType<typeof companyInfo> }
-  | { ok: false; locked: boolean; message: string };
+  | { ok: false; locked: boolean; message: string; elsewhere?: boolean };
 
-async function tryOpen(path: string, force = false): Promise<OpenResult> {
+async function tryOpen(win: string, path: string, force = false): Promise<OpenResult> {
+  // Already open in another window: go there rather than open it twice.
+  const other = windowWithFile(path);
+  if (other && other !== win) {
+    windowHandle(other).show();
+    return { ok: false, locked: false, elsewhere: true, message: 'That company is already open in another window.' };
+  }
   try {
-    await openCompany({ path, internal: await isInternal(path), force });
-    return { ok: true, company: await afterOpen() };
+    await openCompany(win, { path, internal: await isInternal(path), force });
+    return { ok: true, company: await afterOpen(win) };
   } catch (e: any) {
     return { ok: false, locked: e?.code === 'LOCKED', message: e?.message ?? String(e) };
   }
@@ -154,26 +248,48 @@ function blankToNull(v: unknown) {
 export const api: Record<string, TinyApiHandler> = {
   // ---- company file ------------------------------------------------------
 
-  /** First call the page makes: reopens the last company if it can. */
-  'app.start': async () => {
+  /**
+   * First call each window's page makes. The main window reopens the last
+   * company (unless App settings say not to); a window opened for a company
+   * opens that one.
+   */
+  'app.start': async (_p, _app, { window: win }) => {
     const store = await readStore();
     let reopenError: string | null = null;
     let locked = false;
-    if (!hasCompany() && store.lastPath) {
-      const r = await tryOpen(store.lastPath);
+    let lastPath: string | null = null;
+    const want = pendingOpen.get(win);
+    pendingOpen.delete(win);
+    if (want) {
+      lastPath = want;
+    } else if (win === 'main') {
+      // App settings (src/lib/appSettings.ts) can turn reopening off.
+      const prefs = (await appRef.store.get('appSettings').catch(() => null)) as { reopenLast?: boolean } | null;
+      if (prefs?.reopenLast !== false) lastPath = store.lastPath;
+    }
+    if (lastPath && !companyInfo(win) && !windowWithFile(lastPath)) {
+      const r = await tryOpen(win, lastPath);
       if (!r.ok) {
         reopenError = r.message;
         locked = r.locked;
       }
     }
-    if (hasCompany()) appRef.setTitle(`${companyInfo()!.name} — Tiny Tally`);
+    const company = companyInfo(win);
+    setWindowTitle(win, company?.name ?? null);
+    let openFiles: string[] = [];
+    if (win === 'main' && !mainStarted) {
+      mainStarted = true;
+      openFiles = pendingFiles;
+      pendingFiles = [];
+    }
     return {
-      company: companyInfo(),
+      company,
       recent: (await readStore()).recent,
-      lastPath: store.lastPath,
+      lastPath,
       reopenError,
       locked,
       internalDir: await internalDir(),
+      openFiles,
     };
   },
 
@@ -185,45 +301,72 @@ export const api: Record<string, TinyApiHandler> = {
     dir: string | null;
     taxEnabled?: boolean;
     abn?: string;
-  }) => {
+  }, _app, { window: win }) => {
     name = String(name ?? '').trim();
     if (!name) throw new Error('Give the company a name.');
     const folder = dir ?? (await internalDir());
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createCompany(path, dir === null, { name, currency, fiscalYearStart: Number(fiscalYearStart) || 1, taxEnabled });
-    if (abn) updateSettings({ abn });
-    return afterOpen();
+    await createCompany(win, path, dir === null, { name, currency, fiscalYearStart: Number(fiscalYearStart) || 1, taxEnabled });
+    inWindow(win, () => {
+      if (abn) updateSettings({ abn });
+      startHistory('company.create', JSON.stringify({ name }));
+    });
+    return afterOpen(win);
   },
 
   /** A sample Australian business with about 16 months of activity. */
-  'company.createDemo': async ({ dir, today }: { dir: string | null; today: string }) => {
+  'company.createDemo': async ({ dir, today }: { dir: string | null; today: string }, _app, { window: win }) => {
     const folder = dir ?? (await internalDir());
     let name = DEMO_NAME;
     for (let n = 2; await fileExists(folder + '/' + fileNameFor(name)); n++) name = `${DEMO_NAME} ${n}`;
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createCompany(path, dir === null, { name, currency: 'AUD', fiscalYearStart: 7, taxEnabled: true });
-    seedDemo(today);
-    return afterOpen();
+    await createCompany(win, path, dir === null, { name, currency: 'AUD', fiscalYearStart: 7, taxEnabled: true });
+    inWindow(win, () => {
+      seedDemo(today);
+      startHistory('company.createDemo', JSON.stringify({ name }));
+    });
+    return afterOpen(win);
   },
 
-  'company.open': async ({ path, force }: { path: string; force?: boolean }) => tryOpen(path, !!force),
+  'company.open': async ({ path, force }: { path: string; force?: boolean }, _app, { window: win }) => tryOpen(win, path, !!force),
 
-  'company.close': async () => {
-    closeCompany();
-    const s = await readStore();
-    await appRef.store.set(STORE_KEY, { ...s, lastPath: null });
-    appRef.setTitle('Tiny Tally');
+  /** Opens a company in a window of its own (or focuses the one that has it). */
+  'company.openInNewWindow': async ({ path }: { path: string }) => {
+    if (focusFileWindow(path)) return { focused: true };
+    openWindow(path);
+    return { focused: false };
+  },
+
+  /** A new window on the welcome screen. */
+  /** The main window's page went hidden: it may have been closed (see mainHidden). */
+  'app.windowHidden': async (_p, _app, { window: win }) => {
+    if (win === 'main') checkMainHidden();
+    return true;
+  },
+
+  'app.newWindow': async () => {
+    openWindow(null);
+    return true;
+  },
+
+  'company.close': async (_p, _app, { window: win }) => {
+    closeCompany(win);
+    setWindowTitle(win, null);
+    if (win === 'main') {
+      const s = await readStore();
+      await writeStore({ ...s, lastPath: null });
+    }
     return true;
   },
 
   'company.forget': async ({ path }: { path: string }) => {
     const s = await readStore();
     const recent = s.recent.filter((r) => r.path !== path);
-    await appRef.store.set(STORE_KEY, { recent, lastPath: s.lastPath === path ? null : s.lastPath });
+    await writeStore({ recent, lastPath: s.lastPath === path ? null : s.lastPath });
     return recent;
   },
 
-  'company.backup': async ({ stamp }: { stamp?: string } = {}) => {
+  'company.backup': async ({ stamp }: { stamp?: string } = {}, _app, { window: win }) => {
     const { path } = getCompany();
     const dir = path.slice(0, path.lastIndexOf('/')) + '/Backups';
     await tjs.makeDir(dir, { recursive: true });
@@ -231,15 +374,31 @@ export const api: Record<string, TinyApiHandler> = {
     // The page sends its local time (no Intl/time zones here); fall back to UTC.
     const when = /^[\d -]+$/.test(stamp ?? '') ? stamp! : new Date().toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '-');
     const dest = `${dir}/${base} ${when}.${FILE_EXT}`;
-    backupCompany(dest);
+    inWindow(win, () => backupCompany(dest));
     return dest;
+  },
+
+  /** Theme, density and the like changed in one window: the others reload them. */
+  'app.settingsChanged': async (_p, _app, { window: win }) => {
+    appRef.push('app-settings-changed', { from: win });
+    return true;
+  },
+
+  /**
+   * File drops reach every window, so each one reports what it saw and the
+   * best placed handles it: the window the files were dragged over, else
+   * the focused one, else main.
+   */
+  'drop.claim': async ({ paths, over, focused }: { paths: string[]; over: boolean; focused: boolean }, _app, { window: win }) => {
+    claimDrop(Array.isArray(paths) ? paths.map(String) : [], win, over ? 2 : focused ? 1 : 0);
+    return true;
   },
 
   // ---- settings ----------------------------------------------------------
 
-  'settings.update': async (patch: Partial<CompanySettings>) => {
+  'settings.update': async (patch: Partial<CompanySettings>, _app, { window: win }) => {
     updateSettings(patch ?? {});
-    return afterOpen();
+    return afterOpen(win);
   },
 
   // ---- money accounts ----------------------------------------------------
@@ -297,7 +456,8 @@ export const api: Record<string, TinyApiHandler> = {
       db,
       `SELECT c.id, c.name, c.kind, c.class AS class, c.is_archived AS archived, c.tax_code AS taxCode,
               (SELECT COUNT(*) FROM entries e WHERE e.category_id = c.id)
-                + (SELECT COUNT(*) FROM invoice_lines l WHERE l.category_id = c.id) AS uses
+                + (SELECT COUNT(*) FROM invoice_lines l WHERE l.category_id = c.id)
+                + (SELECT COUNT(*) FROM journal_lines j WHERE j.category_id = c.id) AS uses
        FROM categories c
        ORDER BY c.kind, c.is_archived, c.class <> 'pnl', c.name COLLATE NOCASE`,
     ).map((r: any) => ({ ...r, archived: !!r.archived }));
@@ -353,10 +513,17 @@ Object.assign(api, {
   'invoices.removeAllocation': async ({ id }: { id: number }) => removeAllocation(id),
   'reports.agedPayables': async ({ asOf }: { asOf: string }) => agedBalances(asOf, 'bill'),
   'reports.statement': async (p: Parameters<typeof customerStatement>[0]) => customerStatement(p),
+  'bills.remittance': async ({ entryId }: { entryId: number }) => remittance(entryId),
 
   'ledger.journal': async (p: { from?: string; to: string }) => journal(p),
   'ledger.trialBalance': async ({ asOf }: { asOf: string }) => trialBalance(asOf),
   'ledger.balanceSheet': async (p: { asOf: string; yearStart: string }) => balanceSheet(p),
+
+  'journals.list': async (q: { from?: string; to?: string }) => listJournals(q ?? {}),
+  'journals.get': async ({ id }: { id: number }) => getJournal(id),
+  'journals.save': async (input: JournalInput) => saveJournal(input),
+  'journals.delete': async ({ id }: { id: number }) => deleteJournal(id),
+  'journals.accounts': async () => journalAccounts(),
 
   'reconcile.state': async ({ accountId }: { accountId: number }) => reconcileState(accountId),
   'reconcile.start': async (p: Parameters<typeof startReconcile>[0]) => startReconcile(p),
@@ -399,13 +566,13 @@ Object.assign(api, {
   'reports.bas': async (p: Parameters<typeof basReport>[0]) => basReport(p),
   'reports.agedReceivables': async ({ asOf }: { asOf: string }) => agedReceivables(asOf),
   'bas.list': async () => listBasReturns(),
-  'bas.save': async (p: Parameters<typeof saveBasReturn>[0]) => {
+  'bas.save': async (p: Parameters<typeof saveBasReturn>[0], _app, { window: win }) => {
     saveBasReturn(p);
-    return companyInfo();
+    return companyInfo(win);
   },
-  'bas.reopen': async ({ id }: { id: number }) => {
+  'bas.reopen': async ({ id }: { id: number }, _app, { window: win }) => {
     reopenBasReturn(id);
-    return companyInfo();
+    return companyInfo(win);
   },
   'bas.delete': async ({ id }: { id: number }) => deleteBasReturn(id),
 
@@ -419,14 +586,101 @@ Object.assign(api, {
   'import.suggest': async ({ names }: { names: string[] }) => suggestCategories(Array.isArray(names) ? names.map(String) : []),
   'import.commit': async (plan: ImportPlan) => commitImport(plan),
   'contacts.list': async () => listContacts(),
+
+  'changes.batches': async (p: Parameters<typeof listBatches>[0]) => listBatches(p ?? {}),
+  'changes.batch': async (p: Parameters<typeof batchChanges>[0]) => batchChanges(p),
+  'changes.row': async (p: Parameters<typeof rowHistory>[0]) => rowHistory(p),
+  /** Moves history before a date into a .tallylog file beside the company file. */
+  'changes.archive': async (p: { before: string; beforeAt: string }, _app, { window: win }) => {
+    const prep = archivePrepare(p);
+    const hash = await sha256(prep.text);
+    return inWindow(win, () => ({ ...archiveCommit({ dest: prep.dest, before: prep.before, day: prep.day, hash }), changes: prep.counts.changes }));
+  },
   'contacts.save': async (input: ContactInput) => saveContact(input),
   'contacts.archive': async ({ id, archived }: { id: number; archived: boolean }) => archiveContact(id, archived),
 } satisfies Record<string, TinyApiHandler>);
 
-export function init(app: TinyApp) {
-  appRef = app;
+/**
+ * Calls that only read. Every other call runs inside a change-log batch, so
+ * anything that writes is logged, including calls added later; a batch that
+ * changed nothing is dropped.
+ */
+const READ_ONLY = /^(app\.|company\.|drop\.|changes\.|file\.|import\.(read|suggest)$|prefs\.get$|rules\.match$|templates\.readLogo$|reports\.|ledger\.|bills\.remittance$|entries\.summary$|invoices\.suggestNumber$|reconcile\.state$|journals\.accounts$|bas\.list$|.*\.(list|get)$)/;
+
+// Every handler runs bound to its calling window (see db.ts).
+for (const [name, handler] of Object.entries(api)) {
+  const logged = !READ_ONLY.test(name);
+  api[name] = (params, app, meta) => {
+    const win = meta?.window ?? 'main';
+    return inWindow(win, () => {
+      const batch = logged && hasCompany() ? beginBatch(name) : null;
+      let out: unknown;
+      try {
+        out = handler(params, app, meta ?? { window: win });
+      } catch (e) {
+        if (batch) endBatch(batch);
+        throw e;
+      }
+      if (!batch) return out;
+      return Promise.resolve(out).finally(() => endBatch(batch));
+    });
+  };
 }
 
-export function onWindowClosed() {
-  closeCompany();
+// ---- drops -------------------------------------------------------------------------
+const drops = new Map<string, { best: string; score: number; timer: ReturnType<typeof setTimeout> }>();
+
+function claimDrop(paths: string[], win: string, score: number) {
+  if (!paths.length) return;
+  const key = paths.join('\n');
+  const d = drops.get(key);
+  if (d) {
+    if (score > d.score || (score === d.score && win === 'main')) Object.assign(d, { best: win, score });
+    return;
+  }
+  // Every window answers within a moment; then the best placed one gets it.
+  drops.set(key, {
+    best: win,
+    score,
+    timer: setTimeout(() => {
+      const won = drops.get(key)!;
+      drops.delete(key);
+      windowHandle(won.best).push('drop', { paths });
+    }, 120),
+  });
+}
+
+export function init(app: TinyApp) {
+  appRef = app;
+  app.win.setHideOnClose(true);
+}
+
+/** Menu clicks reach every window; send each to the focused one only. */
+export function onMenu(id: string) {
+  // With every window closed on macOS, the menu bar still works: bring main back for it.
+  if (focusedWindow === 'main' && mainHidden) showMain();
+  windowHandle(focusedWindow).push('menu', { id });
+}
+
+export function onWindowState(info: TinyWindowStateEvent) {
+  if (info.focused) focusedWindow = info.win;
+  if (info.win !== 'main') return;
+  if (info.focused) mainHidden = false;
+  else checkMainHidden();
+}
+
+export function onOpenFiles(paths: string[]) {
+  if (!mainStarted) pendingFiles.push(...paths);
+  else {
+    if (focusedWindow === 'main' && mainHidden) showMain();
+    windowHandle(focusedWindow).push('open-files', { paths });
+  }
+}
+
+export function onWindowClosed(id: string) {
+  if (id === 'main') {
+    for (const win of openWindows()) closeCompany(win);
+  } else closeCompany(id);
+  pendingOpen.delete(id);
+  if (focusedWindow === id) focusedWindow = 'main';
 }

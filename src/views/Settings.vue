@@ -17,6 +17,7 @@ import {
   toast,
 } from '@octans/ui';
 import { api, errorMessage, type Company } from '../lib/api';
+import { appSettingsPanel } from '../lib/appSettings';
 import { backupCompany, closeCompany } from '../lib/company';
 import { formatDay } from '../lib/dates';
 import { CURRENCIES } from '../lib/money';
@@ -277,7 +278,10 @@ async function setLock(date: string | null) {
             <span>Theme</span>
             <ThemeSwitch />
           </div>
-          <p class="subdued Hint">To follow your computer's light/dark setting instead, choose View → Appearance → System.</p>
+          <p class="subdued Hint">Theme, density and size apply to every company. Change them all in App settings.</p>
+          <div class="Buttons">
+            <Button icon="mdi:tune-variant" @click="appSettingsPanel.visible = true">App settings…</Button>
+          </div>
         </CardSection>
       </Card>
 

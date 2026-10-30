@@ -55,11 +55,13 @@ export interface StartState {
   reopenError: string | null;
   locked: boolean;
   internalDir: string;
+  /** Files opened with the app before the page was ready (main window only). */
+  openFiles: string[];
 }
 
 export type OpenResult =
   | { ok: true; company: Company }
-  | { ok: false; locked: boolean; message: string };
+  | { ok: false; locked: boolean; message: string; elsewhere?: boolean };
 
 export interface Account {
   id: number;
@@ -367,16 +369,19 @@ export interface AgedContact {
 
 export interface StatementLine {
   date: string;
-  type: 'invoice' | 'credit' | 'payment' | 'refund';
+  type: 'invoice' | 'credit' | 'payment' | 'refund' | 'bill';
   docId: number;
   ref: string;
+  /** A bill's supplier invoice number. */
+  theirRef: string | null;
   dueDate: string | null;
-  /** + owes more, − owes less */
+  /** + owes more, − owes less (for suppliers: + we owe more) */
   amount: number;
   balance: number;
 }
 
 export interface Statement {
+  side: 'customer' | 'supplier';
   contact: { id: number; name: string; email: string | null; address: string | null };
   from: string;
   to: string;
@@ -385,6 +390,27 @@ export interface Statement {
   lines: StatementLine[];
   aging: { current: number; d30: number; d60: number; d90: number; older: number };
   open: AgedContact['invoices'];
+}
+
+export interface Remittance {
+  date: string;
+  accountName: string;
+  contact: { id: number; name: string; email: string | null; address: string | null };
+  items: {
+    entryId: number;
+    billId: number;
+    number: string;
+    /** the supplier's invoice number */
+    reference: string | null;
+    issueDate: string;
+    dueDate: string;
+    total: number;
+    paid: number;
+    /** still owing on the bill after this payment */
+    remaining: number;
+    memo: string | null;
+  }[];
+  total: number;
 }
 
 export interface ReconcileRow {
@@ -477,6 +503,63 @@ export interface TrialBalance {
   credit: number;
 }
 
+export interface JournalEntryLine {
+  /** 'cat:<id>' or a ledger account key (gst, opening, accruals, prepayments, accumdep) */
+  account: string;
+  /** cents; debit positive, credit negative */
+  amount: number;
+  memo: string | null;
+}
+
+export interface JournalEntry {
+  id: number;
+  date: string;
+  reference: string | null;
+  memo: string | null;
+  lines: JournalEntryLine[];
+}
+
+export interface JournalEntryRow {
+  id: number;
+  date: string;
+  reference: string | null;
+  memo: string | null;
+  /** total of the debits, cents */
+  total: number;
+  lineCount: number;
+}
+
+export interface JournalAccount extends LedgerAccount {
+  archived: boolean;
+}
+
+export interface ChangeBatch {
+  id: number;
+  /** ISO instant, UTC */
+  at: string;
+  /** the backend call that made it, e.g. 'entries.save' */
+  action: string;
+  host: string | null;
+  /** JSON with extra detail for some actions (archive markers, new companies) */
+  summary: string | null;
+  count: number;
+}
+
+export interface Change {
+  id: number;
+  at: string;
+  tableName: string;
+  rowId: number | null;
+  /** settings rows are keyed by name */
+  rowKey: string | null;
+  action: 'insert' | 'update' | 'delete';
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  batchId?: number;
+  batchAction?: string;
+  host?: string | null;
+}
+
 export interface Rule {
   id: number;
   pattern: string;
@@ -513,6 +596,11 @@ export const api = {
     call<Company>('company.create', p),
   createDemo: (dir: string | null, today: string) => call<Company>('company.createDemo', { dir, today }),
   openCompany: (path: string, force = false) => call<OpenResult>('company.open', { path, force }),
+  openInNewWindow: (path: string) => call<{ focused: boolean }>('company.openInNewWindow', { path }),
+  windowHidden: () => call<boolean>('app.windowHidden'),
+  newWindow: () => call<true>('app.newWindow'),
+  settingsChanged: () => call<true>('app.settingsChanged'),
+  claimDrop: (paths: string[], over: boolean, focused: boolean) => call<true>('drop.claim', { paths, over, focused }),
   closeCompany: () => call<true>('company.close'),
   forgetCompany: (path: string) => call<RecentCompany[]>('company.forget', { path }),
   backupCompany: (stamp: string) => call<string>('company.backup', { stamp }),
@@ -565,6 +653,7 @@ export const api = {
   agedReceivables: (asOf: string) => call<AgedContact[]>('reports.agedReceivables', { asOf }),
   agedPayables: (asOf: string) => call<AgedContact[]>('reports.agedPayables', { asOf }),
   statement: (p: { contactId: number; from: string; to: string }) => call<Statement>('reports.statement', p),
+  remittance: (entryId: number) => call<Remittance>('bills.remittance', { entryId }),
 
   reconcileState: (accountId: number) => call<ReconcileState>('reconcile.state', { accountId }),
   startReconcile: (p: { accountId: number; statementDate: string; statementBalance: number }) => call<number>('reconcile.start', p),
@@ -589,6 +678,18 @@ export const api = {
   journal: (p: { from?: string; to: string }) => call<{ accounts: LedgerAccount[]; lines: JournalLine[] }>('ledger.journal', p),
   trialBalance: (asOf: string) => call<TrialBalance>('ledger.trialBalance', { asOf }),
   balanceSheet: (asOf: string, yearStart: string) => call<BalanceSheet>('ledger.balanceSheet', { asOf, yearStart }),
+
+  listJournals: (q: { from?: string; to?: string } = {}) => call<JournalEntryRow[]>('journals.list', q),
+  getJournal: (id: number) => call<JournalEntry>('journals.get', { id }),
+  saveJournal: (j: Omit<JournalEntry, 'id'> & { id?: number }) => call<number>('journals.save', j),
+  deleteJournal: (id: number) => call<true>('journals.delete', { id }),
+  journalAccounts: () => call<JournalAccount[]>('journals.accounts'),
+
+  changeBatches: (p: { limit?: number; offset?: number; from?: string; to?: string; archive?: string | null } = {}) =>
+    call<{ rows: ChangeBatch[]; total: number; oldest: string | null }>('changes.batches', p),
+  batchChanges: (batchId: number, archive?: string | null) => call<Change[]>('changes.batch', { batchId, archive }),
+  rowHistory: (table: string, id: number) => call<Change[]>('changes.row', { table, id }),
+  archiveHistory: (before: string, beforeAt: string) => call<{ file: string; changes: number }>('changes.archive', { before, beforeAt }),
 
   getPref: <T>(key: string) => call<T | null>('prefs.get', { key }),
   setPref: (key: string, value: unknown) => call<true>('prefs.set', { key, value }),

@@ -1,11 +1,14 @@
 <script setup lang="ts">
-// A customer statement: opening balance, every invoice, credit and payment in
-// the period, the closing balance, and how overdue it is. Printable.
+// A contact's statement: opening balance, every document and payment in the
+// period, the closing balance, and how overdue it is. Printable.
+//
+// Customers get invoices, credit notes, payments and refunds. Suppliers get
+// bills and what we've paid, to check against the statement they send.
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Card, CardSection, DatePicker, FormLayoutGroup, Page, toast } from '@octans/ui';
 import PaperPreview from '../components/PaperPreview.vue';
-import { api, errorMessage, type InvoiceTemplate, type Statement } from '../lib/api';
+import { api, errorMessage, type InvoiceTemplate, type Statement, type StatementLine } from '../lib/api';
 import { addDays, formatDay, today } from '../lib/dates';
 import { docPath } from '../lib/documents';
 import { formatMoney } from '../lib/money';
@@ -24,7 +27,7 @@ const statement = ref<Statement | null>(null);
 const template = ref<InvoiceTemplate | null>(null);
 const paper = ref<HTMLElement | null>(null);
 
-const TYPE_LABEL = { invoice: 'Invoice', credit: 'Credit note', payment: 'Payment', refund: 'Refund' } as const;
+const TYPE_LABEL = { invoice: 'Invoice', credit: 'Credit note', payment: 'Payment', refund: 'Refund', bill: 'Bill' } as const;
 const BUCKETS = [
   { key: 'current', label: 'Not yet due' },
   { key: 'd30', label: '1–30 days' },
@@ -48,12 +51,40 @@ async function load() {
 watch([contactId, from, to], load);
 onMounted(load);
 
+const supplier = computed(() => statement.value?.side === 'supplier');
+const words = computed(() =>
+  supplier.value
+    ? { title: 'Account statement', charges: 'Bills', credits: 'Paid', owing: 'Balance we owe', newDoc: 'New bill', newPath: '/bills/new' }
+    : { title: 'Statement', charges: 'Charges', credits: 'Credits', owing: 'Balance owing', newDoc: 'New invoice', newPath: '/invoices/new' },
+);
+
+function lineDoc(type: StatementLine['type']) {
+  if (supplier.value) return 'bill' as const;
+  return type === 'refund' || type === 'credit' ? ('credit' as const) : ('invoice' as const);
+}
+
 function print() {
   void printElement(paper.value?.querySelector('.Doc') as HTMLElement | null);
 }
 
 function email() {
   const s = statement.value!;
+  if (supplier.value) {
+    const body = [
+      `Hi ${s.contact.name},`,
+      '',
+      `Here is our record of your account for ${formatDay(s.from)} to ${formatDay(s.to)}. We show ${money(s.closing)} owing to you.`,
+      'If your records differ, could you send us your statement so we can match them up?',
+      '',
+      'Thanks,',
+      company.value.name,
+    ].join('\n');
+    void tiny.app.shell.open(
+      `mailto:${encodeURIComponent(s.contact.email ?? '')}?subject=${encodeURIComponent(`Account statement from ${company.value.name}`)}&body=${encodeURIComponent(body)}`,
+    );
+    toast({ title: 'Email drafted', content: 'Print to PDF and attach the statement before sending.' });
+    return;
+  }
   const subject = `Statement from ${company.value.name}`;
   const body = [
     `Hi ${s.contact.name},`,
@@ -77,7 +108,7 @@ function email() {
     :primary-action="{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: print }"
     :secondary-actions="[
       { label: 'Email', icon: 'mdi:email-outline', onAction: email },
-      { label: 'New invoice', icon: 'mdi:file-document-plus-outline', onAction: () => router.push(`/invoices/new?contact=${contactId}`) },
+      { label: words.newDoc, icon: 'mdi:file-document-plus-outline', onAction: () => router.push(`${words.newPath}?contact=${contactId}`) },
     ]"
     :loading="!statement"
   >
@@ -102,7 +133,7 @@ function email() {
               <div class="Doc__muted">{{ [company.businessEmail, company.businessPhone].filter(Boolean).join(' · ') }}</div>
             </div>
             <div class="Doc__titleBlock">
-              <h1 class="Doc__title">Statement</h1>
+              <h1 class="Doc__title">{{ words.title }}</h1>
               <div>{{ formatDay(statement.from) }} – {{ formatDay(statement.to) }}</div>
             </div>
           </header>
@@ -118,8 +149,8 @@ function email() {
               <tr>
                 <th>Date</th>
                 <th>Details</th>
-                <th class="num">Charges</th>
-                <th class="num">Credits</th>
+                <th class="num">{{ words.charges }}</th>
+                <th class="num">{{ words.credits }}</th>
                 <th class="num">Balance</th>
               </tr>
             </thead>
@@ -131,10 +162,11 @@ function email() {
                 <td />
                 <td class="num">{{ money(statement.opening) }}</td>
               </tr>
-              <tr v-for="(l, i) in statement.lines" :key="i" class="Doc__row" @click="router.push(docPath(l.type === 'refund' || l.type === 'credit' ? 'credit' : 'invoice', l.docId))">
+              <tr v-for="(l, i) in statement.lines" :key="i" class="Doc__row" @click="router.push(docPath(lineDoc(l.type), l.docId))">
                 <td>{{ formatDay(l.date) }}</td>
                 <td>
-                  {{ TYPE_LABEL[l.type] }} {{ l.ref }}
+                  {{ TYPE_LABEL[l.type] }} {{ supplier && l.theirRef ? l.theirRef : l.ref }}
+                  <span v-if="supplier && l.theirRef" class="Doc__muted"> ({{ l.ref }})</span>
                   <span v-if="l.dueDate" class="Doc__muted"> · due {{ formatDay(l.dueDate) }}</span>
                 </td>
                 <td class="num">{{ l.amount > 0 ? money(l.amount) : '' }}</td>
@@ -150,12 +182,12 @@ function email() {
               <div>{{ money(statement.aging[b.key]) }}</div>
             </div>
             <div class="Doc__due">
-              <div class="Doc__label">Balance owing</div>
+              <div class="Doc__label">{{ words.owing }}</div>
               <div>{{ money(statement.closing) }}</div>
             </div>
           </section>
 
-          <footer v-if="template?.paymentDetails" class="Doc__foot">
+          <footer v-if="template?.paymentDetails && !supplier" class="Doc__foot">
             <div class="Doc__label">Payment</div>
             <div class="Doc__pre">{{ template.paymentDetails }}</div>
           </footer>
