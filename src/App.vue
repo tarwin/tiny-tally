@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { AppFrame, Navigation, Spinner, UiProvider, toast, type NavigationSectionType } from '@octans/ui';
 import AppSettings from './components/AppSettings.vue';
 import EntryEditor from './components/EntryEditor.vue';
+import UpdateBanner from './components/UpdateBanner.vue';
 import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
 import { api } from './lib/api';
@@ -13,6 +14,7 @@ import { today } from './lib/dates';
 import { dataChanged, newEntry } from './lib/entryEditor';
 import { session } from './lib/session';
 import { THEME_OPTIONS, applyTheme, restoreTheme, syncThemeMenu } from './lib/theme';
+import { checkForUpdates, updateFound } from './lib/updates';
 
 const route = useRoute();
 const router = useRouter();
@@ -109,7 +111,13 @@ function recentItems() {
 async function buildMenu() {
   const recent = recentItems();
   await tiny.win.menu.set([
-    { role: 'app', items: [{ id: 'app-settings', label: 'Settings…', key: ',' }] },
+    {
+      role: 'app',
+      items: [
+        { id: 'app-settings', label: 'Settings…', key: ',' },
+        { id: 'check-updates', label: 'Check for Updates…' },
+      ],
+    },
     {
       title: 'File',
       items: [
@@ -164,6 +172,8 @@ async function buildMenu() {
         },
       ],
     },
+    // macOS has Check for Updates… in the app menu.
+    ...(isMac ? [] : [{ title: 'Help', items: [{ id: 'check-updates', label: 'Check for Updates…' }] }]),
   ]);
   syncThemeMenu();
   syncDensityMenu();
@@ -256,6 +266,9 @@ function onMenu(id: string) {
     case 'app-settings':
       appSettingsPanel.visible = true;
       break;
+    case 'check-updates':
+      void checkForUpdates();
+      break;
     case 'books-reveal':
       if (session.books) void tiny.app.shell.reveal(session.books.path);
       break;
@@ -312,6 +325,7 @@ onMounted(async () => {
   offs.push(tiny.api.on('menu', ({ id }: { id: string }) => onMenu(id)));
   offs.push(tiny.api.on('open-files', ({ paths }: { paths: string[] }) => openFiles(paths)));
   offs.push(tiny.api.on('drop', ({ paths }: { paths: string[] }) => onDropped(paths)));
+  offs.push(tiny.api.on('update-available', (info: TinyUpdateInfo) => updateFound(info)));
   let dragOverAt = 0;
   const onDragOver = () => (dragOverAt = Date.now());
   window.addEventListener('dragover', onDragOver);
@@ -399,6 +413,7 @@ onBeforeUnmount(() => {
       <EntryEditor />
     </AppFrame>
     <AppSettings :nav-min="navMin" @update:nav-min="setNavMin" />
+    <UpdateBanner />
   </UiProvider>
 </template>
 

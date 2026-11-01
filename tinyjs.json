@@ -14,5 +14,9 @@
   },
   "fileExtensions": [
     "tally"
-  ]
+  ],
+  "update": {
+    "url": "https://github.com/tarwin/tiny-tally/releases/latest/download/manifest.json",
+    "auto": "daily"
+  }
 }

@@ -23,3 +23,9 @@
 
 4. Check the draft has all seven files (2 Linux, 1 Windows, 2 dmg + 2 zip for macOS), then publish it:
    `gh release edit v<version> --draft=false`.
+5. Auto-update: `node scripts/release-manifest.mjs`. It hashes the update
+   archives on the release, uploads one `manifest.json` covering every
+   platform, and checks each url answers. Apps look for it at
+   `releases/latest/download/manifest.json` (tinyjs.json `update.url`), so
+   until this runs, installed apps simply see no update. Write the release
+   notes before running it: they're shown in the app's update banner.
