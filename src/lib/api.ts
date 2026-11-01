@@ -225,6 +225,13 @@ export interface TradingName {
   phone: string | null;
   paymentDetails: string | null;
   templateId: number | null;
+  /** Its own numbering per type: a prefix, or null to share the books' numbering. */
+  invoicePrefix: string | null;
+  invoiceNext: number;
+  quotePrefix: string | null;
+  quoteNext: number;
+  creditPrefix: string | null;
+  creditNext: number;
   isDefault: boolean;
   isArchived: boolean;
   /** documents from it */
@@ -717,7 +724,8 @@ export const api = {
   setInvoiceStatus: (id: number, status: 'draft' | 'sent' | 'void') => call<true>('invoices.setStatus', { id, status }),
   deleteInvoice: (id: number) => call<true>('invoices.delete', { id }),
   duplicateInvoice: (id: number, today: string) => call<number>('invoices.duplicate', { id, today }),
-  suggestInvoiceNumber: (docType: DocType = 'invoice') => call<string>('invoices.suggestNumber', { docType }),
+  suggestInvoiceNumber: (docType: DocType = 'invoice', tradingNameId: number | null = null) =>
+    call<string>('invoices.suggestNumber', { docType, tradingNameId }),
   convertQuote: (id: number, today: string) => call<number>('invoices.convertQuote', { id, today }),
   creditInvoice: (id: number, today: string) => call<number>('invoices.credit', { id, today }),
   applyCredit: (p: { creditId: number; invoiceId: number; amount: number; date: string }) => call<number>('invoices.applyCredit', p),

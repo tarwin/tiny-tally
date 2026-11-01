@@ -198,6 +198,25 @@ watch(
   },
 );
 
+// A trading name can number its documents on its own, so the suggested number follows it.
+watch(
+  () => form.value.tradingNameId,
+  async (id) => {
+    if (loading.value || isBill.value) return;
+    const inv = existing.value;
+    // A draft's number moves to the new name's numbering on save (the backend
+    // decides, and keeps numbers typed by hand), so show the suggestion instead.
+    if (inv?.status === 'draft') {
+      if (id === inv.tradingNameId) {
+        if (!form.value.number) form.value.number = inv.number;
+        return;
+      }
+      if (form.value.number === inv.number) form.value.number = '';
+    }
+    suggested.value = await api.suggestInvoiceNumber(doc.value.type, id);
+  },
+);
+
 function parseQty(s: string) {
   const n = Number(String(s).replace(/,/g, ''));
   return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) : null;
@@ -324,7 +343,10 @@ onMounted(async () => {
   } else {
     const contact = Number(route.query.contact);
     if (contact) form.value.contactId = contact;
-    if (!isBill.value) useTradingName(tradingNameFor(form.value.contactId));
+    if (!isBill.value) {
+      useTradingName(tradingNameFor(form.value.contactId));
+      suggested.value = await api.suggestInvoiceNumber(doc.value.type, form.value.tradingNameId);
+    }
     form.value.lines = [blankLine()];
   }
   form.value.terms = existing.value ? form.value.terms : startTerms();

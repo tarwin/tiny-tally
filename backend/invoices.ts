@@ -176,27 +176,54 @@ export function getInvoice(id: number) {
   return inv;
 }
 
-function numberFor(type: DocType, n: number, s = getSettings()) {
-  return String(s[DOC[type].prefix]) + String(n).padStart(4, '0');
-}
-
-function nextNumber(type: DocType) {
+/**
+ * Where a document's number comes from: its trading name's own run if it has
+ * one for this type, else the books'.
+ */
+function numberRun(type: DocType, tradingNameId: number | null) {
+  const own = type !== 'bill' && tradingNameId !== null
+    ? one<{ prefix: string | null; next: number }>(getBooks().db,
+        `SELECT ${type}_prefix AS prefix, ${type}_next AS next FROM trading_names WHERE id = ?`, tradingNameId)
+    : null;
+  if (own?.prefix) {
+    return {
+      prefix: own.prefix,
+      next: own.next,
+      advance: (n: number) => run(getBooks().db, `UPDATE trading_names SET ${type}_next = ? WHERE id = ?`, n, tradingNameId),
+    };
+  }
   const s = getSettings();
-  const { db } = getBooks();
-  let n = Number(s[DOC[type].next]);
-  // Skip numbers already taken (e.g. typed by hand).
-  while (one(db, 'SELECT id FROM invoices WHERE number = ?', numberFor(type, n, s))) n++;
-  updateSettings({ [DOC[type].next]: n + 1 });
-  return numberFor(type, n, s);
+  return { prefix: String(s[DOC[type].prefix]), next: Number(s[DOC[type].next]), advance: (n: number) => updateSettings({ [DOC[type].next]: n }) };
 }
 
-export function suggestNumber(type?: DocType) {
+const format = (prefix: string, n: number) => prefix + String(n).padStart(4, '0');
+
+/** The run's next number, skipping any already taken (typed by hand, or another run with the same prefix). */
+function firstFree(r: { prefix: string; next: number }) {
+  const { db } = getBooks();
+  let n = r.next;
+  while (one(db, 'SELECT id FROM invoices WHERE number = ?', format(r.prefix, n))) n++;
+  return n;
+}
+
+function nextNumber(type: DocType, tradingNameId: number | null) {
+  const r = numberRun(type, tradingNameId);
+  const n = firstFree(r);
+  r.advance(n + 1);
+  return format(r.prefix, n);
+}
+
+/** True if `number` looks like one the run handed out (prefix + digits), not one typed by hand. */
+function fromRun(number: string, type: DocType, tradingNameId: number | null) {
+  const { prefix } = numberRun(type, tradingNameId);
+  return number.startsWith(prefix) && /^\d+$/.test(number.slice(prefix.length));
+}
+
+export function suggestNumber(type?: DocType, tradingNameId?: number | null) {
   const t = docType(type);
-  const s = getSettings();
-  const { db } = getBooks();
-  let n = Number(s[DOC[t].next]);
-  while (one(db, 'SELECT id FROM invoices WHERE number = ?', numberFor(t, n, s))) n++;
-  return numberFor(t, n, s);
+  const tn = t === 'bill' ? null : resolveTradingName(tradingNameId, null);
+  const r = numberRun(t, tn);
+  return format(r.prefix, firstFree(r));
 }
 
 function settledOn(id: number) {
@@ -277,6 +304,12 @@ export function saveInvoice(input: InvoiceInput) {
     ? input.sourceId
     : null;
   const tradingNameId = type === 'bill' ? null : resolveTradingName(input.tradingNameId, input.contactId, existing?.trading_name_id);
+  // A draft moved to a trading name with its own numbering takes a number from
+  // that run, unless its number was typed by hand.
+  const renumber = !!existing && existing.status === 'draft' && type !== 'bill'
+    && existing.trading_name_id !== tradingNameId && (!number || number === existing.number)
+    && fromRun(existing.number, type, existing.trading_name_id)
+    && numberRun(type, existing.trading_name_id).prefix !== numberRun(type, tradingNameId).prefix;
   // Sent documents keep who they were from; a draft shows the details as they are now.
   const snapshot = type === 'bill' || status !== 'sent'
     ? null
@@ -292,7 +325,7 @@ export function saveInvoice(input: InvoiceInput) {
            sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
            updated_at = datetime('now')
          WHERE id = ?`,
-        number ?? existing.number, input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
+        renumber ? nextNumber(type, tradingNameId) : number ?? existing.number, input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
         clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status, id);
       run(db, 'DELETE FROM invoice_lines WHERE invoice_id = ?', id);
       // Payments' GST share follows the new total.
@@ -303,7 +336,7 @@ export function saveInvoice(input: InvoiceInput) {
         `INSERT INTO invoices (doc_type, number, contact_id, issue_date, due_date, status, reference, notes, template_id,
            trading_name_id, from_snapshot, prices_include_tax, net, tax, total, sent_at, source_id, schedule_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'sent' THEN datetime('now') END, ?, ?) RETURNING id`,
-        type, number ?? nextNumber(type), input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
+        type, number ?? nextNumber(type, tradingNameId), input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
         clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status,
         sourceId, typeof input.scheduleId === 'number' ? input.scheduleId : null)!.id;
     }

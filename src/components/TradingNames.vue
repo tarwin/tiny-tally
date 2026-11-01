@@ -15,11 +15,22 @@ import {
   ModalSection,
   Select,
   TextField,
+  ToggleSwitch,
   confirmModal,
   toast,
   type DataTableColumnType,
 } from '@octans/ui';
 import { api, errorMessage, type InvoiceTemplate, type TradingName } from '../lib/api';
+import { session } from '../lib/session';
+
+/** Types a trading name can number on its own. Bills are numbered for the books. */
+const NUMBERED = [
+  { type: 'invoice', many: 'Invoices' },
+  { type: 'quote', many: 'Quotes' },
+  { type: 'credit', many: 'Credit notes' },
+] as const;
+type Numbered = (typeof NUMBERED)[number]['type'];
+const booksPrefix = (type: Numbered) => session.books?.[`${type}Prefix`] ?? '';
 
 const names = ref<TradingName[]>([]);
 const templates = ref<InvoiceTemplate[]>([]);
@@ -28,6 +39,12 @@ const loading = ref(true);
 const columns: DataTableColumnType[] = [
   { key: 'name', label: 'Name', minWidth: 200, formatFunc: (v, row) => (row.isArchived ? `${v} (archived)` : row.isDefault ? `${v} (default)` : v) },
   { key: 'email', label: 'Email', minWidth: 160, formatFunc: (v) => v ?? '' },
+  {
+    key: 'invoicePrefix',
+    label: 'Numbering',
+    minWidth: 140,
+    formatFunc: (_v, row) => (row.invoicePrefix || row.quotePrefix || row.creditPrefix ? `Own (${row.invoicePrefix ?? row.quotePrefix ?? row.creditPrefix}…)` : 'Shared'),
+  },
   { key: 'uses', label: 'Documents', width: 110, formatFunc: (v) => (v ? String(v) : '') },
 ];
 
@@ -57,8 +74,36 @@ const blank = () => ({
   phone: '',
   paymentDetails: '',
   templateId: null as number | null,
+  ownNumbering: false,
+  numbering: {
+    invoice: { prefix: '', next: '1' },
+    quote: { prefix: '', next: '1' },
+    credit: { prefix: '', next: '1' },
+  } as Record<Numbered, { prefix: string; next: string }>,
 });
 const form = ref(blank());
+
+/** 'Pine Trail Maps' → 'PTM-' for invoices, 'PTM-QU-' and 'PTM-CN-' for the others. */
+function suggestPrefix(type: Numbered) {
+  const initials = form.value.name
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase())
+    .join('')
+    .slice(0, 3);
+  return `${initials || 'TN'}-${{ invoice: '', quote: 'QU-', credit: 'CN-' }[type]}`;
+}
+
+function toggleNumbering(on: boolean) {
+  form.value.ownNumbering = on;
+  if (on) for (const { type } of NUMBERED) form.value.numbering[type].prefix ||= suggestPrefix(type);
+}
+
+function preview(type: Numbered) {
+  const n = form.value.numbering[type];
+  const next = Math.max(1, Math.floor(Number(n.next)) || 1);
+  return n.prefix.trim() ? `Next: ${n.prefix.trim()}${String(next).padStart(4, '0')}` : 'Blank: shares the books’ numbering.';
+}
 
 function openEditor(t?: TradingName) {
   nameError.value = null;
@@ -72,6 +117,12 @@ function openEditor(t?: TradingName) {
         phone: t.phone ?? '',
         paymentDetails: t.paymentDetails ?? '',
         templateId: t.templateId,
+        ownNumbering: !!(t.invoicePrefix || t.quotePrefix || t.creditPrefix),
+        numbering: {
+          invoice: { prefix: t.invoicePrefix ?? '', next: String(t.invoiceNext) },
+          quote: { prefix: t.quotePrefix ?? '', next: String(t.quoteNext) },
+          credit: { prefix: t.creditPrefix ?? '', next: String(t.creditNext) },
+        },
       }
     : blank();
   editing.value = true;
@@ -94,7 +145,18 @@ async function save() {
   }
   saving.value = true;
   try {
-    await api.saveTradingName(form.value);
+    const { ownNumbering, numbering, ...details } = form.value;
+    const prefix = (type: Numbered) => (ownNumbering && numbering[type].prefix.trim()) || null;
+    const next = (type: Numbered) => Math.floor(Number(numbering[type].next)) || 1;
+    await api.saveTradingName({
+      ...details,
+      invoicePrefix: prefix('invoice'),
+      invoiceNext: next('invoice'),
+      quotePrefix: prefix('quote'),
+      quoteNext: next('quote'),
+      creditPrefix: prefix('credit'),
+      creditNext: next('credit'),
+    });
     editing.value = false;
     toast({ title: form.value.id ? 'Trading name updated' : 'Trading name added', tone: 'success' });
     await load();
@@ -199,6 +261,19 @@ onMounted(load);
             <p class="subdued Help">Used on documents unless the template has its own logo.</p>
           </div>
           <Select v-model="form.templateId" label="Template" :options="templateOptions" help-text="New documents from this name start with it." />
+          <div>
+            <ToggleSwitch :model-value="form.ownNumbering" label="Number its documents separately" @update:model-value="toggleNumbering" />
+            <p class="subdued Help">
+              Its invoices, quotes and credit notes get their own numbers, so customers of one trading name don't see
+              how many the others send. Off, they share the numbering in Books settings.
+            </p>
+          </div>
+          <template v-if="form.ownNumbering">
+            <FormLayoutGroup v-for="{ type, many } in NUMBERED" :key="type">
+              <TextField v-model="form.numbering[type].prefix" :label="`${many}: prefix`" :placeholder="booksPrefix(type)" :help-text="preview(type)" />
+              <TextField v-model="form.numbering[type].next" label="Next number" type="number" />
+            </FormLayoutGroup>
+          </template>
         </FormLayout>
       </ModalSection>
     </Modal>

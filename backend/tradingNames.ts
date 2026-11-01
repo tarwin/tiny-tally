@@ -13,6 +13,13 @@ export interface TradingNameInput {
   phone?: string | null;
   paymentDetails?: string | null;
   templateId?: number | null;
+  /** Its own numbering: a prefix per type, or null to share the books' numbering. */
+  invoicePrefix?: string | null;
+  invoiceNext?: number;
+  quotePrefix?: string | null;
+  quoteNext?: number;
+  creditPrefix?: string | null;
+  creditNext?: number;
 }
 
 /** Who a document is from, as printed on it. */
@@ -28,7 +35,26 @@ export interface Sender {
 }
 
 const COLUMNS = `t.id, t.name, t.logo, t.address, t.email, t.phone, t.payment_details AS paymentDetails,
-  t.template_id AS templateId, t.is_default AS isDefault, t.is_archived AS isArchived`;
+  t.template_id AS templateId, t.is_default AS isDefault, t.is_archived AS isArchived,
+  t.invoice_prefix AS invoicePrefix, t.invoice_next AS invoiceNext, t.quote_prefix AS quotePrefix,
+  t.quote_next AS quoteNext, t.credit_prefix AS creditPrefix, t.credit_next AS creditNext`;
+
+/** The document types a trading name can number itself (bills are numbered for the books). */
+export const OWN_NUMBERING = ['invoice', 'quote', 'credit'] as const;
+export type NumberedType = (typeof OWN_NUMBERING)[number];
+
+/** Prefix ('' or blank = share the books' numbering) and next number, checked. */
+function numbering(input: TradingNameInput) {
+  const out: (string | number | null)[] = [];
+  for (const type of OWN_NUMBERING) {
+    const prefix = clean(input[`${type}Prefix`]);
+    if (prefix && prefix.length > 20) throw new Error('Keep number prefixes to 20 characters or fewer.');
+    const next = input[`${type}Next`] ?? 1;
+    if (!Number.isInteger(next) || next < 1 || next > 999_999_999) throw new Error('The next number must be a whole number from 1.');
+    out.push(prefix, next);
+  }
+  return out;
+}
 
 function clean(v: unknown) {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
@@ -107,18 +133,23 @@ export function saveTradingName(input: TradingNameInput) {
     : null;
   const clash = one(db, 'SELECT id FROM trading_names WHERE name = ? COLLATE NOCASE AND id IS NOT ?', name, input.id ?? null);
   if (clash) throw new Error(`You already have a trading name called ${name}.`);
-  const fields = [name, input.logo || null, clean(input.address), clean(input.email), clean(input.phone), clean(input.paymentDetails), templateId];
+  const fields = [
+    name, input.logo || null, clean(input.address), clean(input.email), clean(input.phone), clean(input.paymentDetails), templateId,
+    ...numbering(input),
+  ];
   if (input.id) {
     if (!one(db, 'SELECT id FROM trading_names WHERE id = ?', input.id)) throw new Error('That trading name no longer exists.');
     run(db,
-      `UPDATE trading_names SET name = ?, logo = ?, address = ?, email = ?, phone = ?, payment_details = ?, template_id = ?
+      `UPDATE trading_names SET name = ?, logo = ?, address = ?, email = ?, phone = ?, payment_details = ?, template_id = ?,
+         invoice_prefix = ?, invoice_next = ?, quote_prefix = ?, quote_next = ?, credit_prefix = ?, credit_next = ?
        WHERE id = ?`, ...fields, input.id);
     return input.id;
   }
   const first = !one(db, 'SELECT id FROM trading_names');
   return one<{ id: number }>(db,
-    `INSERT INTO trading_names (name, logo, address, email, phone, payment_details, template_id, is_default, sort)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM trading_names)) RETURNING id`,
+    `INSERT INTO trading_names (name, logo, address, email, phone, payment_details, template_id,
+       invoice_prefix, invoice_next, quote_prefix, quote_next, credit_prefix, credit_next, is_default, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM trading_names)) RETURNING id`,
     ...fields, first ? 1 : 0)!.id;
 }
 

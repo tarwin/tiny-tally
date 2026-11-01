@@ -527,4 +527,14 @@ export const migrations: string[] = [
     ELSE NULL END
   WHERE report_line IS NOT NULL;
   `,
+  // v14: a trading name can number its invoices, quotes and credit notes on
+  // its own (prefix + counter). A NULL prefix shares the books' numbering.
+  `
+  ALTER TABLE trading_names ADD COLUMN invoice_prefix TEXT;
+  ALTER TABLE trading_names ADD COLUMN invoice_next INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE trading_names ADD COLUMN quote_prefix TEXT;
+  ALTER TABLE trading_names ADD COLUMN quote_next INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE trading_names ADD COLUMN credit_prefix TEXT;
+  ALTER TABLE trading_names ADD COLUMN credit_next INTEGER NOT NULL DEFAULT 1;
+  `,
 ];

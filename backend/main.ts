@@ -541,7 +541,8 @@ Object.assign(api, {
   'invoices.setStatus': async ({ id, status }: { id: number; status: 'draft' | 'sent' | 'void' }) => setInvoiceStatus(id, status),
   'invoices.delete': async ({ id }: { id: number }) => deleteInvoice(id),
   'invoices.duplicate': async ({ id, today }: { id: number; today: string }) => duplicateInvoice(id, today),
-  'invoices.suggestNumber': async ({ docType }: { docType?: DocType } = {}) => suggestNumber(docType),
+  'invoices.suggestNumber': async ({ docType, tradingNameId }: { docType?: DocType; tradingNameId?: number | null } = {}) =>
+    suggestNumber(docType, tradingNameId),
   'invoices.convertQuote': async ({ id, today }: { id: number; today: string }) => convertQuote(id, today),
   'invoices.credit': async ({ id, today }: { id: number; today: string }) => creditInvoice(id, today),
   'invoices.applyCredit': async (p: Parameters<typeof applyCredit>[0]) => applyCredit(p),
