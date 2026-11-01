@@ -18,6 +18,7 @@ import { api, errorMessage } from '../lib/api';
 import { openBooksAt, pickAndOpenBooks, refreshSession } from '../lib/books';
 import { today } from '../lib/dates';
 import { CURRENCIES } from '../lib/money';
+import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import { appSettingsPanel } from '../lib/appSettings';
@@ -34,7 +35,7 @@ const props = defineProps<{ notice?: string | null; noticePath?: string | null }
 
 const name = ref('');
 const currency = ref(guessCurrency());
-const fiscalYearStart = ref(currency.value === 'AUD' ? 7 : 1);
+const fiscalYearStart = ref(currency.value === 'AUD' ? '07-01' : '01-01');
 const taxEnabled = ref(true);
 const abn = ref('');
 const isAud = computed(() => currency.value === 'AUD');
@@ -42,8 +43,16 @@ const demoing = ref(false);
 
 // Australian financial years start in July.
 watch(currency, (c, prev) => {
-  if (c === 'AUD' && fiscalYearStart.value === 1) fiscalYearStart.value = 7;
-  else if (prev === 'AUD' && fiscalYearStart.value === 7) fiscalYearStart.value = 1;
+  if (c === 'AUD' && fiscalYearStart.value === '01-01') fiscalYearStart.value = '07-01';
+  else if (prev === 'AUD' && fiscalYearStart.value === '07-01') fiscalYearStart.value = '01-01';
+});
+const fyMonth = computed({
+  get: () => splitYearStart(fiscalYearStart.value).month,
+  set: (m: number) => (fiscalYearStart.value = joinYearStart(m, splitYearStart(fiscalYearStart.value).day)),
+});
+const fyDay = computed({
+  get: () => splitYearStart(fiscalYearStart.value).day,
+  set: (d: number) => (fiscalYearStart.value = joinYearStart(splitYearStart(fiscalYearStart.value).month, d)),
 });
 const storage = ref<'internal' | 'folder'>('internal');
 const folder = ref<string | null>(null);
@@ -193,11 +202,8 @@ function shortPath(path: string) {
             />
             <FormLayoutGroup>
               <Select v-model="currency" label="Currency" :options="currencyOptions" searchable />
-              <Select
-                v-model="fiscalYearStart"
-                label="Financial year starts"
-                :options="monthOptions"
-              />
+              <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
+              <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />
             </FormLayoutGroup>
             <template v-if="isAud">
               <ToggleSwitch v-model="taxEnabled" label="Registered for GST" help-text="Tracks GST on sales and purchases and prepares your BAS." />

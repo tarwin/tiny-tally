@@ -3,8 +3,8 @@ import type { Database } from 'tjs:sqlite';
 export interface BooksSetup {
   name: string;
   currency: string;
-  /** 1–12, the month the financial year starts in. */
-  fiscalYearStart: number;
+  /** 'MM-DD', the day the financial year starts. */
+  fiscalYearStart: string;
   /** Registered for GST (Australia). */
   taxEnabled?: boolean;
 }
@@ -40,7 +40,7 @@ export function seedBooks(db: Database, setup: BooksSetup) {
   const meta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
   meta.run('books_name', setup.name);
   meta.run('currency', setup.currency);
-  meta.run('fiscal_year_start', String(setup.fiscalYearStart));
+  meta.run('fiscal_year_start', setup.fiscalYearStart);
   meta.run('created_at', new Date().toISOString());
   meta.run('tax_enabled', (setup.taxEnabled ?? setup.currency === 'AUD') ? '1' : '0');
   meta.run('tax_basis', 'cash');

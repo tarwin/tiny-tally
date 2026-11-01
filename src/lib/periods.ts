@@ -1,6 +1,7 @@
 // Date ranges, built in the user's local calendar as YYYY-MM-DD.
 const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export { iso as toIso };
 
 export type PeriodKey = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'thisYear' | 'lastYear' | 'all';
 
@@ -13,8 +14,42 @@ export const PERIOD_OPTIONS: { label: string; value: PeriodKey }[] = [
   { label: 'All dates', value: 'all' },
 ];
 
-/** fiscalStart: 1–12, the month the financial year begins. */
-export function periodRange(key: PeriodKey, fiscalStart = 1, now = new Date()): { from?: string; to?: string } {
+/** A financial year start, 'MM-DD'. The day is 1–28 so every year has it. */
+export type YearStart = string;
+
+export const DEFAULT_YEAR_START: YearStart = '01-01';
+
+export function splitYearStart(ys: YearStart): { month: number; day: number } {
+  const m = /^(\d{2})-(\d{2})$/.exec(ys);
+  const month = m ? Number(m[1]) : 1;
+  const day = m ? Number(m[2]) : 1;
+  return month >= 1 && month <= 12 && day >= 1 && day <= 28 ? { month, day } : { month: 1, day: 1 };
+}
+
+export function joinYearStart(month: number, day: number): YearStart {
+  return `${pad(month)}-${pad(day)}`;
+}
+
+export const YEAR_START_DAYS = Array.from({ length: 28 }, (_, i) => ({ label: String(i + 1), value: i + 1 }));
+
+/** The first day of the financial year that `on` falls in. */
+export function yearStartFor(on: Date | string, ys: YearStart): Date {
+  const d = typeof on === 'string' ? fromIso(on) : on;
+  const { month, day } = splitYearStart(ys);
+  const thisYear = new Date(d.getFullYear(), month - 1, day);
+  return d >= thisYear ? thisYear : new Date(d.getFullYear() - 1, month - 1, day);
+}
+
+/** Adds whole months, keeping the day of the month (always 1–28 here). */
+const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const fromIso = (s: string) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+export function periodRange(key: PeriodKey, ys: YearStart = DEFAULT_YEAR_START, now = new Date()): { from?: string; to?: string } {
   const y = now.getFullYear();
   const m = now.getMonth();
   switch (key) {
@@ -28,10 +63,9 @@ export function periodRange(key: PeriodKey, fiscalStart = 1, now = new Date()): 
     }
     case 'thisYear':
     case 'lastYear': {
-      const startMonth = fiscalStart - 1;
-      let startYear = m >= startMonth ? y : y - 1;
-      if (key === 'lastYear') startYear--;
-      return { from: iso(new Date(startYear, startMonth, 1)), to: iso(new Date(startYear + 1, startMonth, 0)) };
+      let start = yearStartFor(startOfDay(now), ys);
+      if (key === 'lastYear') start = addMonths(start, -12);
+      return { from: iso(start), to: iso(addDays(addMonths(start, 12), -1)) };
     }
     default:
       return {};
@@ -48,45 +82,60 @@ export interface TaxPeriod {
   current: boolean;
 }
 
+/** How a period's dates read: "Jul 2026" for a whole month, else "6 Apr–5 May 2026". */
+function span(start: Date, end: Date) {
+  const sameYear = start.getFullYear() === end.getFullYear();
+  if (start.getDate() === 1 && addDays(end, 1).getDate() === 1) {
+    return start.getMonth() === end.getMonth() && sameYear
+      ? `${MONTH_SHORT[start.getMonth()]} ${start.getFullYear()}`
+      : `${MONTH_SHORT[start.getMonth()]}${sameYear ? '' : ' ' + start.getFullYear()}–${MONTH_SHORT[end.getMonth()]} ${end.getFullYear()}`;
+  }
+  return `${start.getDate()} ${MONTH_SHORT[start.getMonth()]}${sameYear ? '' : ' ' + start.getFullYear()}–${end.getDate()} ${MONTH_SHORT[end.getMonth()]} ${end.getFullYear()}`;
+}
+
+/** "2026" for a calendar year, else "FY27" for the year ending in 2027. */
+function yearLabel(fyStart: Date, ys: YearStart) {
+  return ys === '01-01' ? String(fyStart.getFullYear()) : `FY${String(fyStart.getFullYear() + 1).slice(2)}`;
+}
+
 /**
- * BAS periods, newest first, aligned to the financial year. Quarters are
+ * Tax periods, newest first, aligned to the financial year. Quarters are
  * numbered within the financial year (Q1 = first three months).
  */
-export function taxPeriods(frequency: 'monthly' | 'quarterly' | 'annual', fiscalStart: number, count = 12, now = new Date()): TaxPeriod[] {
+export function taxPeriods(frequency: 'monthly' | 'quarterly' | 'annual', ys: YearStart, count = 12, now = new Date()): TaxPeriod[] {
   const months = frequency === 'monthly' ? 1 : frequency === 'quarterly' ? 3 : 12;
-  const today = iso(now);
+  const today = startOfDay(now);
   // Find the period containing today, then walk back.
-  const fsIndex = fiscalStart - 1;
-  const monthsSinceFyStart = (now.getMonth() - fsIndex + 12) % 12;
-  let start = new Date(now.getFullYear(), now.getMonth() - (monthsSinceFyStart % months), 1);
+  const fyStart = yearStartFor(today, ys);
+  let index = 0;
+  while (addMonths(fyStart, (index + 1) * months) <= today) index++;
+  let start = addMonths(fyStart, index * months);
   const out: TaxPeriod[] = [];
   for (let i = 0; i < count; i++) {
-    const end = new Date(start.getFullYear(), start.getMonth() + months, 0);
-    const fyStartYear = start.getMonth() >= fsIndex ? start.getFullYear() : start.getFullYear() - 1;
-    const fyLabel = fsIndex === 0 ? String(fyStartYear) : `FY${String(fyStartYear + 1).slice(2)}`;
+    const end = addDays(addMonths(start, months), -1);
+    const fy = yearStartFor(start, ys);
     let label: string;
-    if (months === 1) label = `${MONTH_SHORT[start.getMonth()]} ${start.getFullYear()}`;
+    if (months === 1) label = span(start, end);
     else if (months === 3) {
-      const q = Math.floor(((start.getMonth() - fsIndex + 12) % 12) / 3) + 1;
-      label = `Q${q} ${fyLabel} (${MONTH_SHORT[start.getMonth()]}–${MONTH_SHORT[end.getMonth()]} ${end.getFullYear()})`;
-    } else label = fsIndex === 0 ? `${fyStartYear}` : `${fyLabel} (${MONTH_SHORT[start.getMonth()]} ${start.getFullYear()}–${MONTH_SHORT[end.getMonth()]} ${end.getFullYear()})`;
-    out.push({ label, from: iso(start), to: iso(end), current: iso(end) >= today });
-    start = new Date(start.getFullYear(), start.getMonth() - months, 1);
+      const q = Math.round(((start.getFullYear() - fy.getFullYear()) * 12 + start.getMonth() - fy.getMonth()) / 3) + 1;
+      label = `Q${q} ${yearLabel(fy, ys)} (${span(start, end)})`;
+    } else label = ys === '01-01' ? yearLabel(fy, ys) : `${yearLabel(fy, ys)} (${span(start, end)})`;
+    out.push({ label, from: iso(start), to: iso(end), current: end >= today });
+    start = addMonths(start, -months);
   }
   return out;
 }
 
 /** The same-length period immediately before [from, to] (for comparisons). */
 export function previousPeriod(from: string, to: string) {
-  const [fy, fm, fd] = from.split('-').map(Number);
-  const [ty, tm, td] = to.split('-').map(Number);
-  // Whole months? shift by the month count; otherwise by day count.
-  const isMonthStart = fd === 1;
-  const isMonthEnd = new Date(ty, tm, 0).getDate() === td;
-  if (isMonthStart && isMonthEnd) {
-    const months = (ty - fy) * 12 + (tm - fm) + 1;
-    return { from: iso(new Date(fy, fm - 1 - months, 1)), to: iso(new Date(fy, fm - 1, 0)) };
+  const start = fromIso(from);
+  const next = addDays(fromIso(to), 1);
+  // Whole months from the same day (1 Jul–30 Jun, 6 Apr–5 Apr)? Shift by the
+  // month count, so leap years don't push it a day. Otherwise by day count.
+  if (start.getDate() <= 28 && next.getDate() === start.getDate()) {
+    const months = (next.getFullYear() - start.getFullYear()) * 12 + next.getMonth() - start.getMonth();
+    return { from: iso(addMonths(start, -months)), to: iso(addDays(start, -1)) };
   }
-  const days = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000) + 1;
-  return { from: iso(new Date(fy, fm - 1, fd - days)), to: iso(new Date(fy, fm - 1, fd - 1)) };
+  const days = Math.round((Date.UTC(next.getFullYear(), next.getMonth(), next.getDate()) - Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / 86400000);
+  return { from: iso(addDays(start, -days)), to: iso(addDays(start, -1)) };
 }

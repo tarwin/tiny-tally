@@ -12,7 +12,8 @@ export type DocType = 'invoice' | 'bill' | 'quote' | 'credit';
 export interface BooksSettings {
   name: string;
   currency: string;
-  fiscalYearStart: number;
+  /** 'MM-DD', day 1–28. */
+  fiscalYearStart: string;
   taxEnabled: boolean;
   taxRateBp: number;
   abn: string;
@@ -592,7 +593,7 @@ export const api = {
     call<Record<string, { categoryId: number; kind: 'income' | 'expense' }>>('import.suggest', { names }),
   commitImport: (plan: ImportPlan) => call<ImportResult>('import.commit', plan),
   start: () => call<StartState>('app.start'),
-  createBooks: (p: { name: string; currency: string; fiscalYearStart: number; dir: string | null; taxEnabled?: boolean; abn?: string }) =>
+  createBooks: (p: { name: string; currency: string; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; abn?: string }) =>
     call<Books>('books.create', p),
   createDemo: (dir: string | null, today: string) => call<Books>('books.createDemo', { dir, today }),
   openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),

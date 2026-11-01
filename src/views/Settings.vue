@@ -21,6 +21,7 @@ import { appSettingsPanel } from '../lib/appSettings';
 import { backupBooks, closeBooks } from '../lib/books';
 import { formatDay } from '../lib/dates';
 import { CURRENCIES } from '../lib/money';
+import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 
@@ -64,6 +65,15 @@ function fromBooks(c: Books): Form {
 }
 
 watch(books, (c) => (form.value = fromBooks(c)));
+
+const fyMonth = computed({
+  get: () => splitYearStart(form.value.fiscalYearStart).month,
+  set: (m: number) => (form.value.fiscalYearStart = joinYearStart(m, splitYearStart(form.value.fiscalYearStart).day)),
+});
+const fyDay = computed({
+  get: () => splitYearStart(form.value.fiscalYearStart).day,
+  set: (d: number) => (form.value.fiscalYearStart = joinYearStart(splitYearStart(form.value.fiscalYearStart).month, d)),
+});
 
 const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fromBooks(books.value)));
 
@@ -158,7 +168,8 @@ async function setLock(date: string | null) {
                 searchable
                 help-text="Changing this relabels amounts. It doesn't convert them."
               />
-              <Select v-model="form.fiscalYearStart" label="Financial year starts" :options="monthOptions" />
+              <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
+              <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />
             </FormLayoutGroup>
             <TextField v-model="form.businessAddress" label="Business address" multiline="3" help-text="Shown on your invoices." />
             <FormLayoutGroup>

@@ -8,6 +8,7 @@ import { api, type BalanceSection, type BalanceSheet } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay, today } from '../lib/dates';
 import { formatMoney } from '../lib/money';
+import { toIso, yearStartFor } from '../lib/periods';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
 
@@ -21,10 +22,7 @@ const el = ref<HTMLElement | null>(null);
 
 /** Start of the financial year that `iso` falls in. */
 function yearStart(iso: string) {
-  const [y, m] = iso.split('-').map(Number);
-  const fs = books.value.fiscalYearStart;
-  const year = m >= fs ? y : y - 1;
-  return `${year}-${String(fs).padStart(2, '0')}-01`;
+  return toIso(yearStartFor(iso, books.value.fiscalYearStart));
 }
 
 async function load() {

@@ -4,7 +4,8 @@ import { getBooks, one } from './db';
 export interface BooksSettings {
   name: string;
   currency: string;
-  fiscalYearStart: number;
+  /** 'MM-DD', day 1–28. */
+  fiscalYearStart: string;
   taxEnabled: boolean;
   taxRateBp: number;
   abn: string;
@@ -54,10 +55,23 @@ const oneOf = <T extends string>(values: T[], d: T): Omit<Field, 'key'> => ({
   },
 });
 
+/** 'MM-DD' with the day 1–28, so every year has that date. */
+export function isYearStart(v: string) {
+  const m = /^(\d{2})-(\d{2})$/.exec(v);
+  return !!m && +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 28;
+}
+
 const FIELDS: Record<keyof BooksSettings, Field> = {
   name: { key: 'books_name', ...str('Books') },
   currency: { key: 'currency', ...str('USD') },
-  fiscalYearStart: { key: 'fiscal_year_start', ...int(1, 1, 12) },
+  fiscalYearStart: {
+    key: 'fiscal_year_start',
+    parse: (v) => (v && isYearStart(v) ? v : '01-01'),
+    write: (v) => {
+      if (!isYearStart(String(v ?? ''))) throw new Error('Pick the day your financial year starts (1–28).');
+      return v;
+    },
+  },
   taxEnabled: { key: 'tax_enabled', ...bool(false) },
   taxRateBp: { key: 'tax_rate_bp', ...int(1000, 0, 5000) },
   abn: { key: 'abn', ...str() },

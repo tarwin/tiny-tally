@@ -8,7 +8,8 @@
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "octans-icons && vue-tsc -b && vite build --base=./",
     "preview": "vite preview",
-    "icons": "octans-icons"
+    "icons": "octans-icons",
+    "test": "node --test 'tests/*.test.ts'"
   },
   "dependencies": {
     "@octans/ui": "^1.10.0",
