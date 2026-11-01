@@ -145,7 +145,7 @@ const stamp = computed(() => {
       <header v-if="s.key === 'header'" class="Doc__head" :class="sectionClass(s)">
         <div class="Doc__from">
           <img v-if="t.logo" :src="t.logo" alt="" class="Doc__logo" />
-          <div class="Doc__from">{{ books.name }}</div>
+          <div class="Doc__fromName">{{ books.name }}</div>
           <div v-if="books.taxId && show.taxId" class="Doc__taxId">{{ taxIdLabel }} {{ books.taxId }}</div>
           <div v-if="books.businessAddress && show.fromAddress" class="Doc__pre">{{ books.businessAddress }}</div>
           <div v-if="(books.businessEmail || books.businessPhone) && show.fromContact" class="Doc__muted">
@@ -286,7 +286,7 @@ const stamp = computed(() => {
   margin-bottom: 4mm;
 }
 
-.Doc__from {
+.Doc__fromName {
   font-size: 17px;
   font-weight: 700;
 }
@@ -590,7 +590,7 @@ const stamp = computed(() => {
   color: var(--ink);
 }
 
-.Doc--minimal .Doc__from {
+.Doc--minimal .Doc__fromName {
   font-weight: 600;
 }
 

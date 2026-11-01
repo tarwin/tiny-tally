@@ -81,7 +81,7 @@ function email() {
           <header class="Doc__head">
             <div>
               <img v-if="template?.logo" :src="template.logo" alt="" class="Doc__logo" />
-              <div class="Doc__from">{{ books.name }}</div>
+              <div class="Doc__fromName">{{ books.name }}</div>
               <div v-if="books.taxId">{{ countryProfile(books.country).taxId.label }} {{ books.taxId }}</div>
               <div v-if="books.businessAddress" class="Doc__pre">{{ books.businessAddress }}</div>
               <div class="Doc__muted">{{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}</div>
@@ -170,7 +170,7 @@ function email() {
   margin-bottom: 4mm;
 }
 
-.Doc__from {
+.Doc__fromName {
   font-size: 17px;
   font-weight: 700;
 }
