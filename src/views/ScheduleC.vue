@@ -83,6 +83,14 @@ function exportCsv() {
       </div>
     </div>
 
+    <Banner v-if="report && report.rules.status !== 'checked'" status="warning" title="These Schedule C lines haven't been checked for this tax year" class="Unmapped">
+      <p>
+        {{ report.rules.status === 'before'
+          ? `Tiny Tally numbers lines as in ${report.rules.name}. Earlier years may have numbered them differently.`
+          : `Tiny Tally has been checked against Schedule C up to tax years ending ${formatDay(report.rules.checkedUntil)} and is using those line numbers. The IRS may have changed the form since; update the app, or check against the current IRS instructions.` }}
+      </p>
+    </Banner>
+
     <Banner v-if="report?.unmapped.length" status="warning" title="Some categories aren't on a Schedule C line" class="Unmapped">
       <p>
         {{ report.unmapped.map((u) => `${u.name} (${money(u.total)})`).join(', ') }}
@@ -142,6 +150,7 @@ function exportCsv() {
             A summary to fill in Schedule C (Form 1040) or to give your tax preparer. It doesn't cover cost of goods sold,
             vehicle details, home office or depreciation, and leaves out tax payments, owner draws and loans.
           </p>
+          <p v-if="report" class="subdued Note">Lines numbered as in {{ report.rules.name }}: checked against {{ report.rules.checkedAgainst }}.</p>
         </div>
       </CardSection>
     </Card>

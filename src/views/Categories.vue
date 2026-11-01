@@ -51,7 +51,7 @@ const columns = computed<DataTableColumnType[]>(() => [
         label: 'Schedule C',
         width: 240,
         formatFunc: (v: string | null, row: Category) =>
-          row.class !== 'pnl' ? '' : v && SCHEDULE_C_MAP[v] ? `${v} ${SCHEDULE_C_MAP[v].label}` : 'Not mapped',
+          row.class !== 'pnl' ? '' : v && SCHEDULE_C_MAP[v] ? `${SCHEDULE_C_MAP[v].line} ${SCHEDULE_C_MAP[v].label}` : 'Not mapped',
       }]
     : []),
   { key: 'uses', label: 'Transactions', type: 'integer' as const, width: 140 },
@@ -59,7 +59,7 @@ const columns = computed<DataTableColumnType[]>(() => [
 
 const lineOptions = computed(() => [
   { label: 'Not mapped', value: null },
-  ...SCHEDULE_C_LINES.filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.line} ${l.label}`, value: l.line })),
+  ...SCHEDULE_C_LINES.filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.line} ${l.label}`, value: l.key })),
 ]);
 
 const taxOptions = computed(() =>

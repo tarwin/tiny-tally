@@ -338,6 +338,28 @@ the trading name's logo is used).
 Each step leaves the app building (`pnpm build`) and the demo books
 working.
 
+## 7. Tax rules by year
+
+Forms, line numbers and rates change, so the app shouldn't quietly apply
+today's rules to every period.
+
+- `RETURN_RULES` (taxReturns.ts) holds dated rule sets per return: a name
+  ("GST101A (April 2023)"), the guidance it was checked against, `from`
+  (periods ending on or after) and `checkedUntil`. Each owns its form, so a
+  changed form is a new rule set and old returns keep theirs.
+- `tax_returns.rules` (v13) records the rule set a return was worked out with;
+  history and lodged returns use it.
+- A period past `checkedUntil` (or before the first rule set) shows a warning.
+  Lodging it needs an explicit "I've checked them"; the backend refuses
+  without `acknowledged`. Not a hard block: rules usually don't change.
+- Schedule C: categories keep a stable key ('other-expenses'), and
+  `SCHEDULE_C_YEARS` numbers the keys per tax year. 2025 moved other
+  expenses to 27b (27a is now the energy efficient buildings deduction).
+- The BAS is always Simpler BAS (G1, 1A, 1B): the ATO default for GST
+  turnover under $10 million at any frequency. Monthly no longer adds the
+  full labels.
+- RELEASING.md step 0: re-check guidance and move `checkedUntil` on.
+
 ## Out of scope for now
 
 - Upgrade migrations for existing files.

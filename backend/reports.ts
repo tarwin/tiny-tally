@@ -6,7 +6,7 @@ import { getSettings, updateSettings } from './settings';
 import { basLabelsFor, nzBoxesFor, type TaxCode } from '../src/shared/tax';
 import { countryProfile } from '../src/shared/countries';
 import {
-  RETURN_FORMS,
+  rulesFor,
   adjustmentGst,
   adjustmentTotals,
   isReturnKind,
@@ -17,7 +17,7 @@ import {
   type ReturnInputs,
   type ReturnKind,
 } from '../src/shared/taxReturns';
-import { SCHEDULE_C_LINES, SCHEDULE_C_MAP } from '../src/shared/scheduleC';
+import { scheduleCFor } from '../src/shared/scheduleC';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 type Basis = 'cash' | 'accrual';
@@ -144,10 +144,13 @@ export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
   const { db } = getBooks();
   const lineOf = new Map(all<any>(db, 'SELECT id, report_line FROM categories').map((c) => [c.id, c.report_line as string | null]));
   const { byCategory } = summarise({ from: p.from, to: p.to, basis: p.basis });
+  // Numbered as in the tax year the range ends in.
+  const { year, status } = scheduleCFor(p.to);
+  const keyed = new Map(year.lines.map((l) => [l.key, l]));
   const lines = new Map<string, { line: string; label: string; kind: 'income' | 'expense'; total: number; deductible: number; categories: { id: number; name: string; total: number }[] }>();
   const unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[] = [];
   for (const r of byCategory as any[]) {
-    const def = SCHEDULE_C_MAP[lineOf.get(r.id) ?? ''];
+    const def = keyed.get(lineOf.get(r.id) ?? '');
     if (!def || def.kind !== r.kind) {
       unmapped.push({ id: r.id, name: r.name, kind: r.kind, total: r.total });
       continue;
@@ -158,11 +161,16 @@ export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
     row.categories.push({ id: r.id, name: r.name, total: r.total });
     lines.set(def.line, row);
   }
-  const ordered = SCHEDULE_C_LINES.map((l) => lines.get(l.line)).filter((l) => !!l);
+  const ordered = year.lines.map((l) => lines.get(l.line)).filter((l) => !!l);
   const sum = (kind: 'income' | 'expense') => ordered.filter((l) => l.kind === kind).reduce((t, l) => t + l.deductible, 0);
   const grossIncome = sum('income');
   const totalExpenses = sum('expense');
-  return { lines: ordered, unmapped, totals: { grossIncome, totalExpenses, netProfit: grossIncome - totalExpenses } };
+  return {
+    lines: ordered,
+    unmapped,
+    totals: { grossIncome, totalExpenses, netProfit: grossIncome - totalExpenses },
+    rules: { id: year.id, name: year.name, checkedAgainst: year.checkedAgainst, checkedUntil: year.checkedUntil, status },
+  };
 }
 
 // ---- NZ -----------------------------------------------------------------------
@@ -238,7 +246,7 @@ export function taxReturnReport(p: { from: string; to: string; basis: Basis }) {
 
 export function listTaxReturns() {
   return all(getBooks().db,
-    `SELECT id, period_start AS periodStart, period_end AS periodEnd, basis, figures, inputs, adjustments, status,
+    `SELECT id, period_start AS periodStart, period_end AS periodEnd, basis, figures, inputs, adjustments, rules, status,
             lodged_at AS lodgedAt, created_at AS createdAt
      FROM tax_returns ORDER BY period_start DESC`,
   ).map((r: any) => ({ ...r, figures: JSON.parse(r.figures), inputs: JSON.parse(r.inputs), adjustments: JSON.parse(r.adjustments) }));
@@ -251,9 +259,15 @@ export function saveTaxReturn(p: {
   inputs?: ReturnInputs;
   adjustments?: Adjustment[];
   lodge?: boolean;
+  /** The person has checked figures worked out with rules this version hasn't been checked for. */
+  acknowledged?: boolean;
 }) {
   range(p.periodStart, p.periodEnd);
-  const form = RETURN_FORMS[returnKind()];
+  const { rules, status: ruleStatus } = rulesFor(returnKind(), p.periodEnd);
+  const form = rules.form;
+  if (p.lodge && ruleStatus !== 'checked' && !p.acknowledged) {
+    throw new Error(`This version of Tiny Tally hasn't been checked against the ${form.short} rules for this period. Update the app, or check the figures yourself before lodging.`);
+  }
   const { db } = getBooks();
   const existing = one<any>(db, 'SELECT * FROM tax_returns WHERE period_start = ? AND period_end = ?', p.periodStart, p.periodEnd);
   if (existing?.status === 'lodged') throw new Error(`This ${form.short} is already lodged. Reopen it to make changes.`);
@@ -277,14 +291,14 @@ export function saveTaxReturn(p: {
   db.transaction(() => {
     if (existing) {
       run(db,
-        `UPDATE tax_returns SET basis = ?, figures = ?, inputs = ?, adjustments = ?, status = ?,
+        `UPDATE tax_returns SET basis = ?, figures = ?, inputs = ?, adjustments = ?, rules = ?, status = ?,
            lodged_at = CASE WHEN ? = 'lodged' THEN datetime('now') END WHERE id = ?`,
-        p.basis, JSON.stringify(figures), JSON.stringify(inputs), JSON.stringify(adjustments), status, status, existing.id);
+        p.basis, JSON.stringify(figures), JSON.stringify(inputs), JSON.stringify(adjustments), rules.id, status, status, existing.id);
     } else {
       run(db,
-        `INSERT INTO tax_returns (period_start, period_end, basis, figures, inputs, adjustments, status, lodged_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'lodged' THEN datetime('now') END)`,
-        p.periodStart, p.periodEnd, p.basis, JSON.stringify(figures), JSON.stringify(inputs), JSON.stringify(adjustments), status, status);
+        `INSERT INTO tax_returns (period_start, period_end, basis, figures, inputs, adjustments, rules, status, lodged_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'lodged' THEN datetime('now') END)`,
+        p.periodStart, p.periodEnd, p.basis, JSON.stringify(figures), JSON.stringify(inputs), JSON.stringify(adjustments), rules.id, status, status);
     }
   })();
   if (p.lodge) refreshLockDate();

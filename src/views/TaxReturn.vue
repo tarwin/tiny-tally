@@ -35,7 +35,8 @@ import { booksProfile, session } from '../lib/session';
 import { TAX_CODE_MAP } from '../shared/tax';
 import {
   ADJUSTMENT_MAP,
-  RETURN_FORMS,
+  rulesById,
+  rulesFor,
   adjustmentGst,
   adjustmentTotals,
   isReturnKind,
@@ -45,16 +46,25 @@ import {
   type AdjustmentType,
   type ReturnFigures,
   type ReturnInputs,
+  type ReturnKind,
 } from '../shared/taxReturns';
 
 const router = useRouter();
 const books = computed(() => session.books!);
 const money = (v: number) => formatMoney(v, books.value.currency);
 const profile = computed(() => booksProfile());
-const form = computed(() => {
+const kind = computed<ReturnKind>(() => {
   const report = profile.value.tax?.report;
-  return isReturnKind(report) ? RETURN_FORMS[report] : RETURN_FORMS.bas;
+  return isReturnKind(report) ? report : 'bas';
 });
+/** The rules for this period; a saved return keeps the ones it was worked out with. */
+const ruling = computed(() =>
+  saved.value?.rules
+    ? { rules: rulesById(kind.value, saved.value.rules, saved.value.periodEnd), status: lodged.value ? ('checked' as const) : rulesFor(kind.value, period.value.to).status }
+    : rulesFor(kind.value, period.value?.to ?? today()),
+);
+const form = computed(() => ruling.value.rules.form);
+const formFor = (r: TaxReturn) => rulesById(kind.value, r.rules, r.periodEnd).form;
 /** The BAS is lodged in whole dollars (the ATO says to drop the cents); the NZ return in dollars and cents. */
 const boxMoney = (cents: number) =>
   form.value.wholeDollars
@@ -97,7 +107,7 @@ const inputs = computed<ReturnInputs>(() =>
         ...(form.value.adjustments ? adjustmentTotals(adjustments.value, context.value) : {}),
       },
 );
-const rows = computed(() => (figures.value ? form.value.rows(figures.value, inputs.value, books.value.taxPeriod) : []));
+const rows = computed(() => (figures.value ? form.value.rows(figures.value, inputs.value) : []));
 /** Positive to pay, negative for a refund. */
 const net = computed(() => (figures.value ? form.value.net(figures.value, inputs.value) : 0));
 
@@ -130,14 +140,20 @@ onMounted(() => {
   periodKey.value = (periods.value.find((p) => !p.current) ?? periods.value[0]).from;
 });
 
+const unchecked = computed(() => !lodged.value && ruling.value.status !== 'checked');
+
 async function save(lodge: boolean) {
   if (lodge) {
     const ok = await confirmModal({
       title: `Mark ${period.value.label} as lodged?`,
       content:
+        (unchecked.value
+          ? `This version of Tiny Tally hasn't been checked against the ${form.value.short} rules for this period. ` +
+            `Only go ahead if you've checked the figures against ${form.value.authority}'s current guidance yourself. `
+          : '') +
         `Do this once you have filed it with ${form.value.authority} (${form.value.lodgeWhere}). Transactions and invoices up to ` +
         `${formatDay(period.value.to)} will be locked so the figures can't drift. You can reopen it later if you need to amend.`,
-      primaryActionLabel: 'Mark as lodged',
+      primaryActionLabel: unchecked.value ? "I've checked them, mark as lodged" : 'Mark as lodged',
       secondaryActionLabel: 'Cancel',
     });
     if (!ok) return;
@@ -150,6 +166,7 @@ async function save(lodge: boolean) {
       basis: basis.value,
       inputs: inputs.value,
       adjustments: adjustments.value,
+      acknowledged: lodge && unchecked.value,
       lodge,
     })) as typeof session.books;
     toast({ title: lodge ? `${form.value.short} marked as lodged` : 'Draft saved', tone: 'success' });
@@ -384,6 +401,12 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
       <Badge v-else-if="period?.current" status="info">Period still running</Badge>
     </div>
 
+    <Banner v-if="unchecked" status="warning" :title="`These ${form.short} rules haven't been checked for this period`">
+      {{ ruling.status === 'before'
+        ? `Tiny Tally works this return out with ${ruling.rules.name}, which applies from ${formatDay(ruling.rules.from)}. Earlier periods may have used different rules.`
+        : `Tiny Tally has been checked against the rules for periods ending up to ${formatDay(ruling.rules.checkedUntil)}. Update the app before lodging, or check the figures against ${form.authority}'s current guidance yourself.` }}
+    </Banner>
+
     <Banner v-if="report && report.untagged && !lodged" status="warning" title="Some transactions have no tax code">
       {{ report.untagged }} transaction{{ report.untagged === 1 ? '' : 's' }} in this period aren't on the {{ form.short }}. Give their categories a tax code in
       <a href="#/categories">Categories</a>.
@@ -417,7 +440,8 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
                 </template>
               </tbody>
             </table>
-            <p class="subdued Note">{{ form.note(books.taxPeriod) }}</p>
+            <p class="subdued Note">{{ form.note }}</p>
+            <p class="subdued Note">Worked out with {{ ruling.rules.name }}: checked against {{ ruling.rules.checkedAgainst }}.</p>
           </div>
         </CardSection>
         <CardSection v-if="figures">
@@ -524,8 +548,8 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
               <td>
                 <Badge :status="r.status === 'lodged' ? 'success' : undefined">{{ r.status === 'lodged' ? 'Lodged' : 'Draft' }}</Badge>
               </td>
-              <td v-for="h in form.headline(r.figures)" :key="h.label" class="num">{{ boxMoney(h.value) }}</td>
-              <td class="num">{{ boxMoney(form.net(r.figures, r.inputs)) }}</td>
+              <td v-for="h in formFor(r).headline(r.figures)" :key="h.label" class="num">{{ boxMoney(h.value) }}</td>
+              <td class="num">{{ boxMoney(formFor(r).net(r.figures, r.inputs)) }}</td>
             </tr>
           </tbody>
         </table>

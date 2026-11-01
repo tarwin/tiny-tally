@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { COUNTRIES, countryProfile } from '../src/shared/countries.ts';
-import { SCHEDULE_C_MAP, isScheduleCLine } from '../src/shared/scheduleC.ts';
+import { SCHEDULE_C_MAP, isScheduleCKey, scheduleCFor } from '../src/shared/scheduleC.ts';
 import { nzBoxesFor, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../src/shared/tax.ts';
-import { RETURN_FORMS, adjustmentGst, adjustmentTotals } from '../src/shared/taxReturns.ts';
+import { RETURN_FORMS, adjustmentGst, adjustmentTotals, rulesFor } from '../src/shared/taxReturns.ts';
 
 test('ABN checksum', () => {
   const { check } = COUNTRIES.AU.taxId;
@@ -66,12 +66,29 @@ test('every US P&L category is on a Schedule C line of its own kind', () => {
         assert.equal(c.reportLine, undefined, c.name);
         continue;
       }
-      assert.ok(isScheduleCLine(c.reportLine), c.name);
+      assert.ok(isScheduleCKey(c.reportLine), c.name);
       assert.equal(SCHEDULE_C_MAP[c.reportLine!].kind, kind, c.name);
     }
   }
-  assert.equal(COUNTRIES.US.categories.expense.find((c) => c.name === 'Meals & Entertainment')?.reportLine, '24b');
-  assert.equal(SCHEDULE_C_MAP['24b'].deductiblePct, 50);
+  assert.equal(COUNTRIES.US.categories.expense.find((c) => c.name === 'Meals & Entertainment')?.reportLine, 'meals');
+  assert.equal(SCHEDULE_C_MAP.meals.deductiblePct, 50);
+});
+
+test('Schedule C lines are numbered by tax year', () => {
+  const line = (date: string) => scheduleCFor(date).year.lines.find((l) => l.key === 'other-expenses')!.line;
+  assert.equal(line('2024-12-31'), '27a');
+  assert.equal(line('2025-12-31'), '27b');
+  assert.equal(scheduleCFor('2025-12-31').status, 'checked');
+  // A year this version hasn't been checked against keeps the newest lines, with a warning.
+  assert.equal(scheduleCFor('2026-12-31').status, 'unchecked');
+  assert.equal(line('2026-12-31'), '27b');
+});
+
+test('tax return rules are dated', () => {
+  assert.equal(rulesFor('nz-gst', '2026-09-30').status, 'checked');
+  assert.equal(rulesFor('nz-gst', '2027-05-31').status, 'unchecked');
+  assert.equal(rulesFor('nz-gst', '2022-09-30').status, 'before');
+  assert.equal(rulesFor('bas', '2026-09-30').rules.id, 'bas-2017');
 });
 
 test('NZ GST return boxes (GST101A, IR375)', () => {
@@ -82,7 +99,7 @@ test('NZ GST return boxes (GST101A, IR375)', () => {
   assert.deepEqual(nzBoxesFor('expense', 'EXE'), []);
   // $115 GST sales, $200 exports, $23 of purchases, $1 adjustment, $2 credit adjustment.
   const form = RETURN_FORMS['nz-gst'];
-  const box = (code: string) => form.rows({ '5': 31500, '6': 20000, '11': 2300 }, { box9: 100, box13: 200 }, 'two-monthly').find((r) => r.code === code)!.value;
+  const box = (code: string) => form.rows({ '5': 31500, '6': 20000, '11': 2300 }, { box9: 100, box13: 200 }).find((r) => r.code === code)!.value;
   assert.equal(box('7'), 11500);
   assert.equal(box('8'), 1500);
   assert.equal(box('10'), 1600);
@@ -96,8 +113,9 @@ test('BAS keeps whole dollars and the Simpler BAS labels', () => {
   const form = RETURN_FORMS.bas;
   const f = { G1: 1100099, G2: 0, G3: 0, G4: 0, G10: 0, G11: 0, '1A': 100099, '1B': 50050 };
   assert.equal(form.net(f, { t7: 12599 }), 100000 - 50000 + 12500);
-  assert.deepEqual(form.rows(f, {}, 'quarterly').map((r) => r.code).slice(0, 3), ['G1', '1A', '1B']);
-  assert.ok(form.rows(f, {}, 'monthly').some((r) => r.code === 'G11'));
+  // Simpler BAS whatever the frequency: no G2, G10 or G11 boxes.
+  assert.deepEqual(form.rows(f, {}).map((r) => r.code).slice(0, 3), ['G1', '1A', '1B']);
+  assert.ok(!form.rows(f, {}).some((r) => r.code === 'G11'));
 });
 
 test('NZ GST adjustments (IR372)', () => {

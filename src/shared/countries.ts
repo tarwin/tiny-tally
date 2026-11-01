@@ -68,7 +68,7 @@ export interface SeedCategory {
   taxCode: TaxCode | null;
   /** Default 'pnl'. The rest are money kept off Profit & Loss. */
   class?: 'tax' | 'owner' | 'loan';
-  /** The tax form line it maps onto (US: Schedule C). */
+  /** The tax form line it maps onto (US: a Schedule C key, see scheduleC.ts). */
   reportLine?: string;
 }
 
@@ -114,7 +114,7 @@ interface SeedOptions {
   taxRefund?: string;
   /** Extra expense categories this country starts with. */
   extraExpenses?: string[];
-  /** Tax form line per category name. */
+  /** Tax form line key per category name. */
   lines?: Record<string, string>;
 }
 
@@ -271,26 +271,26 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       taxPayment: 'Sales Tax Payment',
       extraExpenses: ['Car & Truck', 'Supplies'],
       lines: {
-        Sales: '1',
-        Services: '1',
-        'Interest Income': '6',
-        'Other Income': '6',
-        'Advertising & Marketing': '8',
-        'Car & Truck': '9',
-        Contractors: '11',
-        Insurance: '15',
-        'Professional Fees': '17',
-        'Office Supplies': '18',
-        'Software & Subscriptions': '18',
-        Rent: '20b',
-        Supplies: '22',
-        'Taxes & Licences': '23',
-        Travel: '24a',
-        'Meals & Entertainment': '24b',
-        Utilities: '25',
-        'Bank Fees': '27a',
-        Equipment: '27a',
-        'Uncategorised Expense': '27a',
+        Sales: 'gross-receipts',
+        Services: 'gross-receipts',
+        'Interest Income': 'other-income',
+        'Other Income': 'other-income',
+        'Advertising & Marketing': 'advertising',
+        'Car & Truck': 'car-truck',
+        Contractors: 'contract-labor',
+        Insurance: 'insurance',
+        'Professional Fees': 'legal-professional',
+        'Office Supplies': 'office',
+        'Software & Subscriptions': 'office',
+        Rent: 'rent-property',
+        Supplies: 'supplies',
+        'Taxes & Licences': 'taxes-licenses',
+        Travel: 'travel',
+        'Meals & Entertainment': 'meals',
+        Utilities: 'utilities',
+        'Bank Fees': 'other-expenses',
+        Equipment: 'other-expenses',
+        'Uncategorised Expense': 'other-expenses',
       },
     }),
   },

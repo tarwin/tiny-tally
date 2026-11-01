@@ -1,6 +1,6 @@
 // Typed front door to the backend (backend/main.ts). Keep names in sync.
 import type { Country, TaxFrequency } from '../shared/countries';
-import type { Adjustment, AdjustmentContext, ReturnFigures, ReturnInputs, ReturnKind } from '../shared/taxReturns';
+import type { Adjustment, AdjustmentContext, ReturnFigures, ReturnInputs, ReturnKind, RuleStatus } from '../shared/taxReturns';
 import type { TaxCode } from '../shared/tax';
 import type { TemplateLayout } from '../shared/templateLayout';
 
@@ -91,7 +91,7 @@ export interface Category {
   archived: boolean;
   uses: number;
   taxCode: TaxCode | null;
-  /** US: the Schedule C line. */
+  /** US: the Schedule C key (scheduleC.ts), numbered per tax year. */
   reportLine: string | null;
 }
 
@@ -398,6 +398,8 @@ export interface ScheduleCReport {
   /** Categories with no Schedule C line (left out of the totals). */
   unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[];
   totals: { grossIncome: number; totalExpenses: number; netProfit: number };
+  /** Which tax year's line numbers it used, and whether this version has checked them. */
+  rules: { id: string; name: string; checkedAgainst: string; checkedUntil: string; status: RuleStatus };
 }
 
 export interface TaxReturn {
@@ -410,6 +412,8 @@ export interface TaxReturn {
   inputs: ReturnInputs;
   /** NZ: the adjustments behind Boxes 9 and 13, with the GST each came to. */
   adjustments: Adjustment[];
+  /** The rule set it was worked out with (taxReturns.ts). */
+  rules: string | null;
   status: 'draft' | 'lodged';
   lodgedAt: string | null;
 }
@@ -766,7 +770,7 @@ export const api = {
   getPref: <T>(key: string) => call<T | null>('prefs.get', { key }),
   setPref: (key: string, value: unknown) => call<true>('prefs.set', { key, value }),
   listTaxReturns: () => call<TaxReturn[]>('taxReturns.list'),
-  saveTaxReturn: (p: { periodStart: string; periodEnd: string; basis: Basis; inputs: ReturnInputs; adjustments?: Adjustment[]; lodge?: boolean }) =>
+  saveTaxReturn: (p: { periodStart: string; periodEnd: string; basis: Basis; inputs: ReturnInputs; adjustments?: Adjustment[]; lodge?: boolean; acknowledged?: boolean }) =>
     call<Books>('taxReturns.save', p),
   reopenTaxReturn: (id: number) => call<Books>('taxReturns.reopen', { id }),
   deleteTaxReturn: (id: number) => call<true>('taxReturns.delete', { id }),

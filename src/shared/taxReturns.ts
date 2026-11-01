@@ -2,8 +2,14 @@
 // are, which ones the person types in, and how the totals and the amount to
 // pay come out. One screen (TaxReturn.vue) shows any of them; the backend
 // works out the figures (reports.ts) and stores what was lodged.
+//
+// Forms and rules change over time, so each form belongs to a dated rule
+// set (RETURN_RULES) that says which periods it's for and what official
+// guidance it was checked against. A saved return records its rule set.
+// Periods past `checkedUntil` get a warning, and lodging them needs the
+// person to say they've checked the figures: update the app, or re-check
+// the guidance and move the date on (RELEASING.md).
 // No tjs:* imports and no Intl here: this file ships in both.
-import type { TaxFrequency } from './countries';
 
 export type ReturnKind = 'bas' | 'nz-gst';
 
@@ -43,14 +49,14 @@ export interface ReturnForm {
   filters: string[];
   /** Lodged in whole dollars, cents dropped (the ATO). */
   wholeDollars: boolean;
-  rows(f: ReturnFigures, inputs: ReturnInputs, frequency: TaxFrequency): ReturnRow[];
+  rows(f: ReturnFigures, inputs: ReturnInputs): ReturnRow[];
   /** What's owed: positive to pay, negative for a refund. */
   net(f: ReturnFigures, inputs: ReturnInputs): number;
   /** Two figures for a quick look: tax on sales, tax on purchases. */
   headline(f: ReturnFigures): { label: string; value: number }[];
   /** The steps shown beside the form. */
   steps: string[];
-  note(frequency: TaxFrequency): string;
+  note: string;
 }
 
 /** The ATO drops cents; every box is worked out in whole dollars. */
@@ -69,22 +75,14 @@ const BAS: ReturnForm = {
   ],
   filters: ['G1', 'G2', 'G3', 'G4', 'G10', 'G11', '1A', '1B'],
   wholeDollars: true,
-  rows(f, inputs, frequency) {
-    // Simpler BAS (anything but monthly) only asks for G1, 1A and 1B.
-    const full = frequency === 'monthly';
+  // Simpler BAS: G1, 1A and 1B only. It's the ATO's method for GST turnover
+  // under $10 million, whatever the reporting frequency, so every sole trader.
+  rows(f, inputs) {
     const a8 = dollars(f['1A']) + dollars(inputs.w2 ?? 0) + dollars(inputs.t7 ?? 0);
     const b8 = dollars(f['1B']);
     const nine = a8 - b8;
     return [
       { section: 'GST on sales and purchases', code: 'G1', label: 'Total sales', help: 'Including GST, and including GST-free and export sales', value: f.G1 },
-      ...(full
-        ? [
-            { code: 'G2', label: 'Export sales', value: f.G2 },
-            { code: 'G3', label: 'Other GST-free sales', value: f.G3 },
-            { code: 'G10', label: 'Capital purchases', help: 'Including GST', value: f.G10 },
-            { code: 'G11', label: 'Non-capital purchases', help: 'Including GST', value: f.G11 },
-          ]
-        : []),
       { code: '1A', label: 'GST on sales', value: f['1A'] },
       { code: '1B', label: 'GST on purchases', value: f['1B'] },
       { section: 'PAYG withholding and instalments', code: 'W1', label: 'Total salary, wages and other payments', value: inputs.w1 ?? 0, input: 'w1' },
@@ -105,9 +103,9 @@ const BAS: ReturnForm = {
     'Enter wages (W1, W2) and any PAYG instalment (T7) if they apply to you.',
     'Copy the figures into the ATO Business Portal, or send them to your agent.',
   ],
-  note: (frequency) =>
-    'Amounts are in whole dollars with cents dropped, as the ATO asks. Sales and purchases include GST.' +
-    (frequency === 'monthly' ? '' : ' Simpler BAS only needs G1, 1A and 1B; switch to monthly reporting in Settings for the full set of labels.'),
+  note:
+    'Amounts are in whole dollars with cents dropped, as the ATO asks. Sales include GST. This is Simpler BAS (G1, 1A and 1B), ' +
+    'for GST turnover under $10 million. The transactions below can still be filtered by the full labels (G2, G10, G11…).',
 };
 
 /** GST in a GST-inclusive amount at 15%: three twenty-thirds (IR375). */
@@ -151,7 +149,7 @@ const NZ_GST: ReturnForm = {
     'Add any GST adjustments, such as private use, entertainment or GST paid to Customs. They fill in Boxes 9 and 13.',
     'Copy the figures into myIR, or send them to your tax agent.',
   ],
-  note: () =>
+  note:
     'Sales and purchases include GST. Exempt supplies, such as interest and residential rent, are left off. ' +
     'GST is worked out as 3/23 of the totals, as the return does, so it can differ by a few cents from the GST on each invoice.',
 };
@@ -243,7 +241,65 @@ export function adjustmentTotals(list: Adjustment[], ctx: AdjustmentContext) {
   return { box9, box13 };
 }
 
-export const RETURN_FORMS: Record<ReturnKind, ReturnForm> = { bas: BAS, 'nz-gst': NZ_GST };
+// ---- rules by date --------------------------------------------------------------
+
+export type RuleStatus = 'checked' | 'unchecked' | 'before';
+
+export interface RuleSet {
+  id: string;
+  /** 'GST101A (April 2023)' */
+  name: string;
+  /** The official guidance it was checked against. */
+  checkedAgainst: string;
+  /** Periods ending on or after this use it. */
+  from: string;
+  /** Checked for periods ending up to this date; later ones get a warning. */
+  checkedUntil: string;
+  form: ReturnForm;
+}
+
+/** Oldest first. When a form changes, add a rule set with its own form; when re-checked, move checkedUntil on. */
+export const RETURN_RULES: Record<ReturnKind, RuleSet[]> = {
+  bas: [
+    {
+      id: 'bas-2017',
+      name: 'BAS with Simpler BAS (from July 2017)',
+      checkedAgainst: 'ATO pages on GST reporting methods and Simpler BAS, checked November 2026',
+      from: '2017-07-01',
+      checkedUntil: '2027-06-30',
+      form: BAS,
+    },
+  ],
+  'nz-gst': [
+    {
+      id: 'nz-gst101a-2023',
+      name: 'GST101A (April 2023)',
+      checkedAgainst: 'IRD GST guide IR375 (March 2026) and calculation sheet IR372',
+      from: '2023-04-01',
+      checkedUntil: '2027-03-31',
+      form: NZ_GST,
+    },
+  ],
+};
+
+/** The rules for a period ending on `periodEnd`, and whether this version of the app has checked them. */
+export function rulesFor(kind: ReturnKind, periodEnd: string): { rules: RuleSet; status: RuleStatus } {
+  const sets = RETURN_RULES[kind];
+  const rules = [...sets].reverse().find((r) => r.from <= periodEnd);
+  if (!rules) return { rules: sets[0], status: 'before' };
+  return { rules, status: periodEnd > rules.checkedUntil ? 'unchecked' : 'checked' };
+}
+
+/** A saved return's own rule set, falling back to the one for its period. */
+export function rulesById(kind: ReturnKind, id: string | null | undefined, periodEnd: string): RuleSet {
+  return RETURN_RULES[kind].find((r) => r.id === id) ?? rulesFor(kind, periodEnd).rules;
+}
+
+/** The newest form of each kind, for places that aren't tied to a period. */
+export const RETURN_FORMS: Record<ReturnKind, ReturnForm> = {
+  bas: RETURN_RULES.bas[RETURN_RULES.bas.length - 1].form,
+  'nz-gst': RETURN_RULES['nz-gst'][RETURN_RULES['nz-gst'].length - 1].form,
+};
 
 export function isReturnKind(v: unknown): v is ReturnKind {
   return typeof v === 'string' && v in RETURN_FORMS;

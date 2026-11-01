@@ -510,4 +510,21 @@ export const migrations: string[] = [
   `
   ALTER TABLE tax_returns ADD COLUMN adjustments TEXT NOT NULL DEFAULT '[]';
   `,
+  // v13: tax rules by year. A return records the rule set it was worked out
+  // with. Schedule C categories keep a stable key instead of a line number,
+  // since the IRS renumbers lines (2025 moved other expenses to 27b).
+  `
+  ALTER TABLE tax_returns ADD COLUMN rules TEXT;
+  UPDATE categories SET report_line = CASE report_line
+    WHEN '1' THEN 'gross-receipts' WHEN '6' THEN 'other-income' WHEN '8' THEN 'advertising'
+    WHEN '9' THEN 'car-truck' WHEN '10' THEN 'commissions' WHEN '11' THEN 'contract-labor'
+    WHEN '13' THEN 'depreciation' WHEN '14' THEN 'employee-benefits' WHEN '15' THEN 'insurance'
+    WHEN '16a' THEN 'mortgage-interest' WHEN '16b' THEN 'other-interest' WHEN '17' THEN 'legal-professional'
+    WHEN '18' THEN 'office' WHEN '19' THEN 'pension' WHEN '20a' THEN 'rent-vehicles'
+    WHEN '20b' THEN 'rent-property' WHEN '21' THEN 'repairs' WHEN '22' THEN 'supplies'
+    WHEN '23' THEN 'taxes-licenses' WHEN '24a' THEN 'travel' WHEN '24b' THEN 'meals'
+    WHEN '25' THEN 'utilities' WHEN '26' THEN 'wages' WHEN '27a' THEN 'other-expenses'
+    ELSE NULL END
+  WHERE report_line IS NOT NULL;
+  `,
 ];

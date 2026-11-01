@@ -95,7 +95,7 @@ import {
 import { COUNTRIES, countryProfile, isCountry, type Country } from '../src/shared/countries';
 import type { ImportPlan } from '../src/shared/import';
 import { taxCodeOr, type TaxCode } from '../src/shared/tax';
-import { SCHEDULE_C_MAP, isScheduleCLine } from '../src/shared/scheduleC';
+import { SCHEDULE_C_MAP, isScheduleCKey } from '../src/shared/scheduleC';
 
 interface RecentBooks {
   path: string;
@@ -489,7 +489,7 @@ export const api: Record<string, TinyApiHandler> = {
     kind: 'income' | 'expense';
     taxCode?: TaxCode | null;
     class?: 'pnl' | 'tax' | 'owner' | 'loan' | 'asset';
-    /** US: the Schedule C line. */
+    /** US: the Schedule C key. */
     reportLine?: string | null;
   }) => {
     const klass = ['pnl', 'tax', 'owner', 'loan', 'asset'].includes(cls as string) ? cls! : 'pnl';
@@ -497,7 +497,7 @@ export const api: Record<string, TinyApiHandler> = {
     const country = getSettings().country;
     const code = ['tax', 'owner', 'loan'].includes(klass) ? (countryProfile(country).tax ? 'NTR' : null) : taxCodeOr(countryProfile(country).tax, kind, taxCode);
     // Only P&L categories land on Schedule C.
-    const line = klass === 'pnl' && country === 'US' && isScheduleCLine(reportLine) && SCHEDULE_C_MAP[reportLine].kind === kind ? reportLine : null;
+    const line = klass === 'pnl' && country === 'US' && isScheduleCKey(reportLine) && SCHEDULE_C_MAP[reportLine].kind === kind ? reportLine : null;
     name = String(blankToNull(name) ?? '').trim();
     if (!name) throw new Error('Give the category a name.');
     const { db } = getBooks();

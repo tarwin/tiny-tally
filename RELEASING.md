@@ -1,5 +1,12 @@
 # Releasing
 
+0. Tax rules: check `checkedUntil` in `RETURN_RULES` (src/shared/taxReturns.ts)
+   and `SCHEDULE_C_YEARS` (src/shared/scheduleC.ts). If a date is near or past,
+   re-check the official guidance named in `checkedAgainst` (ATO GST reporting
+   and Simpler BAS pages, IRD IR375 and IR372, IRS Instructions for Schedule C).
+   No change: move `checkedUntil` on and update `checkedAgainst`. A changed form
+   or new line numbers: add a new rule set or year from the date it applies,
+   and keep the old one so earlier returns still work out the same.
 1. Bump `version` in `tinyjs.json` and `package.json`, commit, push to `main`.
 2. Linux and Windows: run the **release** workflow (Actions → release → Run
    workflow, or `gh workflow run release.yml -f tinyjs_tag=v0.68.0`). It
