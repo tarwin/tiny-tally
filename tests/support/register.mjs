@@ -14,6 +14,7 @@ globalThis.tjs = {
   readFile: (p) => fs.readFile(p),
   writeFile: (p, data) => fs.writeFile(p, data),
   makeDir: (p, o) => fs.mkdir(p, o),
+  makeTempDir: (t) => fs.mkdtemp(t.replace(/X+$/, '')),
   remove: (p) => fs.rm(p, { force: true }),
   spawn: () => {
     throw new Error('spawn is not available in tests');

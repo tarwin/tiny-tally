@@ -15,6 +15,16 @@ const TYPES: Record<string, string> = {
   heic: 'image/heic',
   heif: 'image/heif',
 };
+/** The one extension each type is written out with, whatever the file was called. */
+const EXT: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+};
 const MAX_BYTES = 25 * 1024 * 1024;
 const TOO_BIG = 'That file is over 25 MB. Try a smaller scan or photo.';
 
@@ -28,6 +38,8 @@ function ownerWhere(o: Owner) {
 
 const baseName = (path: string) => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
 const extOf = (name: string) => name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+/** The name with its type's extension, so a file called "x.command" can't pass for a PDF. */
+const withExt = (name: string, mime: string) => `${name.replace(/\.[^.]*$/, '').trim() || 'Attachment'}.${EXT[mime]}`;
 
 /** A file the person picked or dropped, as base64 for the page to shrink (images) or send straight back. */
 export async function readAttachmentFile(path: string) {
@@ -49,9 +61,10 @@ export function addAttachment(p: Owner & { name: string; mime: string; data: str
   const { db } = getBooks();
   const w = ownerWhere(p);
   if (!one(db, `SELECT id FROM ${w.table} WHERE id = ?`, w.id)) throw new Error(`That ${w.what} no longer exists.`);
-  const name = baseName(String(p.name ?? '')).trim().slice(0, 200) || 'Attachment';
-  const mime = Object.values(TYPES).includes(p.mime) ? p.mime : TYPES[extOf(name)];
+  const given = baseName(String(p.name ?? '')).trim().slice(0, 200);
+  const mime = EXT[p.mime] ? p.mime : TYPES[extOf(given)];
   if (!mime) throw new Error('Attach a PDF or a photo (JPEG, PNG, HEIC, WebP or GIF).');
+  const name = withExt(given, mime);
   const bytes = fromBase64(String(p.data ?? ''));
   if (!bytes.length) throw new Error('That file is empty.');
   if (bytes.length > MAX_BYTES) throw new Error(TOO_BIG);
@@ -80,12 +93,20 @@ export async function saveAttachmentTo(id: number, path: string) {
   return path;
 }
 
-/** Writes a temporary copy for the system viewer (Preview, Acrobat…) and returns its path. */
+/** A folder of our own for this run of the app (mkdtemp: unique, private to this user). */
+let privateDir: Promise<string> | null = null;
+
+/**
+ * Writes a temporary copy for the system viewer (Preview, Acrobat…) and
+ * returns its path. Books can come from someone else, so the extension comes
+ * from the checked type, never the stored name: the system opens it as that.
+ */
 export async function openAttachment(id: number) {
-  const { name, data } = bytesOf(id);
-  const dir = `${tjs.tmpDir}/tiny-tally-attachments`;
-  await tjs.makeDir(dir, { recursive: true });
-  const path = `${dir}/${id}-${name.replace(/[^\w.\- ]+/g, '_')}`;
+  const { name, mime, data } = bytesOf(id);
+  if (!EXT[mime]) throw new Error("Tiny Tally can't open that kind of file.");
+  privateDir ??= tjs.makeTempDir(`${tjs.tmpDir}/tiny-tally-XXXXXX`);
+  const base = name.replace(/\.[^.]*$/, '').replace(/[^\w\- ]+/g, '_').slice(0, 80) || 'Attachment';
+  const path = `${await privateDir}/${id}-${base}.${EXT[mime]}`;
   await tjs.writeFile(path, new Uint8Array(data));
   return path;
 }

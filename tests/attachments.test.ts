@@ -63,3 +63,17 @@ test('only PDFs and photos, on something that exists', async () => {
   });
   b.close();
 });
+
+test('a file opens with the extension of its checked type, never its stored name', async () => {
+  const b = await withEntry();
+  const id = b.run(() => addAttachment({ entryId: b.entryId, name: 'invoice.command', mime: 'application/pdf', data: toBase64(bytes) }));
+  b.run(() => assert.equal(getAttachment(id).name, 'invoice.pdf'));
+  // Even a row written straight into a file someone sent us.
+  b.run(() => getBooks().db.exec(`UPDATE attachments SET name = 'evil.app' WHERE id = ${id}`));
+  const path = await b.run(() => openAttachment(id));
+  assert.match(path, /\/\d+-evil\.pdf$/);
+  assert.doesNotMatch(path, /tiny-tally-attachments/);
+  b.run(() => getBooks().db.exec(`UPDATE attachments SET mime = 'application/x-sh' WHERE id = ${id}`));
+  await assert.rejects(b.run(() => openAttachment(id)), /can't open/);
+  b.close();
+});
