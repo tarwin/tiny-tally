@@ -394,6 +394,23 @@ export interface ProfitAndLoss {
   };
 }
 
+export interface CashFlowSection {
+  lines: { label: string; amount: number }[];
+  total: number;
+}
+
+export interface CashFlow {
+  operating: CashFlowSection;
+  investing: CashFlowSection;
+  financing: CashFlowSection;
+  net: number;
+  /** Cash on the day before the period. */
+  opening: number;
+  /** Opening balances of accounts first tracked during the period. */
+  started: number;
+  closing: number;
+}
+
 export interface ByContact {
   /** id 0 gathers transactions with no contact */
   rows: { id: number; name: string; total: number; count: number; compare: number }[];
@@ -809,6 +826,7 @@ export const api = {
 
   profitAndLoss: (p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string; budget?: boolean }) =>
     call<ProfitAndLoss>('reports.profitAndLoss', p),
+  cashFlow: (p: { from: string; to: string }) => call<CashFlow>('reports.cashFlow', p),
   monthly: (p: { from: string; to: string; basis?: Basis }) =>
     call<{ month: string; income: number; expense: number }[]>('reports.monthly', p),
   byContact: (p: { from: string; to: string; basis: Basis; kind: CategoryKind; compareFrom?: string; compareTo?: string }) =>

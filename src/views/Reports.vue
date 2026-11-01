@@ -33,6 +33,12 @@ const reports = computed(() => [
     body: 'Set what you expect to earn and spend each month, then see how you are tracking.',
   },
   {
+    to: '/reports/cash-flow',
+    icon: 'mdi:cash-sync',
+    title: 'Cash flow',
+    body: 'Where your cash came from and went: day-to-day trading, buying assets, and owner and loan money.',
+  },
+  {
     to: '/reports/sales-by-customer',
     icon: 'mdi:account-star-outline',
     title: 'Sales by customer',

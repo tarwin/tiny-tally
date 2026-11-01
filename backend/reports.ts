@@ -82,6 +82,53 @@ export function profitAndLoss(p: { from: string; to: string; basis: Basis; compa
   };
 }
 
+/**
+ * Cash flow (direct method): every money account together, credit cards as
+ * negative cash. Transfers between them cancel out; journals move no cash.
+ * Opening plus the movements always comes to closing.
+ */
+export function cashFlow(p: { from: string; to: string }) {
+  range(p.from, p.to);
+  const { db } = getBooks();
+  const rows = all<{ class: string; id: number; name: string; amount: number }>(db,
+    `SELECT COALESCE(c.class, 'pnl') AS class, COALESCE(c.id, 0) AS id, COALESCE(c.name, 'Uncategorised') AS name,
+            SUM(CASE l.kind WHEN 'income' THEN l.gross ELSE -l.gross END) AS amount
+     FROM ledger_cash l LEFT JOIN categories c ON c.id = l.category_id
+     WHERE l.entry_id IS NOT NULL AND l.date BETWEEN ? AND ?
+     GROUP BY c.id
+     ORDER BY c.name`, p.from, p.to);
+  const byClass = (...classes: string[]) => rows.filter((r) => classes.includes(r.class) && r.amount !== 0).map((r) => ({ label: r.name, amount: r.amount }));
+  // Day-to-day: money from sales in, money for expenses out, then each tax payment or refund.
+  const pnl = one<{ received: number; paid: number }>(db,
+    `SELECT COALESCE(SUM(CASE WHEN l.kind = 'income' THEN l.gross END), 0) AS received,
+            COALESCE(SUM(CASE WHEN l.kind = 'expense' THEN l.gross END), 0) AS paid
+     FROM ledger_cash l LEFT JOIN categories c ON c.id = l.category_id
+     WHERE l.entry_id IS NOT NULL AND l.date BETWEEN ? AND ? AND COALESCE(c.class, 'pnl') = 'pnl'`, p.from, p.to)!;
+  const section = (lines: { label: string; amount: number }[]) => ({ lines, total: lines.reduce((t, l) => t + l.amount, 0) });
+  const operating = section([
+    { label: 'Received from customers and other income', amount: pnl.received },
+    { label: 'Paid to suppliers and for expenses', amount: -pnl.paid },
+    ...byClass('tax'),
+  ].filter((l) => l.amount !== 0));
+  const investing = section(byClass('asset'));
+  const financing = section(byClass('owner', 'loan'));
+
+  // Cash on hand: opening balances of accounts already tracked, plus every movement so far.
+  const cashOn = (date: string) => one<{ n: number }>(db,
+    `SELECT COALESCE((SELECT SUM(opening_balance) FROM accounts WHERE opening_date <= ?1), 0)
+          + COALESCE((SELECT SUM(CASE kind WHEN 'income' THEN amount WHEN 'expense' THEN -amount ELSE 0 END)
+                      FROM entries WHERE date <= ?1), 0) AS n`, date)!.n;
+  const dayBefore = (() => {
+    const d = new Date(Date.UTC(Number(p.from.slice(0, 4)), Number(p.from.slice(5, 7)) - 1, Number(p.from.slice(8, 10)) - 1));
+    return d.toISOString().slice(0, 10);
+  })();
+  // Accounts that started being tracked during the period bring their opening balance with them.
+  const started = one<{ n: number }>(db,
+    'SELECT COALESCE(SUM(opening_balance), 0) AS n FROM accounts WHERE opening_date BETWEEN ? AND ?', p.from, p.to)!.n;
+  const net = operating.total + investing.total + financing.total;
+  return { operating, investing, financing, net, opening: cashOn(dayBefore), started, closing: cashOn(p.to) };
+}
+
 /** Income and expenses per calendar month (before tax), oldest first, with empty months filled in. */
 export function monthlyTotals(p: { from: string; to: string; basis?: Basis }) {
   range(p.from, p.to);

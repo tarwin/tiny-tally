@@ -42,6 +42,7 @@ export const router = createRouter({
     { path: '/budget', name: 'budget', component: () => import('./views/Budget.vue') },
     { path: '/items', name: 'items', component: () => import('./views/Items.vue') },
     { path: '/rules', name: 'rules', component: () => import('./views/Rules.vue') },
+    { path: '/reports/cash-flow', name: 'cash-flow', component: () => import('./views/CashFlow.vue') },
     { path: '/reports/sales-by-customer', name: 'sales-by-customer', component: () => import('./views/ByContact.vue'), meta: { kind: 'income' } },
     { path: '/reports/expenses-by-supplier', name: 'expenses-by-supplier', component: () => import('./views/ByContact.vue'), meta: { kind: 'expense' } },
     { path: '/reports/payables', name: 'payables', component: () => import('./views/Receivables.vue'), meta: { docType: 'bill' } },

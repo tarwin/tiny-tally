@@ -70,6 +70,7 @@ import {
 import {
   basReport,
   byContact,
+  cashFlow,
   monthlyTotals,
   salesTaxReport,
   scheduleCReport,
@@ -634,6 +635,7 @@ Object.assign(api, {
   'templates.readLogo': async ({ path }: { path: string }) => readLogo(path),
 
   'reports.profitAndLoss': async (p: Parameters<typeof profitAndLoss>[0]) => profitAndLoss(p),
+  'reports.cashFlow': async (p: Parameters<typeof cashFlow>[0]) => cashFlow(p),
   'reports.monthly': async (p: Parameters<typeof monthlyTotals>[0]) => monthlyTotals(p),
   'reports.byContact': async (p: Parameters<typeof byContact>[0]) => byContact(p),
   'reports.bas': async (p: Parameters<typeof basReport>[0]) => basReport(p),
