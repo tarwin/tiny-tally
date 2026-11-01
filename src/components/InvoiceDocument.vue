@@ -73,7 +73,7 @@ const showTax = computed(() => taxOn.value && t.value.showTaxColumn);
 const from = computed(() => props.sender ?? { name: props.books.name, address: null, email: null, phone: null, paymentDetails: null, logo: null });
 // A template's own logo wins; otherwise the trading name's.
 const logo = computed(() => t.value.logo || from.value.logo);
-const money = (v: number) => formatMoney(v, currency.value);
+const money = (v: number) => formatMoney(v, currency.value, props.books.documentCurrencyDisplay);
 
 /** Wording that only makes sense on invoices keeps its quote/credit-note form there. */
 const PER_TYPE: Partial<Record<LabelKey, Partial<Record<DocType, string>>>> = {

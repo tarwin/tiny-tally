@@ -48,6 +48,8 @@ const tax = computed(() => {
 });
 const currency = computed(() => books.value.currency);
 const money = (v: number) => formatMoney(v, currency.value);
+/** For the email to the customer, which follows the documents setting. */
+const docMoney = (v: number) => formatMoney(v, currency.value, books.value.documentCurrencyDisplay);
 
 const template = computed(
   () => templates.value.find((t) => t.id === invoice.value?.templateId) ?? templates.value.find((t) => t.isDefault) ?? null,
@@ -150,10 +152,10 @@ function email() {
   const subject = `${doc.value.one} ${inv.number} from ${inv.sender?.name ?? books.value.name}`;
   const lead =
     inv.docType === 'quote'
-      ? `Please find quote ${inv.number} for ${money(inv.total)}, valid until ${formatDay(inv.dueDate)}.`
+      ? `Please find quote ${inv.number} for ${docMoney(inv.total)}, valid until ${formatDay(inv.dueDate)}.`
       : inv.docType === 'credit'
-        ? `Please find credit note ${inv.number} for ${money(inv.total)}.`
-        : `Please find ${word} ${inv.number} for ${money(inv.balance || inv.total)}, due ${formatDay(inv.dueDate)}.`;
+        ? `Please find credit note ${inv.number} for ${docMoney(inv.total)}.`
+        : `Please find ${word} ${inv.number} for ${docMoney(inv.balance || inv.total)}, due ${formatDay(inv.dueDate)}.`;
   const body = [
     `Hi ${inv.contactName},`,
     '',

@@ -1,23 +1,60 @@
 // Money is stored as integer minor units (cents). Formatting happens here,
 // in the page — the txiki backend has no Intl.
 
+import { reactive } from 'vue';
+
+/**
+ * How the currency shows: '$1.00', 'A$1.00' or 'AUD 1.00'. Each set of books
+ * picks one for its own screens and one for documents it sends.
+ */
+export type CurrencyDisplay = 'narrow' | 'symbol' | 'code';
+export const CURRENCY_DISPLAYS: CurrencyDisplay[] = ['narrow', 'symbol', 'code'];
+
+/** The open books' on-screen choice (lib/session.ts keeps it in step). Reactive, so amounts redraw when it changes. */
+export const moneyDisplay = reactive({ screen: 'narrow' as CurrencyDisplay });
+
 const formatters = new Map<string, Intl.NumberFormat>();
 
-function formatter(currency: string) {
-  let f = formatters.get(currency);
+function formatter(currency: string, display: 'narrowSymbol' | 'code' = 'narrowSymbol') {
+  const key = `${currency}:${display}`;
+  let f = formatters.get(key);
   if (!f) {
-    f = new Intl.NumberFormat(undefined, { style: 'currency', currency });
-    formatters.set(currency, f);
+    f = new Intl.NumberFormat(undefined, { style: 'currency', currency, currencyDisplay: display });
+    formatters.set(key, f);
   }
   return f;
+}
+
+const symbols = new Map<string, string>();
+
+/**
+ * 'A$', 'NZ$', 'US$', '£'. The locale's own symbol won't do: en-AU writes AUD
+ * as plain '$' and USD as 'USD'. International English names every dollar.
+ */
+function distinctSymbol(currency: string) {
+  let sym = symbols.get(currency);
+  if (sym === undefined) {
+    const parts = new Intl.NumberFormat('en-001', { style: 'currency', currency }).formatToParts(0);
+    sym = parts.find((p) => p.type === 'currency')?.value ?? currency;
+    symbols.set(currency, sym);
+  }
+  return sym;
 }
 
 export function minorDigits(currency: string) {
   return formatter(currency).resolvedOptions().maximumFractionDigits ?? 2;
 }
 
-export function formatMoney(minor: number, currency: string) {
-  return formatter(currency).format(minor / 10 ** minorDigits(currency));
+/** Amounts on screen follow the books' choice; documents pass their own. */
+export function formatMoney(minor: number, currency: string, display: CurrencyDisplay = moneyDisplay.screen) {
+  const value = minor / 10 ** minorDigits(currency);
+  if (display === 'code') return formatter(currency, 'code').format(value);
+  if (display === 'narrow') return formatter(currency).format(value);
+  // The locale's layout (sign, grouping, symbol side) with the distinct symbol.
+  return formatter(currency)
+    .formatToParts(value)
+    .map((p) => (p.type === 'currency' ? distinctSymbol(currency) : p.value))
+    .join('');
 }
 
 /** "1,234.5" → 123450 (for a 2-digit currency). Returns null if unparseable. */

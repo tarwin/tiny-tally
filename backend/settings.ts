@@ -2,6 +2,9 @@
 import { TAX_FREQUENCIES, isCountry, type Country, type TaxFrequency } from '../src/shared/countries';
 import { getBooks, one } from './db';
 
+type CurrencyDisplay = 'narrow' | 'symbol' | 'code';
+const CURRENCY_DISPLAYS: CurrencyDisplay[] = ['narrow', 'symbol', 'code'];
+
 export interface BooksSettings {
   /** The owner's legal name. Documents show a trading name instead. */
   name: string;
@@ -28,6 +31,10 @@ export interface BooksSettings {
   creditPrefix: string;
   creditNext: number;
   paymentTermsDays: number;
+  /** How amounts show in the app: '$1.00', 'A$1.00' or 'AUD 1.00'. */
+  currencyDisplay: CurrencyDisplay;
+  /** The same for documents sent out (invoices, statements), read by people who may not know the currency. */
+  documentCurrencyDisplay: CurrencyDisplay;
   /** '#rrggbb' or '' — the stripe beside the menu that tells open books apart. */
   color: string;
   /** data: URL, or '' — shown top left instead of the app's logo. */
@@ -99,6 +106,8 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
   creditPrefix: { key: 'credit_prefix', ...str('CN-') },
   creditNext: { key: 'credit_next', ...int(1, 1, 999999999) },
   paymentTermsDays: { key: 'payment_terms_days', ...int(14, 0, 365) },
+  currencyDisplay: { key: 'currency_display', ...oneOf(CURRENCY_DISPLAYS, 'narrow') },
+  documentCurrencyDisplay: { key: 'document_currency_display', ...oneOf(CURRENCY_DISPLAYS, 'symbol') },
   logo: {
     key: 'books_logo',
     parse: (v) => v ?? '',

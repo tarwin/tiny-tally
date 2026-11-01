@@ -20,7 +20,8 @@ const route = useRoute();
 const router = useRouter();
 const contactId = computed(() => Number(route.params.id));
 const books = computed(() => session.books!);
-const money = (v: number) => formatMoney(v, books.value.currency);
+// A document for the customer or vendor, so it follows the documents setting.
+const money = (v: number) => formatMoney(v, books.value.currency, books.value.documentCurrencyDisplay);
 
 const from = ref(addDays(today(), -90));
 const to = ref(today());

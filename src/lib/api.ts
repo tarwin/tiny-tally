@@ -3,6 +3,7 @@ import type { Country, TaxFrequency } from '../shared/countries';
 import type { Adjustment, AdjustmentContext, ReturnFigures, ReturnInputs, ReturnKind, RuleStatus } from '../shared/taxReturns';
 import type { TaxCode } from '../shared/tax';
 import type { TemplateLayout } from '../shared/templateLayout';
+import type { CurrencyDisplay } from './money';
 
 export type { TaxCode };
 export type AccountKind = 'bank' | 'credit_card' | 'cash';
@@ -37,6 +38,8 @@ export interface BooksSettings {
   creditPrefix: string;
   creditNext: number;
   paymentTermsDays: number;
+  currencyDisplay: CurrencyDisplay;
+  documentCurrencyDisplay: CurrencyDisplay;
   color: string;
   logo: string;
   lockDate: string | null;

@@ -23,7 +23,7 @@ import { formatDay } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
 import { countryProfile } from '../shared/countries';
-import { parseRate, ratePercent } from '../lib/money';
+import { CURRENCY_DISPLAYS, formatMoney, parseRate, ratePercent } from '../lib/money';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import TradingNames from '../components/TradingNames.vue';
 
@@ -59,6 +59,8 @@ function fromBooks(c: Books): Form {
     billPrefix: c.billPrefix,
     invoiceNext: String(c.invoiceNext),
     paymentTermsDays: String(c.paymentTermsDays),
+    currencyDisplay: c.currencyDisplay,
+    documentCurrencyDisplay: c.documentCurrencyDisplay,
     taxRate: ratePercent(c.taxRatePpm),
     color: c.color,
     logo: c.logo,
@@ -78,6 +80,10 @@ const fyDay = computed({
 
 const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fromBooks(books.value)));
 
+/** Each choice shown as it looks in these books' currency: '$1,500.00', 'A$1,500.00', 'AUD 1,500.00'. */
+const currencyDisplayOptions = computed(() =>
+  CURRENCY_DISPLAYS.map((d) => ({ label: formatMoney(150_000, books.value.currency, d), value: d })),
+);
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
 const profile = computed(() => countryProfile(books.value.country));
 const frequencyOptions = computed(() => profile.value.tax?.frequencies ?? []);
@@ -165,6 +171,20 @@ async function setLock(date: string | null) {
               <p class="Flush">{{ profile.name }} · {{ books.currency }}</p>
               <p class="subdued Help">Set when the books were made. It decides the currency and tax rules.</p>
             </div>
+            <FormLayoutGroup>
+              <Select
+                v-model="form.currencyDisplay"
+                label="Amounts in the app"
+                :options="currencyDisplayOptions"
+                help-text="Lists, reports and the dashboard."
+              />
+              <Select
+                v-model="form.documentCurrencyDisplay"
+                label="Amounts on documents"
+                :options="currencyDisplayOptions"
+                help-text="Invoices, statements and their emails, for people who may not know your currency."
+              />
+            </FormLayoutGroup>
             <FormLayoutGroup>
               <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
               <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />

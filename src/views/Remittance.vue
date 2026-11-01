@@ -18,7 +18,8 @@ const route = useRoute();
 const router = useRouter();
 const entryId = computed(() => Number(route.params.entryId));
 const books = computed(() => session.books!);
-const money = (v: number) => formatMoney(v, books.value.currency);
+// A document for the customer or vendor, so it follows the documents setting.
+const money = (v: number) => formatMoney(v, books.value.currency, books.value.documentCurrencyDisplay);
 
 const advice = ref<Remittance | null>(null);
 const template = ref<InvoiceTemplate | null>(null);
