@@ -17,6 +17,7 @@ import {
   confirmModal,
   toast,
 } from '@octans/ui';
+import Attachments from '../components/Attachments.vue';
 import InvoiceDocument from '../components/InvoiceDocument.vue';
 import PaperPreview from '../components/PaperPreview.vue';
 import ScheduleModal from '../components/ScheduleModal.vue';
@@ -514,6 +515,15 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
                   <Button type="plain" icon="mdi:link-variant-off" tooltip="Remove" @click="removeAllocation(a.id)" />
                 </li>
               </ul>
+            </CardSection>
+          </Card>
+
+          <Card title="Attachments">
+            <CardSection>
+              <Attachments
+                :owner="{ invoiceId: invoice.id }"
+                :label="invoice.docType === 'bill' ? 'Attach their bill' : 'Attach file'"
+              />
             </CardSection>
           </Card>
 

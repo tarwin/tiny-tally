@@ -128,6 +128,8 @@ export interface Entry {
   recId: number | null;
   toRecId: number | null;
   scheduleId: number | null;
+  /** How many files are attached (receipts). */
+  attachments: number;
   /** register mode only */
   balance?: number;
 }
@@ -657,6 +659,24 @@ export interface Change {
   host?: string | null;
 }
 
+export interface Attachment {
+  id: number;
+  name: string;
+  mime: string;
+  /** bytes */
+  size: number;
+  createdAt: string;
+}
+
+/** A file read for attaching, base64 encoded. */
+export interface AttachmentFile {
+  name: string;
+  mime: string;
+  data: string;
+}
+
+export type AttachmentOwner = { entryId: number } | { invoiceId: number };
+
 export interface Item {
   id: number;
   kind: CategoryKind;
@@ -796,6 +816,14 @@ export const api = {
   deleteSchedule: (id: number) => call<true>('schedules.delete', { id }),
   skipSchedule: (id: number) => call<Schedule>('schedules.skip', { id }),
   runSchedules: (today: string) => call<ScheduleRun>('schedules.run', { today }),
+
+  listAttachments: (o: AttachmentOwner) => call<Attachment[]>('attachments.list', o),
+  getAttachment: (id: number) => call<AttachmentFile>('attachments.get', { id }),
+  readAttachmentFile: (path: string) => call<AttachmentFile>('attachments.readFile', { path }),
+  addAttachment: (o: AttachmentOwner, f: AttachmentFile) => call<number>('attachments.add', { ...o, ...f }),
+  openAttachment: (id: number) => call<string>('attachments.open', { id }),
+  saveAttachmentCopy: (id: number, path: string) => call<string>('attachments.saveCopy', { id, path }),
+  deleteAttachment: (id: number) => call<true>('attachments.delete', { id }),
 
   listItems: () => call<Item[]>('items.list'),
   saveItem: (i: ItemInput) => call<number>('items.save', i),

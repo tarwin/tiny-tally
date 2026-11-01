@@ -554,4 +554,22 @@ export const migrations: string[] = [
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   `,
+  // v16: attachments (receipts, supplier invoices) kept inside the books
+  // file, so there's still only one file to back up. Each belongs to one
+  // transaction or one document and goes when it does.
+  `
+  CREATE TABLE attachments (
+    id INTEGER PRIMARY KEY,
+    entry_id INTEGER REFERENCES entries(id) ON DELETE CASCADE,
+    invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK ((entry_id IS NULL) <> (invoice_id IS NULL))
+  );
+  CREATE INDEX attachments_entry ON attachments (entry_id);
+  CREATE INDEX attachments_invoice ON attachments (invoice_id);
+  `,
 ];

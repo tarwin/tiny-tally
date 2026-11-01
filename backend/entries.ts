@@ -52,7 +52,8 @@ const SELECT_COLUMNS = `
   e.contact_id AS contactId, ct.name AS contactName,
   e.tax_code AS taxCode, e.tax_amount AS taxAmount,
   e.invoice_id AS invoiceId, inv.number AS invoiceNumber, inv.doc_type AS invoiceType,
-  c.class AS categoryClass, e.rec_id AS recId, e.to_rec_id AS toRecId, e.schedule_id AS scheduleId`;
+  c.class AS categoryClass, e.rec_id AS recId, e.to_rec_id AS toRecId, e.schedule_id AS scheduleId,
+  (SELECT COUNT(*) FROM attachments x WHERE x.entry_id = e.id) AS attachments`;
 
 const JOINS = `
   JOIN accounts a ON a.id = e.account_id

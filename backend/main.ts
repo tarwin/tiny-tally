@@ -28,6 +28,16 @@ import {
   type EntryQuery,
 } from './entries';
 import { search } from './search';
+import {
+  addAttachment,
+  deleteAttachment,
+  getAttachment,
+  listAttachments,
+  openAttachment,
+  readAttachmentFile,
+  saveAttachmentTo,
+  type Owner,
+} from './attachments';
 import { archiveItem, deleteItem, listItems, saveItem, type ItemInput } from './items';
 import {
   agedBalances,
@@ -578,6 +588,14 @@ Object.assign(api, {
   'schedules.skip': async ({ id }: { id: number }) => skipNext(id),
   'schedules.run': async ({ today }: { today: string }) => runSchedules(today),
 
+  'attachments.list': async (o: Owner) => listAttachments(o),
+  'attachments.get': async ({ id }: { id: number }) => getAttachment(id),
+  'attachments.readFile': async ({ path }: { path: string }) => readAttachmentFile(path),
+  'attachments.add': async (p: Parameters<typeof addAttachment>[0]) => addAttachment(p),
+  'attachments.open': async ({ id }: { id: number }) => openAttachment(id),
+  'attachments.saveCopy': async ({ id, path }: { id: number; path: string }) => saveAttachmentTo(id, path),
+  'attachments.delete': async ({ id }: { id: number }) => deleteAttachment(id),
+
   'items.list': async () => listItems(),
   'items.save': async (input: ItemInput) => saveItem(input),
   'items.archive': async ({ id, archived }: { id: number; archived: boolean }) => archiveItem(id, archived),
@@ -660,7 +678,7 @@ Object.assign(api, {
  * anything that writes is logged, including calls added later; a batch that
  * changed nothing is dropped.
  */
-const READ_ONLY = /^(app\.|books\.|drop\.|changes\.|file\.|import\.(read|suggest)$|prefs\.get$|rules\.match$|templates\.readLogo$|reports\.|ledger\.|bills\.remittance$|entries\.summary$|invoices\.suggestNumber$|reconcile\.state$|journals\.accounts$|bas\.list$|.*\.(list|get)$)/;
+const READ_ONLY = /^(app\.|books\.|drop\.|changes\.|file\.|import\.(read|suggest)$|prefs\.get$|rules\.match$|templates\.readLogo$|reports\.|ledger\.|bills\.remittance$|entries\.summary$|invoices\.suggestNumber$|reconcile\.state$|journals\.accounts$|bas\.list$|attachments\.(readFile|open|saveCopy)$|.*\.(list|get)$)/;
 
 // Every handler runs bound to its calling window (see db.ts).
 for (const [name, handler] of Object.entries(api)) {

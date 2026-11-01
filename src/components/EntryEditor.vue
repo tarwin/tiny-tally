@@ -15,7 +15,8 @@ import {
   confirmModal,
   toast,
 } from '@octans/ui';
-import { api, errorMessage, type Account, type Category, type Contact, type EntryKind, type Frequency, type TaxCode } from '../lib/api';
+import Attachments from './Attachments.vue';
+import { api, errorMessage, type Account, type AttachmentFile, type Category, type Contact, type EntryKind, type Frequency, type TaxCode } from '../lib/api';
 import { CLASS_INFO } from '../lib/categoryClass';
 import { FREQUENCY_OPTIONS, nextOccurrence } from '../lib/schedule';
 import { today } from '../lib/dates';
@@ -44,6 +45,8 @@ const form = ref({
   taxAmount: null as string | null,
 });
 const errors = ref<Record<string, string | undefined>>({});
+/** Receipts picked before a new transaction is saved. */
+const pendingFiles = ref<AttachmentFile[]>([]);
 
 // Remembered between entries so a run of receipts doesn't need re-picking.
 const lastUsed: Partial<Record<EntryKind, { accountId: number | null; date: string }>> = {};
@@ -209,6 +212,7 @@ function defaultAccount(kind: EntryKind) {
 
 function reset() {
   errors.value = {};
+  pendingFiles.value = [];
   newContact.value = null;
   suggested.value = null;
   clearTimeout(ruleTimer);
@@ -314,7 +318,7 @@ async function save(andNew = false) {
   const f = form.value;
   saving.value = true;
   try {
-    await api.saveEntry({
+    const id = await api.saveEntry({
       id: editing.value?.id,
       kind: f.kind,
       amount,
@@ -332,6 +336,12 @@ async function save(andNew = false) {
         : {}),
     });
     lastUsed[f.kind] = { accountId: f.accountId, date: f.date };
+    // The transaction is saved either way; say so if a receipt didn't make it.
+    for (const file of pendingFiles.value) {
+      await api.addAttachment({ entryId: id }, file).catch((e) =>
+        toast({ title: `Couldn't attach ${file.name}`, content: errorMessage(e), tone: 'error' }));
+    }
+    pendingFiles.value = [];
     let repeated = '';
     if (repeat.value.on && canRepeat.value) {
       const cat = categories.value.find((c) => c.id === f.categoryId);
@@ -520,6 +530,13 @@ async function addContact() {
         </p>
 
         <TextField v-model="form.memo" label="Description (optional)" placeholder="What was it for?" @keydown.enter="save(false)" />
+
+        <Attachments
+          :owner="editing ? { entryId: editing.id } : null"
+          v-model:pending="pendingFiles"
+          :active="entryEditor.visible"
+          @changed="dataChanged"
+        />
 
         <div v-if="canRepeat" class="Repeat">
           <ToggleSwitch v-model="repeat.on" :label="editing ? 'Repeat this from here on' : 'Repeat this'" />

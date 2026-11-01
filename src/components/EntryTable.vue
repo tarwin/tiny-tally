@@ -93,6 +93,7 @@ function amountClass(e: Entry) {
           :class="`Kind Kind--${row.kind}`"
         />
         <span class="Clip" :title="description(row)">{{ description(row) }}</span>
+        <Icon v-if="row.attachments" icon="mdi:paperclip" class="Flag" :title="row.attachments === 1 ? '1 attachment' : `${row.attachments} attachments`" />
         <Icon v-if="row.scheduleId" icon="mdi:repeat" class="Flag" title="Created by a recurring schedule" />
         <Icon v-if="reconciled(row)" icon="mdi:check-decagram-outline" class="Flag Flag--rec" title="Reconciled" />
       </span>

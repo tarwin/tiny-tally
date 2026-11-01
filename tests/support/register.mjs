@@ -1,6 +1,7 @@
 // `node --import ./tests/support/register.mjs`: lets tests load the backend.
 import { register } from 'node:module';
 import * as fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 
 register('./hooks.mjs', import.meta.url);
 
@@ -8,6 +9,7 @@ register('./hooks.mjs', import.meta.url);
 globalThis.tjs = {
   env: { HOSTNAME: 'test' },
   pid: process.pid,
+  tmpDir: tmpdir(),
   stat: (p) => fs.stat(p),
   readFile: (p) => fs.readFile(p),
   writeFile: (p, data) => fs.writeFile(p, data),

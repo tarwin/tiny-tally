@@ -9,6 +9,7 @@ import UpdateBanner from './components/UpdateBanner.vue';
 import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
 import { api } from './lib/api';
+import { dropAttachments } from './lib/attachments';
 import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density } from './lib/appSettings';
 import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
 import { today } from './lib/dates';
@@ -277,9 +278,11 @@ function openFiles(paths: string[]) {
   if (file) void openBooksAt(file);
 }
 
-// Drop a books file to open it, or anything else to import it.
+// Drop a books file to open it, a receipt onto what's open, or anything else to import it.
 function onDropped(paths: string[]) {
   if (paths.some((p) => p.endsWith('.tally'))) openFiles(paths);
+  // Receipts go to the open transaction or document, if one is showing.
+  else if (session.books && dropAttachments(paths)) return;
   else if (paths[0] && session.books) void router.push({ path: '/import', query: { file: paths[0] } });
 }
 

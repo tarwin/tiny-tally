@@ -12,12 +12,16 @@ import { all, currentHost, getBooks, one, run } from './db';
 const LOGGED = [
   'accounts', 'categories', 'contacts', 'entries', 'invoices', 'invoice_lines', 'credit_allocations',
   'invoice_templates', 'reconciliations', 'schedules', 'rules', 'journals', 'journal_lines', 'tax_returns',
-  'trading_names', 'items',
+  'trading_names', 'items', 'attachments',
 ];
 /** Bookkeeping columns that change on every save and mean nothing on their own. */
 const IGNORED = new Set(['updated_at']);
-/** Columns too big to copy into every log row (images as data: URLs). */
-const BULKY: Record<string, string[]> = { invoice_templates: ['logo'], trading_names: ['logo'] };
+/** Columns too big to copy into every log row, and what the log shows instead. */
+const BULKY: Record<string, Record<string, string>> = {
+  invoice_templates: { logo: '(image)' },
+  trading_names: { logo: '(image)' },
+  attachments: { data: '(file)' },
+};
 
 const BATCH = '(SELECT batch_id FROM change_context WHERE id = 1)';
 
@@ -35,9 +39,9 @@ export function installChangeLog(db: Database) {
   for (const table of LOGGED) {
     const cols = (db.prepare(`PRAGMA table_info(${q(table)})`).all() as { name: string }[]).map((c) => c.name).filter((c) => IDENT.test(c));
     if (!cols.length) continue;
-    const bulky = new Set(BULKY[table] ?? []);
+    const bulky = BULKY[table] ?? {};
     const value = (side: 'NEW' | 'OLD', c: string) =>
-      bulky.has(c) ? `CASE WHEN ${side}.${q(c)} IS NULL OR ${side}.${q(c)} = '' THEN NULL ELSE '(image)' END` : `${side}.${q(c)}`;
+      bulky[c] ? `CASE WHEN ${side}.${q(c)} IS NULL OR ${side}.${q(c)} = '' THEN NULL ELSE '${bulky[c]}' END` : `${side}.${q(c)}`;
     const json = (side: 'NEW' | 'OLD') => `json_object(${cols.filter((c) => !IGNORED.has(c)).map((c) => `'${c}', ${value(side, c)}`).join(', ')})`;
     const changed = cols.filter((c) => !IGNORED.has(c)).map((c) => `OLD.${q(c)} IS NOT NEW.${q(c)}`).join(' OR ');
     const id = (side: 'NEW' | 'OLD') => (cols.includes('id') ? `${side}.id` : 'NULL');
