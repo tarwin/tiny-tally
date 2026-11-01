@@ -18,8 +18,11 @@
 
    ```sh
    sh scripts/release-mac.sh            # arm64 and x86_64, notarized and stapled
-   gh release upload v<version> release/*
+   gh release upload v<version> release/tiny-tally-<version>-macos-*
    ```
+
+   The script clears other versions' builds out of `release/` before it
+   starts, so only this version's four files are there.
 
 4. Check the draft has all seven files (2 Linux, 1 Windows, 2 dmg + 2 zip for macOS), then publish it:
    `gh release edit v<version> --draft=false`.
