@@ -4,7 +4,7 @@
   "title": "Tiny Tally",
   "size": "1180x780",
   "id": "com.tarwin.tiny-tally",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "backend": "backend/main.ts",
   "frontend": {
     "build": "pnpm run build",
