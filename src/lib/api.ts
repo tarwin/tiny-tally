@@ -96,6 +96,10 @@ export interface Category {
   taxCode: TaxCode | null;
   /** US: the Schedule C key (scheduleC.ts), numbered per tax year. */
   reportLine: string | null;
+  /** A sub-category's parent. */
+  parentId: number | null;
+  /** "Parent › Name" for a sub-category, else the name. */
+  path: string;
 }
 
 export type EntryKind = 'income' | 'expense' | 'transfer';
@@ -369,6 +373,8 @@ export interface PnlRow {
   compare: number;
   /** When asked for: the budget for the period. */
   budget?: number;
+  /** Sub-categories; the row's figures include them. */
+  children?: PnlRow[];
 }
 
 export interface Budget {
@@ -781,7 +787,7 @@ export const api = {
   archiveAccount: (id: number, archived: boolean) => call<true>('accounts.archive', { id, archived }),
 
   listCategories: () => call<Category[]>('categories.list'),
-  saveCategory: (p: { id?: number; name: string; kind: CategoryKind; taxCode?: TaxCode | null; class?: CategoryClass; reportLine?: string | null }) =>
+  saveCategory: (p: { id?: number; name: string; kind: CategoryKind; taxCode?: TaxCode | null; class?: CategoryClass; reportLine?: string | null; parentId?: number | null }) =>
     call<number>('categories.save', p),
   archiveCategory: (id: number, archived: boolean) => call<true>('categories.archive', { id, archived }),
 

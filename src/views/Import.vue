@@ -268,13 +268,13 @@ function accountOptions(kind: string, name: string) {
 function categoryOptions(kind: 'income' | 'expense', name: string, cls: ImportCategory['class'] = 'pnl') {
   return [
     { label: `Create “${name}”`, value: 'create', description: cls === 'pnl' ? undefined : CLASS_INFO[cls].label },
-    ...categories.value.filter((c) => c.kind === kind && !c.archived).map((c) => ({ label: c.name, value: `id:${c.id}` })),
+    ...categories.value.filter((c) => c.kind === kind && !c.archived).map((c) => ({ label: c.path, value: `id:${c.id}` })),
     { label: "Don't import these", value: 'skip' },
   ];
 }
 
-const incomeCats = computed(() => categories.value.filter((c) => c.kind === 'income' && !c.archived).map((c) => ({ label: c.name, value: c.id })));
-const expenseCats = computed(() => categories.value.filter((c) => c.kind === 'expense' && !c.archived).map((c) => ({ label: c.name, value: c.id })));
+const incomeCats = computed(() => categories.value.filter((c) => c.kind === 'income' && !c.archived).map((c) => ({ label: c.path, value: c.id })));
+const expenseCats = computed(() => categories.value.filter((c) => c.kind === 'expense' && !c.archived).map((c) => ({ label: c.path, value: c.id })));
 
 // ---- bank lines grouped by payee -------------------------------------------------
 

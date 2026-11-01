@@ -32,7 +32,7 @@ const form = ref({ id: undefined as number | undefined, pattern: '', kind: 'expe
 const error = ref<string | null>(null);
 
 const categoryOptions = computed(() =>
-  categories.value.filter((c) => c.kind === form.value.kind && !c.archived).map((c) => ({ label: c.name, value: c.id })),
+  categories.value.filter((c) => c.kind === form.value.kind && !c.archived).map((c) => ({ label: c.path, value: c.id })),
 );
 const contactOptions = computed(() => contacts.value.filter((c) => !c.archived).map((c) => ({ label: c.name, value: c.id })));
 

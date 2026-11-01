@@ -38,8 +38,35 @@ export function profitAndLoss(p: { from: string; to: string; basis: Basis; compa
     ? all<{ id: number; name: string; kind: string }>(getBooks().db,
         `SELECT id, name, kind FROM categories WHERE id IN (${[...budget.keys()].map(Number).join(',')})`)
     : [];
+  type Row = { id: number; name: string; total: number; compare: number; budget?: number; children?: Row[] };
+  const cats = new Map(all<{ id: number; name: string; parentId: number | null }>(getBooks().db,
+    'SELECT id, name, parent_id AS parentId FROM categories').map((c) => [c.id, c]));
+  const byTotal = (a: Row, b: Row) => b.total - a.total || (b.budget ?? 0) - (a.budget ?? 0) || a.name.localeCompare(b.name);
+  /** Sub-categories under their parent, whose row totals them all. */
+  const nest = (rows: Row[]) => {
+    const top = new Map<number, Row>();
+    const kids = new Map<number, Row[]>();
+    for (const r of rows) {
+      const parentId = cats.get(r.id)?.parentId;
+      if (parentId) (kids.get(parentId) ?? kids.set(parentId, []).get(parentId)!).push(r);
+      else top.set(r.id, r);
+    }
+    for (const [parentId, children] of kids) {
+      const own = top.get(parentId);
+      // Amounts on the parent itself sit beside its sub-categories.
+      if (own && (own.total || own.compare || own.budget)) children.push({ ...own, name: `${own.name} (other)` });
+      const row: Row = { id: parentId, name: cats.get(parentId)!.name, total: 0, compare: 0, ...(budget ? { budget: 0 } : {}), children: children.sort(byTotal) };
+      for (const c of children) {
+        row.total += c.total;
+        row.compare += c.compare;
+        if (budget) row.budget! += c.budget ?? 0;
+      }
+      top.set(parentId, row);
+    }
+    return [...top.values()].sort(byTotal);
+  };
   const rowsFor = (kind: 'income' | 'expense') => {
-    const map = new Map<number, { id: number; name: string; total: number; compare: number; budget?: number }>();
+    const map = new Map<number, Row>();
     for (const r of current.byCategory.filter((r: any) => r.kind === kind)) {
       map.set(r.id, { id: r.id, name: r.name, total: r.total, compare: 0 });
     }
@@ -54,7 +81,7 @@ export function profitAndLoss(p: { from: string; to: string; basis: Basis; compa
       }
       for (const row of map.values()) row.budget = budget.get(row.id) ?? 0;
     }
-    return [...map.values()].sort((a, b) => b.total - a.total || (b.budget ?? 0) - (a.budget ?? 0) || a.name.localeCompare(b.name));
+    return nest([...map.values()]);
   };
   const income = rowsFor('income');
   const expense = rowsFor('expense');

@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Card, CardSection, DatePicker, Page, SegmentedControl, Select } from '@octans/ui';
-import { api, type Basis, type ProfitAndLoss } from '../lib/api';
+import { api, type Basis, type PnlRow, type ProfitAndLoss } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
@@ -89,6 +89,9 @@ const otherSides = computed(() =>
   (['income', 'expense'] as const).map((kind) => ({ kind, rows: report.value?.other.filter((o) => o.kind === kind) ?? [] })),
 );
 
+/** Parents then their sub-categories, named "Parent › Child". */
+const flat = (rows: PnlRow[]) => rows.flatMap((x) => [x, ...(x.children ?? []).map((c) => ({ ...c, name: `${x.name} › ${c.name}` }))]);
+
 function exportCsv() {
   const r = report.value;
   if (!r) return;
@@ -100,9 +103,9 @@ function exportCsv() {
   const o = otherTotals.value;
   void saveCsv(`Profit and Loss ${range.value.from} to ${range.value.to}`, [
     head,
-    ...r.income.map((x) => row('Income', x.name, x.total, otherOf(x))),
+    ...flat(r.income).map((x) => row('Income', x.name, x.total, otherOf(x))),
     row('Income', 'Total income', r.totals.income, o.income),
-    ...r.expense.map((x) => row('Expenses', x.name, x.total, otherOf(x))),
+    ...flat(r.expense).map((x) => row('Expenses', x.name, x.total, otherOf(x))),
     row('Expenses', 'Total expenses', r.totals.expense, o.expense),
     row('', 'Net profit', r.totals.net, o.net),
     // Budgets are only for income and expenses.
@@ -153,14 +156,24 @@ function exportCsv() {
             <tbody>
               <tr class="Report__section"><td :colspan="comparing ? 4 : 2">Income</td></tr>
               <tr v-if="!report.income.length"><td class="Report__indent subdued" :colspan="comparing ? 4 : 2">No income in this period.</td></tr>
-              <tr v-for="r in report.income" :key="'i' + r.id">
-                <td class="Report__indent">{{ r.name }}</td>
-                <td class="num">{{ money(r.total) }}</td>
-                <template v-if="comparing">
-                  <td class="num subdued">{{ money(otherOf(r)) }}</td>
-                  <td class="num subdued">{{ diff(r.total, otherOf(r)) }}</td>
-                </template>
-              </tr>
+              <template v-for="r in report.income" :key="'i' + r.id">
+                <tr>
+                  <td class="Report__indent">{{ r.name }}</td>
+                  <td class="num">{{ money(r.total) }}</td>
+                  <template v-if="comparing">
+                    <td class="num subdued">{{ money(otherOf(r)) }}</td>
+                    <td class="num subdued">{{ diff(r.total, otherOf(r)) }}</td>
+                  </template>
+                </tr>
+                <tr v-for="c in r.children ?? []" :key="'i' + r.id + c.name" class="Sub">
+                  <td class="Report__indent Sub__name">{{ c.name }}</td>
+                  <td class="num subdued">{{ money(c.total) }}</td>
+                  <template v-if="comparing">
+                    <td class="num subdued">{{ money(otherOf(c)) }}</td>
+                    <td class="num subdued">{{ diff(c.total, otherOf(c)) }}</td>
+                  </template>
+                </tr>
+              </template>
               <tr class="Report__total">
                 <td>Total income</td>
                 <td class="num">{{ money(report.totals.income) }}</td>
@@ -172,14 +185,24 @@ function exportCsv() {
 
               <tr class="Report__section"><td :colspan="comparing ? 4 : 2">Expenses</td></tr>
               <tr v-if="!report.expense.length"><td class="Report__indent subdued" :colspan="comparing ? 4 : 2">No expenses in this period.</td></tr>
-              <tr v-for="r in report.expense" :key="'e' + r.id">
-                <td class="Report__indent">{{ r.name }}</td>
-                <td class="num">{{ money(r.total) }}</td>
-                <template v-if="comparing">
-                  <td class="num subdued">{{ money(otherOf(r)) }}</td>
-                  <td class="num subdued">{{ diff(r.total, otherOf(r)) }}</td>
-                </template>
-              </tr>
+              <template v-for="r in report.expense" :key="'e' + r.id">
+                <tr>
+                  <td class="Report__indent">{{ r.name }}</td>
+                  <td class="num">{{ money(r.total) }}</td>
+                  <template v-if="comparing">
+                    <td class="num subdued">{{ money(otherOf(r)) }}</td>
+                    <td class="num subdued">{{ diff(r.total, otherOf(r)) }}</td>
+                  </template>
+                </tr>
+                <tr v-for="c in r.children ?? []" :key="'e' + r.id + c.name" class="Sub">
+                  <td class="Report__indent Sub__name">{{ c.name }}</td>
+                  <td class="num subdued">{{ money(c.total) }}</td>
+                  <template v-if="comparing">
+                    <td class="num subdued">{{ money(otherOf(c)) }}</td>
+                    <td class="num subdued">{{ diff(c.total, otherOf(c)) }}</td>
+                  </template>
+                </tr>
+              </template>
               <tr class="Report__total">
                 <td>Total expenses</td>
                 <td class="num">{{ money(report.totals.expense) }}</td>
@@ -238,6 +261,11 @@ function exportCsv() {
 </template>
 
 <style scoped>
+.Sub__name {
+  padding-left: 40px !important;
+  color: var(--octans-text-subdued);
+}
+
 .Other__title {
   margin: 24px 0 2px;
   font-size: 15px;

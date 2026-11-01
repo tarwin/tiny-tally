@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import {
   DataTable,
   FormLayout,
@@ -40,7 +40,7 @@ const kindOptions = [
 ];
 
 const columns = computed<DataTableColumnType[]>(() => [
-  { key: 'name', label: 'Name', formatFunc: (v, row) => (row.archived ? `${v} (archived)` : v) },
+  { key: 'name', label: 'Name' },
   { key: 'class', label: 'Type', width: 200, formatFunc: (v: CategoryClass) => (v === 'pnl' ? '' : CLASS_INFO[v].label) },
   ...(taxOnFor(kind.value)
     ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, formatFunc: (v: TaxCode | null) => (v ? TAX_CODE_MAP[v].label : 'None') }]
@@ -88,6 +88,21 @@ const form = ref({
   class: 'pnl' as CategoryClass,
   taxCode: null as TaxCode | null,
   reportLine: null as string | null,
+  parentId: null as number | null,
+});
+
+/** Top-level categories of the same side and type; one with sub-categories of its own stays top level. */
+const hasChildren = computed(() => !!form.value.id && categories.value.some((c) => c.parentId === form.value.id));
+const parentOptions = computed(() => [
+  { label: 'Nothing (top level)', value: null },
+  ...categories.value
+    .filter((c) => c.kind === form.value.kind && c.class === form.value.class && !c.parentId && c.id !== form.value.id)
+    .filter((c) => !c.archived || c.id === form.value.parentId)
+    .map((c) => ({ label: c.name, value: c.id })),
+]);
+// Changing side or type can leave the chosen parent no longer fitting.
+watch(parentOptions, (opts) => {
+  if (!opts.some((o) => o.value === form.value.parentId)) form.value.parentId = null;
 });
 const offBas = computed(() => CLASS_INFO[form.value.class].offBas);
 const nameError = ref<string | null>(null);
@@ -95,8 +110,8 @@ const nameError = ref<string | null>(null);
 function openEditor(c?: Category) {
   nameError.value = null;
   form.value = c
-    ? { id: c.id, name: c.name, kind: c.kind, class: c.class, taxCode: c.taxCode, reportLine: c.reportLine }
-    : { id: undefined, name: '', kind: kind.value, class: 'pnl', taxCode: taxCodeOr(booksProfile().tax, kind.value, null), reportLine: null };
+    ? { id: c.id, name: c.name, kind: c.kind, class: c.class, taxCode: c.taxCode, reportLine: c.reportLine, parentId: c.parentId }
+    : { id: undefined, name: '', kind: kind.value, class: 'pnl', taxCode: taxCodeOr(booksProfile().tax, kind.value, null), reportLine: null, parentId: null };
   editing.value = true;
 }
 
@@ -152,7 +167,11 @@ onMounted(load);
           ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => setArchived(row, false) }
           : { label: 'Archive', icon: 'mdi:archive-outline', onAction: () => setArchived(row, true) },
       ]"
-    />
+    >
+      <template #col:name="{ row }">
+        <span :class="{ Child: row.parentId }">{{ row.name }}{{ row.archived ? ' (archived)' : '' }}</span>
+      </template>
+    </DataTable>
 
     <Modal
       :visible="editing"
@@ -182,6 +201,14 @@ onMounted(load);
             :help-text="form.class === 'pnl' ? '' : 'Kept off Profit & Loss. Shown below it as other money in and out.'"
           />
           <Select
+            v-if="!hasChildren"
+            v-model="form.parentId"
+            label="Inside (optional)"
+            :options="parentOptions"
+            help-text="Make it a sub-category. Reports show it under the parent, and the parent's total includes it."
+          />
+          <p v-else class="subdued Hint">Has sub-categories, so it stays at the top level.</p>
+          <Select
             v-if="usesScheduleC && form.class === 'pnl'"
             v-model="form.reportLine"
             label="Schedule C line"
@@ -210,5 +237,21 @@ onMounted(load);
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+}
+.Child {
+  padding-left: 20px;
+  position: relative;
+}
+
+.Child::before {
+  content: '↳';
+  position: absolute;
+  left: 4px;
+  color: var(--octans-text-subdued);
+}
+
+.Hint {
+  margin: 0;
+  font-size: 13px;
 }
 </style>

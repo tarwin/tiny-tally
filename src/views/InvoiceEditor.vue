@@ -155,7 +155,7 @@ const customerOptions = computed(() =>
 const categoryOptions = computed(() =>
   categories.value
     .filter((c) => c.kind === doc.value.categoryKind && (!c.archived || form.value.lines.some((l) => l.categoryId === c.id)))
-    .map((c) => ({ label: c.name, value: c.id })),
+    .map((c) => ({ label: c.path, value: c.id })),
 );
 const taxOptions = computed(() =>
   taxCodesFor(booksProfile().tax, taxKind.value).map((t) => ({ label: t.label, value: t.code })),

@@ -82,7 +82,7 @@ const categoryOptions = computed(() =>
   usable(
     categories.value.filter((c) => c.kind === form.value.kind),
     [editing.value?.categoryId ?? null],
-  ).map((c) => ({ label: c.name, value: c.id, description: c.class === 'pnl' ? undefined : CLASS_INFO[c.class].label })),
+  ).map((c) => ({ label: c.path, value: c.id, description: c.class === 'pnl' ? undefined : CLASS_INFO[c.class].label })),
 );
 const category = computed(() => categories.value.find((c) => c.id === form.value.categoryId) ?? null);
 /** Tax payments, owner's money and loans: no tax, not on a tax return. */

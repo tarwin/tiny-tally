@@ -232,7 +232,7 @@ const adjTypeOptions = computed(() =>
   (form.value.adjustments ?? []).map((d) => ({ label: `Box ${d.box}: ${d.label}`, value: d.type, description: d.help })),
 );
 const adjCategoryOptions = computed(() =>
-  categories.value.filter((c) => c.kind === 'expense' && c.class === 'pnl' && !c.archived).map((c) => ({ label: c.name, value: c.id })),
+  categories.value.filter((c) => c.kind === 'expense' && c.class === 'pnl' && !c.archived).map((c) => ({ label: c.path, value: c.id })),
 );
 /** The adjustment being edited, as it would be saved. */
 const adjDraft = computed<Adjustment>(() => ({

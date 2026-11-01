@@ -75,7 +75,7 @@ const form = ref(blank());
 const categoryOptions = computed(() =>
   categories.value
     .filter((c) => c.kind === form.value.kind && (!c.archived || c.id === form.value.categoryId))
-    .map((c) => ({ label: c.name, value: c.id })),
+    .map((c) => ({ label: c.path, value: c.id })),
 );
 const taxOptions = computed(() => taxCodesFor(booksProfile().tax, form.value.kind).map((t) => ({ label: t.label, value: t.code })));
 

@@ -13,6 +13,7 @@ export async function makeBooks(setup: Partial<BooksSetup> & Pick<BooksSetup, 'c
   const dir = mkdtempSync(join(tmpdir(), 'tally-test-'));
   await createBooks(win, join(dir, 'books.tally'), false, { name: 'Test Books', fiscalYearStart: '01-01', ...setup });
   return {
+    win,
     run: <T>(fn: () => T) => inWindow(win, fn),
     close: () => closeBooks(win),
   };

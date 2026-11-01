@@ -184,7 +184,7 @@ const monthLabel = (m: string) => new Date(Number(m.slice(0, 4)), Number(m.slice
             <tbody v-for="s in sections" :key="s.kind">
               <tr class="Grid__section"><td :colspan="15">{{ s.title }}</td></tr>
               <tr v-for="c in s.rows" :key="c.id">
-                <td class="Grid__name" :title="c.name">{{ c.name }}</td>
+                <td class="Grid__name" :class="{ 'Grid__name--child': c.parentId }" :title="c.path">{{ c.name }}</td>
                 <td v-for="(_, i) in months" :key="i">
                   <input
                     class="Cell"
@@ -267,6 +267,11 @@ const monthLabel = (m: string) => new Date(Number(m.slice(0, 4)), Number(m.slice
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-right: 8px !important;
+}
+
+.Grid__name--child {
+  padding-left: 18px !important;
+  color: var(--octans-text-subdued);
 }
 
 .Grid__section td {

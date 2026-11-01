@@ -583,4 +583,10 @@ export const migrations: string[] = [
     UNIQUE (category_id, month)
   );
   `,
+  // v18: sub-categories, one level deep. A parent's reports total include
+  // its children; tax returns still map each category on its own.
+  `
+  ALTER TABLE categories ADD COLUMN parent_id INTEGER REFERENCES categories(id);
+  CREATE INDEX categories_parent ON categories (parent_id);
+  `,
 ];

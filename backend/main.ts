@@ -499,19 +499,24 @@ export const api: Record<string, TinyApiHandler> = {
     return all(
       db,
       `SELECT c.id, c.name, c.kind, c.class AS class, c.is_archived AS archived, c.tax_code AS taxCode,
-              c.report_line AS reportLine,
+              c.report_line AS reportLine, c.parent_id AS parentId,
+              CASE WHEN p.id IS NULL THEN c.name ELSE p.name || ' › ' || c.name END AS path,
               (SELECT COUNT(*) FROM entries e WHERE e.category_id = c.id)
                 + (SELECT COUNT(*) FROM invoice_lines l WHERE l.category_id = c.id)
                 + (SELECT COUNT(*) FROM journal_lines j WHERE j.category_id = c.id) AS uses
-       FROM categories c
-       ORDER BY c.kind, c.is_archived, c.class <> 'pnl', c.name COLLATE NOCASE`,
+       FROM categories c LEFT JOIN categories p ON p.id = c.parent_id
+       -- Sub-categories straight after their parent.
+       ORDER BY c.kind, COALESCE(p.is_archived, c.is_archived), COALESCE(p.class, c.class) <> 'pnl',
+                COALESCE(p.name, c.name) COLLATE NOCASE, c.parent_id IS NOT NULL, c.name COLLATE NOCASE`,
     ).map((r: any) => ({ ...r, archived: !!r.archived }));
   },
 
-  'categories.save': async ({ id, name, kind, taxCode, class: cls, reportLine }: {
+  'categories.save': async ({ id, name, kind, taxCode, class: cls, reportLine, parentId }: {
     id?: number;
     name: string;
     kind: 'income' | 'expense';
+    /** A sub-category's parent: top level, same side and type. */
+    parentId?: number | null;
     taxCode?: TaxCode | null;
     class?: 'pnl' | 'tax' | 'owner' | 'loan' | 'asset';
     /** US: the Schedule C key. */
@@ -529,12 +534,24 @@ export const api: Record<string, TinyApiHandler> = {
     const clash = one(db, 'SELECT id FROM categories WHERE kind = ? AND name = ? COLLATE NOCASE AND id IS NOT ?',
       kind, name, id ?? null);
     if (clash) throw new Error(`There's already a${kind === 'income' ? 'n income' : 'n expense'} category called “${name}”.`);
+    const parent = typeof parentId === 'number' ? one<any>(db, 'SELECT id, name, kind, class, parent_id FROM categories WHERE id = ?', parentId) : null;
+    if (typeof parentId === 'number') {
+      if (!parent) throw new Error('That parent category no longer exists.');
+      if (parent.id === id) throw new Error("A category can't be inside itself.");
+      if (parent.parent_id !== null) throw new Error(`“${parent.name}” is already a sub-category. Sub-categories go one level deep.`);
+      if (parent.kind !== kind || parent.class !== klass) throw new Error(`“${parent.name}” is a different type of category, so this can't go inside it.`);
+    }
     if (id) {
-      run(db, 'UPDATE categories SET name = ?, kind = ?, tax_code = ?, class = ?, report_line = ? WHERE id = ?', name, kind, code, klass, line, id);
+      const children = all<{ class: string; kind: string }>(db, 'SELECT class, kind FROM categories WHERE parent_id = ?', id);
+      if (children.length && parent) throw new Error('This category has sub-categories of its own, so it has to stay at the top level.');
+      if (children.some((c) => c.class !== klass || c.kind !== kind)) throw new Error('Its sub-categories are a different type. Change or move them first.');
+      run(db, 'UPDATE categories SET name = ?, kind = ?, tax_code = ?, class = ?, report_line = ?, parent_id = ? WHERE id = ?',
+        name, kind, code, klass, line, parent?.id ?? null, id);
       return id;
     }
-    return one<{ id: number }>(db, 'INSERT INTO categories (name, kind, tax_code, class, report_line) VALUES (?, ?, ?, ?, ?) RETURNING id',
-      name, kind, code, klass, line)!.id;
+    return one<{ id: number }>(db,
+      'INSERT INTO categories (name, kind, tax_code, class, report_line, parent_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+      name, kind, code, klass, line, parent?.id ?? null)!.id;
   },
 
   'categories.archive': async ({ id, archived }: { id: number; archived: boolean }) => {
