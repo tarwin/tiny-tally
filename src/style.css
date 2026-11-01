@@ -85,6 +85,41 @@ html[data-density='spacious'] :is(.Side, .Main, .Tiles, .Grid, .Stack, .Columns)
   color: var(--octans-text-subdued);
 }
 
+/* ---- modals ----
+   Octans caps the dialog body inline at 100vh - 200px - header - footer: a big
+   empty gap below in a short window. Our modals also use overflow-visible so
+   Select dropdowns (which render inline) aren't clipped, and that turns body
+   scrolling off, so long forms ran out the bottom. Instead: cap the whole
+   dialog to the window, and in short windows scroll the body and shrink the
+   100px top gap (stacked modals set their own, inline) with a matching one
+   below. */
+[data-octans-modal] {
+  --tt-modal-top: 100px;
+  --tt-modal-bottom: 24px;
+  max-height: calc(100vh - var(--tt-modal-top) - var(--tt-modal-bottom));
+}
+
+[data-octans-modal] > [class*='_body_'] {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+}
+
+@media (max-height: 900px) {
+  [data-octans-modal] {
+    --tt-modal-top: clamp(16px, 5vh, 100px);
+    --tt-modal-bottom: var(--tt-modal-top);
+  }
+
+  [data-octans-modal]:not([style*='margin-top']) {
+    margin-top: var(--tt-modal-top);
+  }
+
+  [data-octans-modal] > [class*='_body_'] {
+    overflow: hidden auto !important;
+  }
+}
+
 /* ---- printing (see lib/print.ts) ---- */
 #print-root {
   display: none;
