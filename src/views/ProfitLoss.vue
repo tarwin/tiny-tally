@@ -11,12 +11,12 @@ import { printElement } from '../lib/print';
 import { session } from '../lib/session';
 
 const router = useRouter();
-const company = computed(() => session.company!);
-const money = (v: number) => formatMoney(v, company.value.currency);
+const books = computed(() => session.books!);
+const money = (v: number) => formatMoney(v, books.value.currency);
 
 const period = ref<PeriodKey | 'custom'>('thisYear');
-const custom = ref(periodRange('thisYear', company.value.fiscalYearStart) as { from: string; to: string });
-const basis = ref<Basis>(company.value.taxBasis);
+const custom = ref(periodRange('thisYear', books.value.fiscalYearStart) as { from: string; to: string });
+const basis = ref<Basis>(books.value.taxBasis);
 const compare = ref(false);
 const report = ref<ProfitAndLoss | null>(null);
 const loading = ref(false);
@@ -25,7 +25,7 @@ const sheet = ref<HTMLElement | null>(null);
 const periodOptions = [...PERIOD_OPTIONS.filter((o) => o.value !== 'all'), { label: 'Custom dates', value: 'custom' as const }];
 
 const range = computed(() =>
-  period.value === 'custom' ? custom.value : (periodRange(period.value, company.value.fiscalYearStart) as { from: string; to: string }),
+  period.value === 'custom' ? custom.value : (periodRange(period.value, books.value.fiscalYearStart) as { from: string; to: string }),
 );
 const prev = computed(() => previousPeriod(range.value.from, range.value.to));
 
@@ -46,7 +46,7 @@ watch([range, basis, compare], load, { deep: true });
 onMounted(load);
 
 const subtitle = computed(
-  () => `${formatDay(range.value.from)} – ${formatDay(range.value.to)} · ${basis.value === 'cash' ? 'Cash' : 'Accrual'} basis${company.value.taxEnabled ? ' · GST exclusive' : ''}`,
+  () => `${formatDay(range.value.from)} – ${formatDay(range.value.to)} · ${basis.value === 'cash' ? 'Cash' : 'Accrual'} basis${books.value.taxEnabled ? ' · GST exclusive' : ''}`,
 );
 
 function change(now: number, before: number) {
@@ -102,7 +102,7 @@ function exportCsv() {
       <CardSection>
         <div ref="sheet" :class="{ Loading: loading }">
           <div class="ReportHead">
-            <h2>{{ company.name }}: Profit & Loss</h2>
+            <h2>{{ books.name }}: Profit & Loss</h2>
             <p>{{ subtitle }}</p>
           </div>
           <table v-if="report" class="Report">

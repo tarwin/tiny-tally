@@ -1,5 +1,5 @@
 // Profit & Loss, BAS / GST, and lodged BAS returns.
-import { all, getCompany, one, run } from './db';
+import { all, getBooks, one, run } from './db';
 import { summarise } from './entries';
 import { getSettings, updateSettings } from './settings';
 import { basLabelsFor, type TaxCode } from '../src/shared/tax';
@@ -62,7 +62,7 @@ export interface BasFigures {
 /** BAS labels in cents, plus every row that fed them. */
 export function basReport(p: { from: string; to: string; basis: Basis }) {
   range(p.from, p.to);
-  const { db } = getCompany();
+  const { db } = getBooks();
   const view = p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
   const rows = all<any>(db,
     `SELECT l.entry_id AS entryId, l.invoice_id AS invoiceId, l.date, l.kind, l.gross, l.tax, l.tax_code AS taxCode,
@@ -91,7 +91,7 @@ export function basReport(p: { from: string; to: string; basis: Basis }) {
 // ---- lodged returns ---------------------------------------------------------
 
 export function listBasReturns() {
-  return all(getCompany().db,
+  return all(getBooks().db,
     `SELECT id, period_start AS periodStart, period_end AS periodEnd, basis, figures, w1, w2, t7, status,
             lodged_at AS lodgedAt, created_at AS createdAt
      FROM bas_returns ORDER BY period_start DESC`,
@@ -100,7 +100,7 @@ export function listBasReturns() {
 
 export function saveBasReturn(p: { periodStart: string; periodEnd: string; basis: Basis; w1: number; w2: number; t7: number; lodge?: boolean }) {
   range(p.periodStart, p.periodEnd);
-  const { db } = getCompany();
+  const { db } = getBooks();
   const existing = one<any>(db, 'SELECT * FROM bas_returns WHERE period_start = ? AND period_end = ?', p.periodStart, p.periodEnd);
   if (existing?.status === 'lodged') throw new Error('This BAS is already lodged. Reopen it to make changes.');
   const overlap = one<any>(db,
@@ -134,13 +134,13 @@ export function saveBasReturn(p: { periodStart: string; periodEnd: string; basis
 }
 
 export function reopenBasReturn(id: number) {
-  run(getCompany().db, "UPDATE bas_returns SET status = 'draft', lodged_at = NULL WHERE id = ?", id);
+  run(getBooks().db, "UPDATE bas_returns SET status = 'draft', lodged_at = NULL WHERE id = ?", id);
   refreshLockDate();
   return true;
 }
 
 export function deleteBasReturn(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const r = one<any>(db, 'SELECT status FROM bas_returns WHERE id = ?', id);
   if (r?.status === 'lodged') throw new Error('Reopen a lodged BAS before deleting it.');
   run(db, 'DELETE FROM bas_returns WHERE id = ?', id);
@@ -149,7 +149,7 @@ export function deleteBasReturn(id: number) {
 
 /** The lock date follows the latest lodged BAS (or clears when none are lodged). */
 function refreshLockDate() {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const latest = one<{ d: string | null }>(db, "SELECT MAX(period_end) AS d FROM bas_returns WHERE status = 'lodged'")!.d;
   updateSettings({ lockDate: latest });
   return getSettings().lockDate;

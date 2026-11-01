@@ -4,9 +4,9 @@
 // The triggers are rebuilt from the live column lists each time a file opens,
 // so columns added by later migrations are logged without a new migration.
 // Older history can be moved into a .tallylog file (plain SQLite) to keep the
-// company file small; a marker batch records what went where.
+// books file small; a marker batch records what went where.
 import { Database } from 'tjs:sqlite';
-import { all, currentHost, getCompany, one, run } from './db';
+import { all, currentHost, getBooks, one, run } from './db';
 
 /** Tables whose rows are logged. meta (settings) is handled separately. */
 const LOGGED = [
@@ -58,7 +58,7 @@ export function installChangeLog(db: Database) {
   // Settings are written with INSERT OR REPLACE, whose implied delete fires no
   // trigger, so the old value is read before the write instead.
   const skip = (key: string) => `${key} NOT LIKE 'pref:%' AND ${key} <> 'schema_version'`;
-  const shown = (key: string, v: string) => `CASE WHEN ${key} = 'company_logo' AND ${v} <> '' THEN '(image)' ELSE ${v} END`;
+  const shown = (key: string, v: string) => `CASE WHEN ${key} = 'books_logo' AND ${v} <> '' THEN '(image)' ELSE ${v} END`;
   const prior = '(SELECT value FROM meta WHERE key = NEW.key)';
   const existed = 'EXISTS (SELECT 1 FROM meta WHERE key = NEW.key)';
   sql.push(
@@ -79,7 +79,7 @@ export function installChangeLog(db: Database) {
 // ---- batches (main.ts opens one around each call that may change data) -----------
 
 export function beginBatch(action: string) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const id = one<{ id: number }>(db, 'INSERT INTO change_batches (action, host) VALUES (?, ?) RETURNING id', action, currentHost())!.id;
   run(db, 'UPDATE change_context SET batch_id = ? WHERE id = 1', id);
   return { db, id };
@@ -94,13 +94,13 @@ export function endBatch(b: { db: Database; id: number }) {
     if (n) run(b.db, 'UPDATE change_batches SET count = ? WHERE id = ?', n, b.id);
     else run(b.db, 'DELETE FROM change_batches WHERE id = ?', b.id);
   } catch {
-    // The company closed while the call was running; nothing to finish.
+    // The books were closed while the call was running; nothing to finish.
   }
 }
 
-/** A fresh company's seeded rows aren't history: start the log empty, with one line saying so. */
+/** A fresh set of books' seeded rows aren't history: start the log empty, with one line saying so. */
 export function startHistory(action: string, summary: string) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   db.transaction(() => {
     run(db, 'DELETE FROM change_log');
     run(db, 'DELETE FROM change_batches');
@@ -114,9 +114,9 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** Log times are UTC; the page sends its local midnights as ISO instants. */
 const INSTANT = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/;
 
-/** The company file, or an archive (opened read-only for the call). */
+/** The books file, or an archive (opened read-only for the call). */
 function withSource<T>(archive: string | null | undefined, fn: (db: Database) => T): T {
-  if (!archive) return fn(getCompany().db);
+  if (!archive) return fn(getBooks().db);
   if (!/\.tallylog$/i.test(archive)) throw new Error('Choose a Tiny Tally history file (.tallylog).');
   // Not network shares: on Windows, opening one can hand the share your login.
   // Either slash counts on Windows, and \\?\UNC\ and \\.\ start the same way.
@@ -165,7 +165,7 @@ export function batchChanges(p: { batchId: number; archive?: string | null }) {
 
 /** Everything that happened to one row (a transaction, an invoice and its lines…). */
 export function rowHistory(p: { table: string; id: number }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const tables = p.table === 'invoices' ? ['invoices', 'invoice_lines'] : p.table === 'journals' ? ['journals', 'journal_lines'] : [p.table];
   if (!tables.every((t) => LOGGED.includes(t))) throw new Error('No history is kept for that.');
   // Lines point at their document through a column, not row_id.
@@ -191,14 +191,14 @@ export async function sha256(text: string) {
 /**
  * Moves history from before `before` (a local date; `beforeAt` is its
  * midnight as a UTC instant) into a .tallylog file next
- * to the company file, then compacts the company file. Leaves one marker
+ * to the books file, then compacts the books file. Leaves one marker
  * batch naming the file, how many changes went, and a SHA-256 of them so the
  * archive can be checked later. Call inside the window (main.ts rebinds).
  */
 export function archivePrepare(p: { before: string; beforeAt: string }) {
   if (!DATE.test(p.before) || !INSTANT.test(p.beforeAt)) throw new Error('Pick a date.');
   const before = p.beforeAt;
-  const { db, path } = getCompany();
+  const { db, path } = getBooks();
   const counts = one<{ batches: number; changes: number }>(db,
     `SELECT (SELECT COUNT(*) FROM change_batches WHERE at < ?1) AS batches,
             (SELECT COUNT(*) FROM change_log WHERE at < ?1) AS changes`, before)!;
@@ -211,7 +211,7 @@ export function archivePrepare(p: { before: string; beforeAt: string }) {
 }
 
 export function archiveCommit(p: { dest: string; before: string; day: string; hash: string }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   run(db, 'ATTACH DATABASE ? AS arch', p.dest);
   try {
     db.transaction(() => {
@@ -226,7 +226,7 @@ export function archiveCommit(p: { dest: string; before: string; day: string; ha
       run(db,
         'INSERT OR IGNORE INTO arch.change_log SELECT id, batch_id, at, table_name, row_id, row_key, action, before, after FROM change_log WHERE at < ?',
         p.before);
-      run(db, "INSERT OR REPLACE INTO arch.meta (key, value) VALUES ('company_name', (SELECT value FROM meta WHERE key = 'company_name'))");
+      run(db, "INSERT OR REPLACE INTO arch.meta (key, value) VALUES ('books_name', (SELECT value FROM meta WHERE key = 'books_name'))");
       const moved = one<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM change_log WHERE at < ?', p.before)!.n;
       run(db, 'DELETE FROM change_log WHERE at < ?', p.before);
       run(db, 'DELETE FROM change_batches WHERE at < ?', p.before);

@@ -13,8 +13,8 @@ import { printElement } from '../lib/print';
 import { session } from '../lib/session';
 
 const router = useRouter();
-const company = computed(() => session.company!);
-const money = (v: number) => (v ? formatMoney(v, company.value.currency) : '');
+const books = computed(() => session.books!);
+const money = (v: number) => (v ? formatMoney(v, books.value.currency) : '');
 
 const range = periodRange('thisMonth');
 const from = ref(range.from!);
@@ -86,7 +86,7 @@ function exportCsv() {
       <CardSection>
         <div ref="el">
           <div class="ReportHead">
-            <h2>{{ company.name }}: {{ view === 'journal' ? 'General journal' : 'Trial balance' }}</h2>
+            <h2>{{ books.name }}: {{ view === 'journal' ? 'General journal' : 'Trial balance' }}</h2>
             <p v-if="view === 'journal'">{{ formatDay(from) }} to {{ formatDay(to) }} · accrual basis</p>
             <p v-else>As at {{ formatDay(to) }} · accrual basis</p>
           </div>

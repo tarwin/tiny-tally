@@ -28,7 +28,7 @@ import { matchStatement, readStatement, type StatementLine } from '../lib/statem
 const route = useRoute();
 const router = useRouter();
 const accountId = computed(() => Number(route.params.id));
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 const money = (v: number) => formatMoney(v, currency.value);
 
 const state = ref<ReconcileState | null>(null);

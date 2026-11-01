@@ -27,7 +27,7 @@ const kind = ref<ContactKind | 'all'>('all');
 const showArchived = ref(false);
 const search = ref('');
 
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 
 const rows = computed(() => {
   const q = search.value.trim().toLowerCase();

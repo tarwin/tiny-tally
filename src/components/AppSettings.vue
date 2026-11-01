@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// App settings: how Tiny Tally looks and starts, for every company. Company
+// App settings: how Tiny Tally looks and starts, for every set of books. Books
 // details (tax, numbering, the file) are on the Settings page instead.
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
@@ -18,7 +18,7 @@ function close() {
   appSettingsPanel.visible = false;
 }
 
-function companySettings() {
+function booksSettings() {
   close();
   void router.push('/settings');
 }
@@ -71,14 +71,14 @@ function companySettings() {
           <ToggleSwitch :model-value="props.navMin" label="Collapse the sidebar to icons" @update:model-value="(v: boolean) => emit('update:navMin', v)" />
           <ToggleSwitch
             :model-value="appSettings.reopenLast"
-            label="Open the last company when Tiny Tally starts"
+            label="Open the last books when Tiny Tally starts"
             @update:model-value="(v: boolean) => updateAppSettings({ reopenLast: v })"
           />
         </section>
 
-        <p v-if="session.company" class="subdued Hint">
-          Tax, numbering and business details belong to each company:
-          <Button type="plain" size="small" @click="companySettings">Company settings</Button>
+        <p v-if="session.books" class="subdued Hint">
+          Tax, numbering and business details belong to each set of books:
+          <Button type="plain" size="small" @click="booksSettings">Books settings</Button>
         </p>
       </div>
     </ModalSection>

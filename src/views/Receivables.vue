@@ -19,8 +19,8 @@ const words = computed(() =>
     ? { title: 'Who you owe', heading: 'Aged payables', who: 'Supplier', sub: 'Unpaid approved bills', none: 'No bills to pay.' }
     : { title: 'Who owes you', heading: 'Aged receivables', who: 'Customer', sub: 'Unpaid approved invoices (less unused credit)', none: 'Nothing owing. Nice.' },
 );
-const company = computed(() => session.company!);
-const money = (v: number) => (v ? formatMoney(v, company.value.currency) : '—');
+const books = computed(() => session.books!);
+const money = (v: number) => (v ? formatMoney(v, books.value.currency) : '—');
 
 const asOf = ref(today());
 const rows = ref<AgedContact[]>([]);
@@ -86,7 +86,7 @@ onMounted(load);
       <CardSection>
         <div ref="sheet" :class="{ Loading: loading }">
           <div class="ReportHead">
-            <h2>{{ company.name }}: {{ words.heading }}</h2>
+            <h2>{{ books.name }}: {{ words.heading }}</h2>
             <p>{{ words.sub }} as of {{ formatDay(asOf) }}</p>
           </div>
           <table class="Report">

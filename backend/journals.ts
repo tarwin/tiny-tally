@@ -1,6 +1,6 @@
 // Manual journal entries: depreciation, accruals, prepayments, corrections.
 // Each is a set of debit/credit lines that total zero (see schema v7).
-import { all, getCompany, one, run } from './db';
+import { all, getBooks, one, run } from './db';
 import { assertUnlocked } from './settings';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,7 +38,7 @@ function lineKey(l: { category_id: number | null; system: string | null }) {
 }
 
 export function listJournals(q: { from?: string; to?: string } = {}) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const where: string[] = [];
   const args: string[] = [];
   if (q.from && DATE.test(q.from)) {
@@ -59,7 +59,7 @@ export function listJournals(q: { from?: string; to?: string } = {}) {
 }
 
 export function getJournal(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const j = one<any>(db, 'SELECT id, date, reference, memo FROM journals WHERE id = ?', id);
   if (!j) throw new Error('That journal entry no longer exists.');
   const lines = all<any>(db, 'SELECT category_id, system, amount, memo FROM journal_lines WHERE journal_id = ? ORDER BY sort, id', id);
@@ -67,7 +67,7 @@ export function getJournal(id: number) {
 }
 
 export function saveJournal(input: JournalInput) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   if (!DATE.test(String(input.date))) throw new Error('Pick a date.');
   const existing = input.id ? one<any>(db, 'SELECT * FROM journals WHERE id = ?', input.id) : null;
   if (input.id && !existing) throw new Error('That journal entry no longer exists.');
@@ -110,7 +110,7 @@ export function saveJournal(input: JournalInput) {
 }
 
 export function deleteJournal(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const j = one<any>(db, 'SELECT date FROM journals WHERE id = ?', id);
   if (!j) return true;
   assertUnlocked(j.date);
@@ -120,7 +120,7 @@ export function deleteJournal(id: number) {
 
 /** Every journal line up to `to`, for the ledger. */
 export function journalLinesTo(to: string) {
-  return all<any>(getCompany().db,
+  return all<any>(getBooks().db,
     `SELECT j.id, j.date, j.reference, j.memo AS journalMemo, l.category_id, l.system, l.amount, l.memo
      FROM journal_lines l JOIN journals j ON j.id = l.journal_id
      WHERE j.date <= ? ORDER BY j.date, j.id, l.sort, l.id`, to);

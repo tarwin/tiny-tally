@@ -1,6 +1,6 @@
 // Categorisation rules: "description contains X" -> a category (and contact).
 // Imports use them before falling back to history; the first match wins.
-import { all, getCompany, one, run } from './db';
+import { all, getBooks, one, run } from './db';
 
 export interface RuleInput {
   id?: number;
@@ -12,7 +12,7 @@ export interface RuleInput {
 }
 
 export function listRules() {
-  return all(getCompany().db,
+  return all(getBooks().db,
     `SELECT r.id, r.pattern, r.kind, r.category_id AS categoryId, c.name AS categoryName, c.kind AS categoryKind,
             r.contact_id AS contactId, ct.name AS contactName, r.sort
      FROM rules r JOIN categories c ON c.id = r.category_id LEFT JOIN contacts ct ON ct.id = r.contact_id
@@ -20,7 +20,7 @@ export function listRules() {
 }
 
 export function saveRule(input: RuleInput) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const pattern = String(input.pattern ?? '').trim();
   if (pattern.length < 2) throw new Error('Enter at least two characters to match.');
   const cat = one<any>(db, 'SELECT * FROM categories WHERE id = ?', input.categoryId);
@@ -43,7 +43,7 @@ export function saveRule(input: RuleInput) {
 }
 
 export function deleteRule(id: number) {
-  run(getCompany().db, 'DELETE FROM rules WHERE id = ?', id);
+  run(getBooks().db, 'DELETE FROM rules WHERE id = ?', id);
   return true;
 }
 

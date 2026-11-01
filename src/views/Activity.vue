@@ -23,8 +23,8 @@ import { session } from '../lib/session';
 
 const route = useRoute();
 const router = useRouter();
-const company = computed(() => session.company!);
-const currency = computed(() => company.value.currency);
+const books = computed(() => session.books!);
+const currency = computed(() => books.value.currency);
 const value = (key: string, v: unknown) => formatValue(key, v, currency.value);
 
 const PAGE = 100;
@@ -103,7 +103,7 @@ const archiveDate = ref('');
 
 function startArchive() {
   // Up to the lock date by default: that history is frozen anyway.
-  archiveDate.value = company.value.lockDate ? addDays(company.value.lockDate, 1) : addDays(today(), -365);
+  archiveDate.value = books.value.lockDate ? addDays(books.value.lockDate, 1) : addDays(today(), -365);
   archiving.value = true;
 }
 
@@ -154,12 +154,12 @@ const subtitle = computed(() => {
       row
         ? []
         : archive
-          ? [{ label: 'Back to this company', icon: 'mdi:arrow-left', onAction: () => (archive = null) }]
+          ? [{ label: 'Back to these books', icon: 'mdi:arrow-left', onAction: () => (archive = null) }]
           : [{ label: 'Open archive…', icon: 'mdi:folder-open-outline', onAction: openArchive }]
     "
   >
     <Banner v-if="archive" status="info" title="Viewing an archive">
-      This is history moved out of {{ company.name }} earlier. It can be read here but not changed.
+      This is history moved out of {{ books.name }} earlier. It can be read here but not changed.
     </Banner>
 
     <div v-if="loading && !batches.length && !history.length" class="Loading"><Spinner /></div>
@@ -273,12 +273,12 @@ const subtitle = computed(() => {
     >
       <ModalSection>
         <p class="Lead">
-          Moves the history from before this date into a separate file next to the company file, then shrinks the company
+          Moves the history from before this date into a separate file next to your books, then shrinks the books
           file. Your transactions and documents don't change, only the record of how they got that way.
         </p>
         <DatePicker v-model="archiveDate" type="date" model-format="YYYY-MM-DD" label="Archive history before" :max="today()" />
         <p class="subdued Small">
-          {{ company.lockDate ? `Suggested: the day after your books were locked (${formatDay(company.lockDate)}).` : 'Suggested: a year ago.' }}
+          {{ books.lockDate ? `Suggested: the day after your books were locked (${formatDay(books.lockDate)}).` : 'Suggested: a year ago.' }}
           The archive opens from this page with Open archive…. Keep it with your backups.
         </p>
       </ModalSection>

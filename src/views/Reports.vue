@@ -8,10 +8,10 @@ import { taxPeriods } from '../lib/periods';
 import { session } from '../lib/session';
 
 const router = useRouter();
-const company = computed(() => session.company!);
-const money = (v: number) => formatMoney(v, company.value.currency);
+const books = computed(() => session.books!);
+const money = (v: number) => formatMoney(v, books.value.currency);
 
-const period = computed(() => taxPeriods(company.value.basFrequency, company.value.fiscalYearStart, 1)[0]);
+const period = computed(() => taxPeriods(books.value.basFrequency, books.value.fiscalYearStart, 1)[0]);
 const gst = ref<BasFigures | null>(null);
 
 const reports = computed(() => [
@@ -21,7 +21,7 @@ const reports = computed(() => [
     title: 'Profit & Loss',
     body: 'Income minus expenses for any period, by category. Compare with the period before.',
   },
-  ...(company.value.taxEnabled
+  ...(books.value.taxEnabled
     ? [{
         to: '/reports/bas',
         icon: 'mdi:bank-outline',
@@ -68,8 +68,8 @@ const reports = computed(() => [
 ]);
 
 onMounted(async () => {
-  if (!company.value.taxEnabled) return;
-  gst.value = (await api.basReport({ from: period.value.from, to: period.value.to, basis: company.value.taxBasis })).figures;
+  if (!books.value.taxEnabled) return;
+  gst.value = (await api.basReport({ from: period.value.from, to: period.value.to, basis: books.value.taxBasis })).figures;
 });
 </script>
 

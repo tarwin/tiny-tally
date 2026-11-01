@@ -50,7 +50,7 @@ const lastUsed: Partial<Record<EntryKind, { accountId: number | null; date: stri
 
 const newContact = ref<{ name: string } | null>(null);
 
-const currency = computed(() => session.company?.currency ?? 'USD');
+const currency = computed(() => session.books?.currency ?? 'USD');
 const router = useRouter();
 const editing = computed(() => entryEditor.entry);
 const isTransfer = computed(() => form.value.kind === 'transfer');
@@ -106,7 +106,7 @@ const labels = computed(() => {
 });
 
 // ---- GST ----------------------------------------------------------------------
-const taxOn = computed(() => !!session.company?.taxEnabled && !isTransfer.value && !offBas.value);
+const taxOn = computed(() => !!session.books?.taxEnabled && !isTransfer.value && !offBas.value);
 const taxOptions = computed(() =>
   TAX_CODES.filter((t) => (form.value.kind === 'income' ? t.sales : t.purchases)).map((t) => ({
     label: t.label,
@@ -116,7 +116,7 @@ const taxOptions = computed(() =>
 );
 const autoTax = computed(() => {
   const amount = parseMoney(form.value.amount, currency.value) ?? 0;
-  return taxFromInclusive(amount, form.value.taxCode, session.company?.taxRateBp);
+  return taxFromInclusive(amount, form.value.taxCode, session.books?.taxRateBp);
 });
 const taxable = computed(() => !!form.value.taxCode && TAX_CODE_MAP[form.value.taxCode].taxable);
 const taxDisplay = computed({

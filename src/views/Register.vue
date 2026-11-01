@@ -23,7 +23,7 @@ const offset = ref(0);
 const limit = ref(50);
 
 const id = computed(() => Number(route.params.id));
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 const isCard = computed(() => account.value?.kind === 'credit_card');
 
 const balanceText = computed(() => {
@@ -42,7 +42,7 @@ async function load() {
       api.listAccounts(),
       api.listEntries({
         accountId: id.value,
-        ...periodRange(period.value, session.company!.fiscalYearStart),
+        ...periodRange(period.value, session.books!.fiscalYearStart),
         q: search.value || undefined,
         limit: limit.value,
         offset: offset.value,

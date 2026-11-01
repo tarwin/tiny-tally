@@ -1,7 +1,7 @@
 // Imports from QuickBooks (IIF), bank files (OFX/QBO/QFX) and CSV. The page
-// parses the file into an ImportBatch; this resolves it against the company
+// parses the file into an ImportBatch; this resolves it against the books
 // and writes everything in one transaction.
-import { all, getCompany, one, run } from './db';
+import { all, getBooks, one, run } from './db';
 import { OFF_BAS, saveEntry } from './entries';
 import { getSettings } from './settings';
 import type { ImportPlan, ImportResult } from '../src/shared/import';
@@ -45,7 +45,7 @@ function toBase64(bytes: Uint8Array) {
  * bank imports can be pre-categorised the way the user has done before.
  */
 export function suggestCategories(names: string[]) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const out: Record<string, { categoryId: number; kind: 'income' | 'expense' }> = {};
   const byContact = db.prepare(
     `SELECT e.category_id AS categoryId, e.kind FROM entries e JOIN contacts c ON c.id = e.contact_id
@@ -68,7 +68,7 @@ export function suggestCategories(names: string[]) {
 }
 
 export function commitImport(plan: ImportPlan): ImportResult {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const { batch } = plan;
   const settings = getSettings();
   const result: ImportResult = {
@@ -224,7 +224,7 @@ export function commitImport(plan: ImportPlan): ImportResult {
 }
 
 function uniqueName(table: 'accounts', base: string) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const taken = new Set(all<{ name: string }>(db, `SELECT name FROM ${table}`).map((r) => r.name.toLowerCase()));
   if (!taken.has(base.toLowerCase())) return base;
   for (let i = 2; ; i++) if (!taken.has(`${base} (${i})`.toLowerCase())) return `${base} (${i})`;

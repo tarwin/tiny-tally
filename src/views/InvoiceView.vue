@@ -40,8 +40,8 @@ const paper = ref<HTMLElement | null>(null);
 
 const doc = computed(() => DOCS[invoice.value?.docType ?? route.meta.docType ?? 'invoice']);
 const id = computed(() => Number(route.params.id));
-const company = computed(() => session.company!);
-const currency = computed(() => company.value.currency);
+const books = computed(() => session.books!);
+const currency = computed(() => books.value.currency);
 const money = (v: number) => formatMoney(v, currency.value);
 
 const template = computed(
@@ -142,7 +142,7 @@ function print() {
 function email() {
   const inv = invoice.value!;
   const word = doc.value.one.toLowerCase();
-  const subject = `${doc.value.one} ${inv.number} from ${company.value.name}`;
+  const subject = `${doc.value.one} ${inv.number} from ${books.value.name}`;
   const lead =
     inv.docType === 'quote'
       ? `Please find quote ${inv.number} for ${money(inv.total)}, valid until ${formatDay(inv.dueDate)}.`
@@ -156,7 +156,7 @@ function email() {
     inv.docType === 'invoice' && template.value?.paymentDetails ? `\n${template.value.paymentDetails}` : '',
     '',
     'Thanks,',
-    company.value.name,
+    books.value.name,
   ].join('\n');
   void tiny.app.shell.open(`mailto:${encodeURIComponent(inv.contactEmail ?? '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   toast({ title: 'Email drafted', content: `Print to PDF and attach the ${word} before sending.` });
@@ -390,20 +390,20 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
       <div class="Grid">
         <div v-if="doc.printable" ref="paper" class="Paper">
           <PaperPreview>
-            <InvoiceDocument :invoice="invoice" :company="company" :template="template" />
+            <InvoiceDocument :invoice="invoice" :books="books" :template="template" />
           </PaperPreview>
         </div>
         <Card v-else title="Lines">
           <CardSection>
             <table class="Report">
               <thead>
-                <tr><th>Description</th><th>Category</th><th v-if="company.taxEnabled">Tax</th><th class="num">Amount</th></tr>
+                <tr><th>Description</th><th>Category</th><th v-if="books.taxEnabled">Tax</th><th class="num">Amount</th></tr>
               </thead>
               <tbody>
                 <tr v-for="l in invoice.lines" :key="l.id">
                   <td>{{ l.description || '—' }}</td>
                   <td class="subdued">{{ l.categoryName }}</td>
-                  <td v-if="company.taxEnabled" class="subdued">{{ l.taxCode ? TAX_CODE_MAP[l.taxCode].label : '' }}</td>
+                  <td v-if="books.taxEnabled" class="subdued">{{ l.taxCode ? TAX_CODE_MAP[l.taxCode].label : '' }}</td>
                   <td class="num money">{{ money(l.net + l.tax) }}</td>
                 </tr>
               </tbody>
@@ -421,7 +421,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
               </div>
               <dl class="Sum">
                 <div><dt>Total</dt><dd class="money">{{ money(invoice.total) }}</dd></div>
-                <div v-if="company.taxEnabled"><dt>Includes GST</dt><dd class="money">{{ money(invoice.tax) }}</dd></div>
+                <div v-if="books.taxEnabled"><dt>Includes GST</dt><dd class="money">{{ money(invoice.tax) }}</dd></div>
                 <template v-if="invoice.docType !== 'quote'">
                   <div v-if="invoice.credited"><dt>{{ invoice.docType === 'credit' ? 'Used on invoices' : 'Credited' }}</dt><dd class="money">{{ money(invoice.credited) }}</dd></div>
                   <div><dt>{{ settledLabel }}</dt><dd class="money">{{ money(invoice.paid) }}</dd></div>

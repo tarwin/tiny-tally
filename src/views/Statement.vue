@@ -18,8 +18,8 @@ import { session } from '../lib/session';
 const route = useRoute();
 const router = useRouter();
 const contactId = computed(() => Number(route.params.id));
-const company = computed(() => session.company!);
-const money = (v: number) => formatMoney(v, company.value.currency);
+const books = computed(() => session.books!);
+const money = (v: number) => formatMoney(v, books.value.currency);
 
 const from = ref(addDays(today(), -90));
 const to = ref(today());
@@ -77,15 +77,15 @@ function email() {
       'If your records differ, could you send us your statement so we can match them up?',
       '',
       'Thanks,',
-      company.value.name,
+      books.value.name,
     ].join('\n');
     void tiny.app.shell.open(
-      `mailto:${encodeURIComponent(s.contact.email ?? '')}?subject=${encodeURIComponent(`Account statement from ${company.value.name}`)}&body=${encodeURIComponent(body)}`,
+      `mailto:${encodeURIComponent(s.contact.email ?? '')}?subject=${encodeURIComponent(`Account statement from ${books.value.name}`)}&body=${encodeURIComponent(body)}`,
     );
     toast({ title: 'Email drafted', content: 'Print to PDF and attach the statement before sending.' });
     return;
   }
-  const subject = `Statement from ${company.value.name}`;
+  const subject = `Statement from ${books.value.name}`;
   const body = [
     `Hi ${s.contact.name},`,
     '',
@@ -93,7 +93,7 @@ function email() {
     template.value?.paymentDetails ? `\n${template.value.paymentDetails}` : '',
     '',
     'Thanks,',
-    company.value.name,
+    books.value.name,
   ].join('\n');
   void tiny.app.shell.open(`mailto:${encodeURIComponent(s.contact.email ?? '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   toast({ title: 'Email drafted', content: 'Print to PDF and attach the statement before sending.' });
@@ -127,10 +127,10 @@ function email() {
           <header class="Doc__head">
             <div>
               <img v-if="template?.logo" :src="template.logo" alt="" class="Doc__logo" />
-              <div class="Doc__company">{{ company.name }}</div>
-              <div v-if="company.abn && company.taxEnabled">ABN {{ company.abn }}</div>
-              <div v-if="company.businessAddress" class="Doc__pre">{{ company.businessAddress }}</div>
-              <div class="Doc__muted">{{ [company.businessEmail, company.businessPhone].filter(Boolean).join(' · ') }}</div>
+              <div class="Doc__from">{{ books.name }}</div>
+              <div v-if="books.abn && books.taxEnabled">ABN {{ books.abn }}</div>
+              <div v-if="books.businessAddress" class="Doc__pre">{{ books.businessAddress }}</div>
+              <div class="Doc__muted">{{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}</div>
             </div>
             <div class="Doc__titleBlock">
               <h1 class="Doc__title">{{ words.title }}</h1>
@@ -235,7 +235,7 @@ function email() {
   margin-bottom: 4mm;
 }
 
-.Doc__company {
+.Doc__from {
   font-size: 17px;
   font-weight: 700;
 }

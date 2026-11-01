@@ -31,13 +31,13 @@ import { session } from '../lib/session';
 import { TAX_CODE_MAP } from '../shared/tax';
 
 const router = useRouter();
-const company = computed(() => session.company!);
-const money = (v: number) => formatMoney(v, company.value.currency);
+const books = computed(() => session.books!);
+const money = (v: number) => formatMoney(v, books.value.currency);
 /** The BAS is lodged in whole dollars; the ATO says to drop the cents. */
 const dollars = (cents: number) => Math.trunc(cents / 100);
-const wholeMoney = (cents: number) => formatMoney(dollars(cents) * 100, company.value.currency).replace(/\.00$/, '');
+const wholeMoney = (cents: number) => formatMoney(dollars(cents) * 100, books.value.currency).replace(/\.00$/, '');
 
-const periods = computed(() => taxPeriods(company.value.basFrequency, company.value.fiscalYearStart, 12));
+const periods = computed(() => taxPeriods(books.value.basFrequency, books.value.fiscalYearStart, 12));
 const periodKey = ref('');
 const period = computed(() => periods.value.find((p) => p.from === periodKey.value) ?? periods.value[0]);
 const periodOptions = computed(() =>
@@ -51,7 +51,7 @@ const periodOptions = computed(() =>
   }),
 );
 
-const basis = ref<Basis>(company.value.taxBasis);
+const basis = ref<Basis>(books.value.taxBasis);
 const report = ref<BasReport | null>(null);
 const returns = ref<BasReturn[]>([]);
 const loading = ref(false);
@@ -65,9 +65,9 @@ const lodged = computed(() => saved.value?.status === 'lodged');
 const figures = computed<BasFigures | null>(() => (lodged.value ? saved.value!.figures : report.value?.figures ?? null));
 
 const amounts = computed(() => ({
-  w1: lodged.value ? saved.value!.w1 : parseMoney(w.value.w1 || '0', company.value.currency) ?? 0,
-  w2: lodged.value ? saved.value!.w2 : parseMoney(w.value.w2 || '0', company.value.currency) ?? 0,
-  t7: lodged.value ? saved.value!.t7 : parseMoney(w.value.t7 || '0', company.value.currency) ?? 0,
+  w1: lodged.value ? saved.value!.w1 : parseMoney(w.value.w1 || '0', books.value.currency) ?? 0,
+  w2: lodged.value ? saved.value!.w2 : parseMoney(w.value.w2 || '0', books.value.currency) ?? 0,
+  t7: lodged.value ? saved.value!.t7 : parseMoney(w.value.t7 || '0', books.value.currency) ?? 0,
 }));
 
 const summary = computed(() => {
@@ -96,7 +96,7 @@ async function load() {
 // Switching periods picks up whatever was saved for it.
 watch(saved, (s) => {
   w.value = s
-    ? { w1: toInput(s.w1, company.value.currency), w2: toInput(s.w2, company.value.currency), t7: toInput(s.t7, company.value.currency) }
+    ? { w1: toInput(s.w1, books.value.currency), w2: toInput(s.w2, books.value.currency), t7: toInput(s.t7, books.value.currency) }
     : { w1: '', w2: '', t7: '' };
   if (s) basis.value = s.basis;
 });
@@ -119,13 +119,13 @@ async function save(lodge: boolean) {
   }
   saving.value = true;
   try {
-    session.company = (await api.saveBasReturn({
+    session.books = (await api.saveBasReturn({
       periodStart: period.value.from,
       periodEnd: period.value.to,
       basis: basis.value,
       ...amounts.value,
       lodge,
-    })) as typeof session.company;
+    })) as typeof session.books;
     toast({ title: lodge ? 'BAS marked as lodged' : 'Draft saved', tone: 'success' });
     await load();
   } catch (e) {
@@ -144,7 +144,7 @@ async function reopen() {
   });
   if (!ok) return;
   try {
-    session.company = await api.reopenBasReturn(saved.value!.id);
+    session.books = await api.reopenBasReturn(saved.value!.id);
     toast({ title: 'BAS reopened' });
     await load();
   } catch (e) {
@@ -169,7 +169,7 @@ async function openPay() {
   // Quarterly BAS is due on the 28th of the month after the quarter (Q2 in February).
   const due = addDays(period.value!.to, 28);
   pay.value = {
-    amount: toInput(Math.abs(summary.value!.nine) * 100, company.value.currency),
+    amount: toInput(Math.abs(summary.value!.nine) * 100, books.value.currency),
     date: due < today() ? due : today(),
     accountId: payAccounts.value[0]?.value ?? null,
   };
@@ -177,7 +177,7 @@ async function openPay() {
 }
 
 async function savePay() {
-  const amount = parseMoney(pay.value.amount, company.value.currency);
+  const amount = parseMoney(pay.value.amount, books.value.currency);
   if (!amount || amount <= 0 || !pay.value.accountId) {
     payError.value = 'Enter the amount and account.';
     return;
@@ -256,7 +256,7 @@ const LABELS: { key: keyof BasFigures; label: string; help: string }[] = [
   { key: 'G10', label: 'Capital purchases', help: 'Including GST' },
   { key: 'G11', label: 'Non-capital purchases', help: 'Including GST' },
 ];
-const simpler = computed(() => company.value.basFrequency !== 'monthly');
+const simpler = computed(() => books.value.basFrequency !== 'monthly');
 </script>
 
 <template>
@@ -267,7 +267,7 @@ const simpler = computed(() => company.value.basFrequency !== 'monthly');
     :primary-action="{ label: 'Export detail CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
     :secondary-actions="[{ label: 'Print', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >
-    <Banner v-if="!company.taxEnabled" status="info" title="GST is turned off">
+    <Banner v-if="!books.taxEnabled" status="info" title="GST is turned off">
       Turn on “Registered for GST” in Settings to track GST and prepare your BAS.
     </Banner>
 
@@ -296,11 +296,11 @@ const simpler = computed(() => company.value.basFrequency !== 'monthly');
         <CardSection>
           <div ref="sheet" class="Sheet" :class="{ Loading: loading }">
             <div class="ReportHead">
-              <h2>{{ company.name }}: Business Activity Statement</h2>
+              <h2>{{ books.name }}: Business Activity Statement</h2>
               <p>
                 {{ period ? `${period.label} · ${formatDay(period.from)} – ${formatDay(period.to)}` : '' }}
                 · {{ basis === 'cash' ? 'Cash' : 'Accrual' }} basis
-                <template v-if="company.abn"> · ABN {{ company.abn }}</template>
+                <template v-if="books.abn"> · ABN {{ books.abn }}</template>
               </p>
             </div>
 
@@ -469,7 +469,7 @@ const simpler = computed(() => company.value.basFrequency !== 'monthly');
     >
       <ModalSection>
         <FormLayout>
-          <TextField v-model="pay.amount" label="Amount" :prefix="company.currency" align="right" :error="payError" />
+          <TextField v-model="pay.amount" label="Amount" :prefix="books.currency" align="right" :error="payError" />
           <DatePicker v-model="pay.date" type="date" model-format="YYYY-MM-DD" :label="refund ? 'Date received' : 'Date paid'" />
           <Select v-model="pay.accountId" :label="refund ? 'Received into' : 'Paid from'" :options="payAccounts" />
         </FormLayout>

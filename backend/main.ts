@@ -1,16 +1,16 @@
-// tinyjs backend — owns the company file. The page reaches everything here
+// tinyjs backend — owns the books file. The page reaches everything here
 // through tiny.api.call('<name>', params).
 import {
   FILE_EXT,
   all,
-  backupCompany,
-  closeCompany,
-  createCompany,
-  getCompany,
-  hasCompany,
+  backupBooks,
+  closeBooks,
+  createBooks,
+  getBooks,
+  hasBooks,
   inWindow,
   one,
-  openCompany,
+  openBooks,
   openWindows,
   run,
   windowWithFile,
@@ -62,7 +62,7 @@ import {
   reopenBasReturn,
   saveBasReturn,
 } from './reports';
-import { getSettings, updateSettings, type CompanySettings } from './settings';
+import { getSettings, updateSettings, type BooksSettings } from './settings';
 import { DEMO_NAME, seedDemo } from './demo';
 import { commitImport, readImportFile, suggestCategories } from './importer';
 import { cancelReconcile, finishReconcile, reconcileState, reconciledDates, startReconcile, tick, undoReconcile } from './reconcile';
@@ -84,26 +84,26 @@ import {
 import type { ImportPlan } from '../src/shared/import';
 import { isTaxCode, type TaxCode } from '../src/shared/tax';
 
-interface RecentCompany {
+interface RecentBooks {
   path: string;
   name: string;
   lastOpened: string;
   color?: string;
 }
 
-interface CompanyStore {
-  recent: RecentCompany[];
+interface BooksStore {
+  recent: RecentBooks[];
   lastPath: string | null;
 }
 
-const STORE_KEY = 'companies';
+const STORE_KEY = 'books';
 const MAX_RECENT = 8;
 
 let appRef: TinyApp;
 
 // ---- windows --------------------------------------------------------------------
-// Each window holds its own company (db.ts). Secondary windows are opened by
-// the backend; the company a new window should show waits here until its
+// Each window holds its own books (db.ts). Secondary windows are opened by
+// the backend; the books a new window should show waits here until its
 // page calls app.start.
 const pendingOpen = new Map<string, string>();
 let windowCount = 0;
@@ -114,7 +114,7 @@ let pendingFiles: string[] = [];
 let mainStarted = false;
 /**
  * The main window can't really close (that quits the app), so its close
- * button hides it instead and it lets go of its company. Hidden and empty,
+ * button hides it instead and it lets go of its books. Hidden and empty,
  * it's reused for the next window anyone asks for.
  */
 let mainHidden = false;
@@ -138,7 +138,7 @@ function checkMainHidden() {
     const st = await appRef.win.getState().catch(() => null);
     if (!st || st.visible || st.minimized || mainHidden) return;
     mainHidden = true;
-    closeCompany('main');
+    closeBooks('main');
     setWindowTitle('main', null);
     appRef.win.push('window-hidden', {});
   }, 150);
@@ -150,7 +150,7 @@ function openWindow(path: string | null) {
     showMain();
     return 'main';
   }
-  const win = `company-${++windowCount}`;
+  const win = `books-${++windowCount}`;
   if (path) pendingOpen.set(win, path);
   appRef.win.open(win, { size: '1180x780', minSize: '820x560', title: 'Tiny Tally' });
   return win;
@@ -166,20 +166,20 @@ function focusFileWindow(path: string) {
 }
 
 async function internalDir() {
-  return (await appRef.paths()).data + '/companies';
+  return (await appRef.paths()).data + '/books';
 }
 
 async function isInternal(path: string) {
   return path.startsWith((await internalDir()) + '/');
 }
 
-async function readStore(): Promise<CompanyStore> {
-  const s = (await appRef.store.get(STORE_KEY)) as CompanyStore | null;
+async function readStore(): Promise<BooksStore> {
+  const s = (await appRef.store.get(STORE_KEY)) as BooksStore | null;
   return { recent: s?.recent ?? [], lastPath: s?.lastPath ?? null };
 }
 
-/** Saves the company list and tells every window, so each Open Recent menu stays current. */
-async function writeStore(s: CompanyStore) {
+/** Saves the books list and tells every window, so each Open Recent menu stays current. */
+async function writeStore(s: BooksStore) {
   await appRef.store.set(STORE_KEY, s);
   appRef.push('recent-changed', { recent: s.recent });
 }
@@ -204,26 +204,26 @@ async function fileExists(path: string) {
 
 function fileNameFor(name: string) {
   const safe = name.replace(/[^\p{L}\p{N} _.-]+/gu, '').trim().replace(/\s+/g, ' ');
-  return (safe || 'Company') + '.' + FILE_EXT;
+  return (safe || 'Books') + '.' + FILE_EXT;
 }
 
-function companyInfo(win: string) {
+function booksInfo(win: string) {
   return inWindow(win, () => {
-    if (!hasCompany()) return null;
-    const c = getCompany();
+    if (!hasBooks()) return null;
+    const c = getBooks();
     return { path: c.path, internal: c.internal, ...getSettings() };
   });
 }
 
 async function afterOpen(win: string) {
-  const info = companyInfo(win)!;
+  const info = booksInfo(win)!;
   await remember(info.path, info.name, info.color);
   setWindowTitle(win, info.name);
   return info;
 }
 
 type OpenResult =
-  | { ok: true; company: ReturnType<typeof companyInfo> }
+  | { ok: true; books: ReturnType<typeof booksInfo> }
   | { ok: false; locked: boolean; message: string; elsewhere?: boolean };
 
 async function tryOpen(win: string, path: string, force = false): Promise<OpenResult> {
@@ -231,11 +231,11 @@ async function tryOpen(win: string, path: string, force = false): Promise<OpenRe
   const other = windowWithFile(path);
   if (other && other !== win) {
     windowHandle(other).show();
-    return { ok: false, locked: false, elsewhere: true, message: 'That company is already open in another window.' };
+    return { ok: false, locked: false, elsewhere: true, message: 'Those books are already open in another window.' };
   }
   try {
-    await openCompany(win, { path, internal: await isInternal(path), force });
-    return { ok: true, company: await afterOpen(win) };
+    await openBooks(win, { path, internal: await isInternal(path), force });
+    return { ok: true, books: await afterOpen(win) };
   } catch (e: any) {
     return { ok: false, locked: e?.code === 'LOCKED', message: e?.message ?? String(e) };
   }
@@ -246,11 +246,11 @@ function blankToNull(v: unknown) {
 }
 
 export const api: Record<string, TinyApiHandler> = {
-  // ---- company file ------------------------------------------------------
+  // ---- books file ------------------------------------------------------
 
   /**
    * First call each window's page makes. The main window reopens the last
-   * company (unless App settings say not to); a window opened for a company
+   * books (unless App settings say not to); a window opened for a set of books
    * opens that one.
    */
   'app.start': async (_p, _app, { window: win }) => {
@@ -267,15 +267,15 @@ export const api: Record<string, TinyApiHandler> = {
       const prefs = (await appRef.store.get('appSettings').catch(() => null)) as { reopenLast?: boolean } | null;
       if (prefs?.reopenLast !== false) lastPath = store.lastPath;
     }
-    if (lastPath && !companyInfo(win) && !windowWithFile(lastPath)) {
+    if (lastPath && !booksInfo(win) && !windowWithFile(lastPath)) {
       const r = await tryOpen(win, lastPath);
       if (!r.ok) {
         reopenError = r.message;
         locked = r.locked;
       }
     }
-    const company = companyInfo(win);
-    setWindowTitle(win, company?.name ?? null);
+    const books = booksInfo(win);
+    setWindowTitle(win, books?.name ?? null);
     let openFiles: string[] = [];
     if (win === 'main' && !mainStarted) {
       mainStarted = true;
@@ -283,7 +283,7 @@ export const api: Record<string, TinyApiHandler> = {
       pendingFiles = [];
     }
     return {
-      company,
+      books,
       recent: (await readStore()).recent,
       lastPath,
       reopenError,
@@ -293,7 +293,7 @@ export const api: Record<string, TinyApiHandler> = {
     };
   },
 
-  'company.create': async ({ name, currency, fiscalYearStart, dir, taxEnabled, abn }: {
+  'books.create': async ({ name, currency, fiscalYearStart, dir, taxEnabled, abn }: {
     name: string;
     currency: string;
     fiscalYearStart: number;
@@ -303,35 +303,35 @@ export const api: Record<string, TinyApiHandler> = {
     abn?: string;
   }, _app, { window: win }) => {
     name = String(name ?? '').trim();
-    if (!name) throw new Error('Give the company a name.');
+    if (!name) throw new Error('Give your books a name.');
     const folder = dir ?? (await internalDir());
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createCompany(win, path, dir === null, { name, currency, fiscalYearStart: Number(fiscalYearStart) || 1, taxEnabled });
+    await createBooks(win, path, dir === null, { name, currency, fiscalYearStart: Number(fiscalYearStart) || 1, taxEnabled });
     inWindow(win, () => {
       if (abn) updateSettings({ abn });
-      startHistory('company.create', JSON.stringify({ name }));
+      startHistory('books.create', JSON.stringify({ name }));
     });
     return afterOpen(win);
   },
 
   /** A sample Australian business with about 16 months of activity. */
-  'company.createDemo': async ({ dir, today }: { dir: string | null; today: string }, _app, { window: win }) => {
+  'books.createDemo': async ({ dir, today }: { dir: string | null; today: string }, _app, { window: win }) => {
     const folder = dir ?? (await internalDir());
     let name = DEMO_NAME;
     for (let n = 2; await fileExists(folder + '/' + fileNameFor(name)); n++) name = `${DEMO_NAME} ${n}`;
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createCompany(win, path, dir === null, { name, currency: 'AUD', fiscalYearStart: 7, taxEnabled: true });
+    await createBooks(win, path, dir === null, { name, currency: 'AUD', fiscalYearStart: 7, taxEnabled: true });
     inWindow(win, () => {
       seedDemo(today);
-      startHistory('company.createDemo', JSON.stringify({ name }));
+      startHistory('books.createDemo', JSON.stringify({ name }));
     });
     return afterOpen(win);
   },
 
-  'company.open': async ({ path, force }: { path: string; force?: boolean }, _app, { window: win }) => tryOpen(win, path, !!force),
+  'books.open': async ({ path, force }: { path: string; force?: boolean }, _app, { window: win }) => tryOpen(win, path, !!force),
 
-  /** Opens a company in a window of its own (or focuses the one that has it). */
-  'company.openInNewWindow': async ({ path }: { path: string }) => {
+  /** Opens a set of books in a window of its own (or focuses the one that has it). */
+  'books.openInNewWindow': async ({ path }: { path: string }) => {
     if (focusFileWindow(path)) return { focused: true };
     openWindow(path);
     return { focused: false };
@@ -349,8 +349,8 @@ export const api: Record<string, TinyApiHandler> = {
     return true;
   },
 
-  'company.close': async (_p, _app, { window: win }) => {
-    closeCompany(win);
+  'books.close': async (_p, _app, { window: win }) => {
+    closeBooks(win);
     setWindowTitle(win, null);
     if (win === 'main') {
       const s = await readStore();
@@ -359,22 +359,22 @@ export const api: Record<string, TinyApiHandler> = {
     return true;
   },
 
-  'company.forget': async ({ path }: { path: string }) => {
+  'books.forget': async ({ path }: { path: string }) => {
     const s = await readStore();
     const recent = s.recent.filter((r) => r.path !== path);
     await writeStore({ recent, lastPath: s.lastPath === path ? null : s.lastPath });
     return recent;
   },
 
-  'company.backup': async ({ stamp }: { stamp?: string } = {}, _app, { window: win }) => {
-    const { path } = getCompany();
+  'books.backup': async ({ stamp }: { stamp?: string } = {}, _app, { window: win }) => {
+    const { path } = getBooks();
     const dir = path.slice(0, path.lastIndexOf('/')) + '/Backups';
     await tjs.makeDir(dir, { recursive: true });
     const base = path.slice(path.lastIndexOf('/') + 1).replace(new RegExp(`\\.${FILE_EXT}$`), '');
     // The page sends its local time (no Intl/time zones here); fall back to UTC.
     const when = /^[\d -]+$/.test(stamp ?? '') ? stamp! : new Date().toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '-');
     const dest = `${dir}/${base} ${when}.${FILE_EXT}`;
-    inWindow(win, () => backupCompany(dest));
+    inWindow(win, () => backupBooks(dest));
     return dest;
   },
 
@@ -396,7 +396,7 @@ export const api: Record<string, TinyApiHandler> = {
 
   // ---- settings ----------------------------------------------------------
 
-  'settings.update': async (patch: Partial<CompanySettings>, _app, { window: win }) => {
+  'settings.update': async (patch: Partial<BooksSettings>, _app, { window: win }) => {
     updateSettings(patch ?? {});
     return afterOpen(win);
   },
@@ -404,7 +404,7 @@ export const api: Record<string, TinyApiHandler> = {
   // ---- money accounts ----------------------------------------------------
 
   'accounts.list': async () => {
-    const { db } = getCompany();
+    const { db } = getBooks();
     const reconciled = new Map(reconciledDates().map((r) => [r.accountId, r.date]));
     return all(
       db,
@@ -431,7 +431,7 @@ export const api: Record<string, TinyApiHandler> = {
     if (!name) throw new Error('Give the account a name.');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(openingDate)) throw new Error('Pick an opening date.');
     const bal = Math.round(Number(openingBalance) || 0);
-    const { db } = getCompany();
+    const { db } = getBooks();
     if (id) {
       run(db, 'UPDATE accounts SET name = ?, kind = ?, opening_balance = ?, opening_date = ? WHERE id = ?',
         name, kind, bal, openingDate, id);
@@ -444,14 +444,14 @@ export const api: Record<string, TinyApiHandler> = {
   },
 
   'accounts.archive': async ({ id, archived }: { id: number; archived: boolean }) => {
-    run(getCompany().db, 'UPDATE accounts SET is_archived = ? WHERE id = ?', archived ? 1 : 0, id);
+    run(getBooks().db, 'UPDATE accounts SET is_archived = ? WHERE id = ?', archived ? 1 : 0, id);
     return true;
   },
 
   // ---- categories --------------------------------------------------------
 
   'categories.list': async () => {
-    const { db } = getCompany();
+    const { db } = getBooks();
     return all(
       db,
       `SELECT c.id, c.name, c.kind, c.class AS class, c.is_archived AS archived, c.tax_code AS taxCode,
@@ -475,7 +475,7 @@ export const api: Record<string, TinyApiHandler> = {
     const code = ['tax', 'owner', 'loan'].includes(klass) ? 'NTR' : isTaxCode(taxCode) ? taxCode : 'GST';
     name = String(blankToNull(name) ?? '').trim();
     if (!name) throw new Error('Give the category a name.');
-    const { db } = getCompany();
+    const { db } = getBooks();
     const clash = one(db, 'SELECT id FROM categories WHERE kind = ? AND name = ? COLLATE NOCASE AND id IS NOT ?',
       kind, name, id ?? null);
     if (clash) throw new Error(`There's already a${kind === 'income' ? 'n income' : 'n expense'} category called “${name}”.`);
@@ -488,7 +488,7 @@ export const api: Record<string, TinyApiHandler> = {
   },
 
   'categories.archive': async ({ id, archived }: { id: number; archived: boolean }) => {
-    run(getCompany().db, 'UPDATE categories SET is_archived = ? WHERE id = ?', archived ? 1 : 0, id);
+    run(getBooks().db, 'UPDATE categories SET is_archived = ? WHERE id = ?', archived ? 1 : 0, id);
     return true;
   },
 };
@@ -544,13 +544,13 @@ Object.assign(api, {
   'rules.delete': async ({ id }: { id: number }) => deleteRule(id),
   'rules.match': async ({ items }: { items: { text: string; kind?: 'income' | 'expense' }[] }) => matchRules(Array.isArray(items) ? items : []),
 
-  /** Small per-company preferences (saved CSV column mappings and the like). */
+  /** Small per-book preferences (saved CSV column mappings and the like). */
   'prefs.get': async ({ key }: { key: string }) => {
-    const v = one<{ value: string }>(getCompany().db, 'SELECT value FROM meta WHERE key = ?', 'pref:' + String(key))?.value;
+    const v = one<{ value: string }>(getBooks().db, 'SELECT value FROM meta WHERE key = ?', 'pref:' + String(key))?.value;
     return v === undefined ? null : JSON.parse(v);
   },
   'prefs.set': async ({ key, value }: { key: string; value: unknown }) => {
-    run(getCompany().db, 'INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'pref:' + String(key), JSON.stringify(value ?? null));
+    run(getBooks().db, 'INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'pref:' + String(key), JSON.stringify(value ?? null));
     return true;
   },
   'invoices.recordPayment': async (p: Parameters<typeof recordPayment>[0]) => recordPayment(p),
@@ -568,11 +568,11 @@ Object.assign(api, {
   'bas.list': async () => listBasReturns(),
   'bas.save': async (p: Parameters<typeof saveBasReturn>[0], _app, { window: win }) => {
     saveBasReturn(p);
-    return companyInfo(win);
+    return booksInfo(win);
   },
   'bas.reopen': async ({ id }: { id: number }, _app, { window: win }) => {
     reopenBasReturn(id);
-    return companyInfo(win);
+    return booksInfo(win);
   },
   'bas.delete': async ({ id }: { id: number }) => deleteBasReturn(id),
 
@@ -590,7 +590,7 @@ Object.assign(api, {
   'changes.batches': async (p: Parameters<typeof listBatches>[0]) => listBatches(p ?? {}),
   'changes.batch': async (p: Parameters<typeof batchChanges>[0]) => batchChanges(p),
   'changes.row': async (p: Parameters<typeof rowHistory>[0]) => rowHistory(p),
-  /** Moves history before a date into a .tallylog file beside the company file. */
+  /** Moves history before a date into a .tallylog file beside the books file. */
   'changes.archive': async (p: { before: string; beforeAt: string }, _app, { window: win }) => {
     const prep = archivePrepare(p);
     const hash = await sha256(prep.text);
@@ -605,7 +605,7 @@ Object.assign(api, {
  * anything that writes is logged, including calls added later; a batch that
  * changed nothing is dropped.
  */
-const READ_ONLY = /^(app\.|company\.|drop\.|changes\.|file\.|import\.(read|suggest)$|prefs\.get$|rules\.match$|templates\.readLogo$|reports\.|ledger\.|bills\.remittance$|entries\.summary$|invoices\.suggestNumber$|reconcile\.state$|journals\.accounts$|bas\.list$|.*\.(list|get)$)/;
+const READ_ONLY = /^(app\.|books\.|drop\.|changes\.|file\.|import\.(read|suggest)$|prefs\.get$|rules\.match$|templates\.readLogo$|reports\.|ledger\.|bills\.remittance$|entries\.summary$|invoices\.suggestNumber$|reconcile\.state$|journals\.accounts$|bas\.list$|.*\.(list|get)$)/;
 
 // Every handler runs bound to its calling window (see db.ts).
 for (const [name, handler] of Object.entries(api)) {
@@ -613,7 +613,7 @@ for (const [name, handler] of Object.entries(api)) {
   api[name] = (params, app, meta) => {
     const win = meta?.window ?? 'main';
     return inWindow(win, () => {
-      const batch = logged && hasCompany() ? beginBatch(name) : null;
+      const batch = logged && hasBooks() ? beginBatch(name) : null;
       let out: unknown;
       try {
         out = handler(params, app, meta ?? { window: win });
@@ -679,8 +679,8 @@ export function onOpenFiles(paths: string[]) {
 
 export function onWindowClosed(id: string) {
   if (id === 'main') {
-    for (const win of openWindows()) closeCompany(win);
-  } else closeCompany(id);
+    for (const win of openWindows()) closeBooks(win);
+  } else closeBooks(id);
   pendingOpen.delete(id);
   if (focusedWindow === id) focusedWindow = 'main';
 }

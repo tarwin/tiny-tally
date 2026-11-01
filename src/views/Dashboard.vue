@@ -19,7 +19,7 @@ const emptySummary = (): InvoiceList['summary'] => ({ outstanding: 0, overdue: 0
 const invoices = ref(emptySummary());
 const bills = ref(emptySummary());
 
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 const active = computed(() => accounts.value.filter((a) => !a.archived));
 const cash = computed(() => active.value.filter((a) => a.kind !== 'credit_card').reduce((s, a) => s + a.balance, 0));
 const owed = computed(() => active.value.filter((a) => a.kind === 'credit_card').reduce((s, a) => s - a.balance, 0));
@@ -80,7 +80,7 @@ onMounted(load);
 </script>
 
 <template>
-  <Page :title="session.company!.name" subtitle="Dashboard" size="wide">
+  <Page :title="session.books!.name" subtitle="Dashboard" size="wide">
     <div class="Quick">
       <Button type="primary" icon="mdi:arrow-up-bold-circle-outline" @click="newEntry('expense')">Expense</Button>
       <Button icon="mdi:arrow-down-bold-circle-outline" @click="newEntry('income')">Income</Button>

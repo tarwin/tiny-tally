@@ -105,7 +105,7 @@ async function save() {
         />
         <ToggleSwitch v-if="schedule" v-model="form.active" label="Active" />
         <p class="subdued Note">
-          Due {{ noun }}s are created when you open the company, so nothing is missed if the app was closed.
+          Due {{ noun }}s are created when you open your books, so nothing is missed if the app was closed.
         </p>
       </FormLayout>
     </ModalSection>

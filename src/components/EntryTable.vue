@@ -19,7 +19,7 @@ const props = defineProps<{
   compact?: boolean;
 }>();
 
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 const router = useRouter();
 
 /** Payments belong to their invoice or bill and are changed from there. */

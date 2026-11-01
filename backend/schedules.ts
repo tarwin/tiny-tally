@@ -3,8 +3,8 @@
 // A schedule stores what to create (payload) and when. Occurrence n falls on
 // start_date + n periods, counted from the start so monthly-on-the-31st stays
 // at month end instead of drifting. The page calls runSchedules(today) when a
-// company opens; everything due up to today is created then.
-import { all, getCompany, one, run } from './db';
+// books opens; everything due up to today is created then.
+import { all, getBooks, one, run } from './db';
 import { saveEntry, type EntryInput } from './entries';
 import { saveInvoice, type InvoiceInput } from './invoices';
 import { getSettings } from './settings';
@@ -88,17 +88,17 @@ function shape(r: any) {
 }
 
 export function listSchedules() {
-  return all(getCompany().db, 'SELECT * FROM schedules ORDER BY is_active DESC, next_date, name COLLATE NOCASE').map(shape);
+  return all(getBooks().db, 'SELECT * FROM schedules ORDER BY is_active DESC, next_date, name COLLATE NOCASE').map(shape);
 }
 
 export function getSchedule(id: number) {
-  const r = one(getCompany().db, 'SELECT * FROM schedules WHERE id = ?', id);
+  const r = one(getBooks().db, 'SELECT * FROM schedules WHERE id = ?', id);
   if (!r) throw new Error('That schedule no longer exists.');
   return shape(r);
 }
 
 export function saveSchedule(input: ScheduleInput) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   if (!['entry', 'invoice', 'bill'].includes(input.kind)) throw new Error('Unknown schedule type.');
   if (!FREQUENCIES.includes(input.frequency)) throw new Error('Choose how often it repeats.');
   if (!DATE.test(String(input.startDate))) throw new Error('Pick the first date.');
@@ -130,7 +130,7 @@ export function saveSchedule(input: ScheduleInput) {
 }
 
 export function deleteSchedule(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   db.transaction(() => {
     run(db, 'UPDATE entries SET schedule_id = NULL WHERE schedule_id = ?', id);
     run(db, 'UPDATE invoices SET schedule_id = NULL WHERE schedule_id = ?', id);
@@ -141,7 +141,7 @@ export function deleteSchedule(id: number) {
 
 /** Moves past the next occurrence without creating it. */
 export function skipNext(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const s = one<any>(db, 'SELECT * FROM schedules WHERE id = ?', id);
   if (!s) throw new Error('That schedule no longer exists.');
   const n = s.occurrences + 1;
@@ -153,7 +153,7 @@ function createOne(s: any, date: string) {
   const payload = JSON.parse(s.payload);
   if (s.kind === 'entry') {
     const id = saveEntry({ ...payload, id: undefined, date });
-    run(getCompany().db, 'UPDATE entries SET schedule_id = ? WHERE id = ?', s.id, id);
+    run(getBooks().db, 'UPDATE entries SET schedule_id = ? WHERE id = ?', s.id, id);
     return { type: 'entry' as const, id };
   }
   const due = addDays(date, Math.max(0, Number(payload.dueDays) || getSettings().paymentTermsDays));
@@ -172,7 +172,7 @@ function createOne(s: any, date: string) {
 
 /** Creates everything due on or before `today`. Safe to call repeatedly. */
 export function runSchedules(today: string) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   if (!DATE.test(String(today))) throw new Error('Pass today as YYYY-MM-DD.');
   const due = all<any>(db,
     `SELECT * FROM schedules WHERE is_active = 1 AND next_date <= ? AND (end_date IS NULL OR next_date <= end_date)`, today);

@@ -5,29 +5,29 @@ import { session } from './session';
 
 async function refresh() {
   const s = await api.start();
-  session.company = s.company;
+  session.books = s.books;
   session.recent = s.recent;
   session.internalDir = s.internalDir;
 }
 
 /**
- * Opens a company file, asking before taking over one locked elsewhere.
- * A window that already has a company opens the new one in a window of its
+ * Opens a books file, asking before taking over one locked elsewhere.
+ * A window that already has a set of books opens the new one in a window of its
  * own; a window on the welcome screen opens it in place.
  */
-export async function openCompanyAt(path: string, force = false): Promise<boolean> {
-  if (session.company) {
-    if (session.company.path === path) return true;
+export async function openBooksAt(path: string, force = false): Promise<boolean> {
+  if (session.books) {
+    if (session.books.path === path) return true;
     try {
       await api.openInNewWindow(path);
       return true;
     } catch (e) {
-      toast({ title: "Couldn't open company", content: errorMessage(e), tone: 'error' });
+      toast({ title: "Couldn't open books", content: errorMessage(e), tone: 'error' });
       return false;
     }
   }
   try {
-    const r = await api.openCompany(path, force);
+    const r = await api.openBooks(path, force);
     // Open in another window, which has been brought to the front.
     if (!r.ok && r.elsewhere) return false;
     if (r.ok) {
@@ -37,42 +37,42 @@ export async function openCompanyAt(path: string, force = false): Promise<boolea
     }
     if (r.locked) {
       const go = await confirmModal({
-        title: 'Company file in use',
+        title: 'Books in use',
         content: `${r.message} If two computers edit it at once, one set of changes can be lost.`,
         primaryActionLabel: 'Open anyway',
         primaryActionType: 'destructive',
         secondaryActionLabel: 'Cancel',
       });
-      return go ? openCompanyAt(path, true) : false;
+      return go ? openBooksAt(path, true) : false;
     }
-    toast({ title: "Couldn't open company", content: r.message, tone: 'error' });
+    toast({ title: "Couldn't open books", content: r.message, tone: 'error' });
   } catch (e) {
-    toast({ title: "Couldn't open company", content: errorMessage(e), tone: 'error' });
+    toast({ title: "Couldn't open books", content: errorMessage(e), tone: 'error' });
   }
   return false;
 }
 
-export async function pickAndOpenCompany() {
+export async function pickAndOpenBooks() {
   const path = await tiny.dialog.openFile({ types: ['tally'] });
-  if (path) await openCompanyAt(path);
+  if (path) await openBooksAt(path);
 }
 
-export async function closeCompany() {
-  await api.closeCompany();
+export async function closeBooks() {
+  await api.closeBooks();
   await refresh();
 }
 
-/** "New Company…": the welcome screen, in a new window if this one has a company open. */
-export async function newCompany() {
-  if (session.company) await api.newWindow();
+/** "New Books…": the welcome screen, in a new window if this one has a set of books open. */
+export async function newBooks() {
+  if (session.books) await api.newWindow();
 }
 
-export async function backupCompany() {
+export async function backupBooks() {
   try {
     const d = new Date();
     const p = (n: number) => String(n).padStart(2, '0');
     const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
-    const dest = await api.backupCompany(stamp);
+    const dest = await api.backupBooks(stamp);
     toast({
       title: 'Backup saved',
       content: dest.slice(dest.lastIndexOf('/') + 1),

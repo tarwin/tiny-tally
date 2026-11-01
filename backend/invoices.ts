@@ -9,8 +9,8 @@
 // Quotes never count anywhere; accepting one copies it to an invoice.
 // A credit note reduces what a customer owes, either by being applied to an
 // invoice (credit_allocations, no money moves) or refunded (a payment out).
-import { all, getCompany, one, run } from './db';
-import { assertUnlocked, getSettings, updateSettings, type CompanySettings } from './settings';
+import { all, getBooks, one, run } from './db';
+import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from './settings';
 import { isTaxCode, lineTotals, sumTotals, type TaxCode } from '../src/shared/tax';
 import { normaliseLayout } from '../src/shared/templateLayout';
 
@@ -20,7 +20,7 @@ export type DocType = 'invoice' | 'bill' | 'quote' | 'credit';
 const DOC_TYPES: DocType[] = ['invoice', 'bill', 'quote', 'credit'];
 
 /** Words for messages, and where each type keeps its numbering. */
-const DOC: Record<DocType, { name: string; prefix: keyof CompanySettings; next: keyof CompanySettings; categoryKind: 'income' | 'expense' }> = {
+const DOC: Record<DocType, { name: string; prefix: keyof BooksSettings; next: keyof BooksSettings; categoryKind: 'income' | 'expense' }> = {
   invoice: { name: 'invoice', prefix: 'invoicePrefix', next: 'invoiceNext', categoryKind: 'income' },
   bill: { name: 'bill', prefix: 'billPrefix', next: 'billNext', categoryKind: 'expense' },
   quote: { name: 'quote', prefix: 'quotePrefix', next: 'quoteNext', categoryKind: 'income' },
@@ -98,7 +98,7 @@ function clean(v: unknown) {
 const OPEN = ['awaiting', 'partial', 'overdue'];
 
 export function listInvoices(q: { docType?: DocType; status?: InvoiceStatus | 'unpaid'; contactId?: number; q?: string; from?: string; to?: string }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const where: string[] = ['i.doc_type = ?'];
   const args: any[] = [docType(q.docType)];
   if (q.contactId) {
@@ -137,7 +137,7 @@ export function listInvoices(q: { docType?: DocType; status?: InvoiceStatus | 'u
 }
 
 export function getInvoice(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const inv = one<any>(db,
     `SELECT ${LIST_COLUMNS}, i.notes, i.template_id AS templateId, i.prices_include_tax AS pricesIncludeTax,
             i.sent_at AS sentAt, i.schedule_id AS scheduleId, ct.address AS contactAddress, ct.phone AS contactPhone,
@@ -176,7 +176,7 @@ function numberFor(type: DocType, n: number, s = getSettings()) {
 
 function nextNumber(type: DocType) {
   const s = getSettings();
-  const { db } = getCompany();
+  const { db } = getBooks();
   let n = Number(s[DOC[type].next]);
   // Skip numbers already taken (e.g. typed by hand).
   while (one(db, 'SELECT id FROM invoices WHERE number = ?', numberFor(type, n, s))) n++;
@@ -187,14 +187,14 @@ function nextNumber(type: DocType) {
 export function suggestNumber(type?: DocType) {
   const t = docType(type);
   const s = getSettings();
-  const { db } = getCompany();
+  const { db } = getBooks();
   let n = Number(s[DOC[t].next]);
   while (one(db, 'SELECT id FROM invoices WHERE number = ?', numberFor(t, n, s))) n++;
   return numberFor(t, n, s);
 }
 
 function settledOn(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const paid = one<{ p: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS p FROM entries WHERE invoice_id = ?', id)!.p;
   const alloc = one<{ a: number }>(db,
     'SELECT COALESCE(SUM(amount), 0) AS a FROM credit_allocations WHERE invoice_id = ?1 OR credit_id = ?1', id)!.a;
@@ -204,7 +204,7 @@ function settledOn(id: number) {
 const money = (c: number) => (c / 100).toFixed(2);
 
 export function saveInvoice(input: InvoiceInput) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const settings = getSettings();
   const existing = input.id ? one<any>(db, 'SELECT * FROM invoices WHERE id = ?', input.id) : null;
   if (input.id && !existing) throw new Error('That document no longer exists.');
@@ -306,7 +306,7 @@ export function saveInvoice(input: InvoiceInput) {
 }
 
 export function setInvoiceStatus(id: number, status: 'draft' | 'sent' | 'void') {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const inv = one<any>(db, 'SELECT * FROM invoices WHERE id = ?', id);
   if (!inv) throw new Error('That document no longer exists.');
   const word = DOC[inv.doc_type as DocType].name;
@@ -323,7 +323,7 @@ export function setInvoiceStatus(id: number, status: 'draft' | 'sent' | 'void') 
 }
 
 export function deleteInvoice(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const inv = one<any>(db, 'SELECT * FROM invoices WHERE id = ?', id);
   if (!inv) return true;
   const word = DOC[inv.doc_type as DocType].name;
@@ -367,7 +367,7 @@ export function duplicateInvoice(id: number, today: string) {
 
 /** Accepting a quote: a draft invoice with the same lines, linked back to it. */
 export function convertQuote(id: number, today: string) {
-  const q = one<any>(getCompany().db, 'SELECT * FROM invoices WHERE id = ?', id);
+  const q = one<any>(getBooks().db, 'SELECT * FROM invoices WHERE id = ?', id);
   if (!q || q.doc_type !== 'quote') throw new Error('That quote no longer exists.');
   if (q.status === 'void') throw new Error('This quote was declined. Reopen it first.');
   if (q.status === 'draft') setInvoiceStatus(id, 'sent');
@@ -376,14 +376,14 @@ export function convertQuote(id: number, today: string) {
 
 /** A draft credit note for an invoice, with its lines ready to trim. */
 export function creditInvoice(id: number, today: string) {
-  const inv = one<any>(getCompany().db, 'SELECT * FROM invoices WHERE id = ?', id);
+  const inv = one<any>(getBooks().db, 'SELECT * FROM invoices WHERE id = ?', id);
   if (!inv || inv.doc_type !== 'invoice') throw new Error('That invoice no longer exists.');
   if (inv.status !== 'sent') throw new Error('Only approved invoices can be credited. Edit or delete a draft instead.');
   return copyDocument(id, today, 'credit', true);
 }
 
 export function recordPayment(p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const inv = one<any>(db, 'SELECT * FROM invoices WHERE id = ?', p.invoiceId);
   if (!inv) throw new Error('That document no longer exists.');
   const type = inv.doc_type as DocType;
@@ -416,7 +416,7 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
 }
 
 export function deletePayment(entryId: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const e = one<any>(db, 'SELECT * FROM entries WHERE id = ? AND invoice_id IS NOT NULL', entryId);
   if (!e) return true;
   assertUnlocked(e.date);
@@ -427,7 +427,7 @@ export function deletePayment(entryId: number) {
 
 /** Use (part of) a credit note against one of the same customer's invoices. */
 export function applyCredit(p: { creditId: number; invoiceId: number; amount: number; date: string }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const credit = one<any>(db, "SELECT * FROM invoices WHERE id = ? AND doc_type = 'credit'", p.creditId);
   const inv = one<any>(db, "SELECT * FROM invoices WHERE id = ? AND doc_type = 'invoice'", p.invoiceId);
   if (!credit) throw new Error('That credit note no longer exists.');
@@ -449,7 +449,7 @@ export function applyCredit(p: { creditId: number; invoiceId: number; amount: nu
 }
 
 export function removeAllocation(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const a = one<any>(db, 'SELECT * FROM credit_allocations WHERE id = ?', id);
   if (!a) return true;
   assertUnlocked(a.date);
@@ -459,7 +459,7 @@ export function removeAllocation(id: number) {
 
 /** Who owes you (invoices) or who you owe (bills), bucketed by days overdue, as at a date. */
 export function agedBalances(asOf: string, type: 'invoice' | 'bill' = 'invoice') {
-  const { db } = getCompany();
+  const { db } = getBooks();
   if (!DATE.test(asOf)) throw new Error('Pick a date.');
   const t = type === 'bill' ? 'bill' : 'invoice';
   // Balance as at asOf: payments and credits on or before that date only.
@@ -506,7 +506,7 @@ export function agedReceivables(asOf: string) {
  * payments (+ we owe more), for checking against the statement they send.
  */
 export function customerStatement(p: { contactId: number; from: string; to: string; side?: 'customer' | 'supplier' }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   if (!DATE.test(p.from) || !DATE.test(p.to)) throw new Error('Pick a date range.');
   const contact = one<any>(db, 'SELECT id, kind, name, email, address FROM contacts WHERE id = ?', p.contactId);
   if (!contact) throw new Error('Choose a contact.');
@@ -564,7 +564,7 @@ export function customerStatement(p: { contactId: number; from: string; to: stri
  * payment arrives at their end as one deposit.
  */
 export function remittance(entryId: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const e = one<any>(db,
     `SELECT e.id, e.date, e.account_id, i.contact_id, i.doc_type FROM entries e JOIN invoices i ON i.id = e.invoice_id WHERE e.id = ?`, entryId);
   if (!e || e.doc_type !== 'bill') throw new Error("That isn't a bill payment.");
@@ -618,7 +618,7 @@ export interface TemplateInput {
 }
 
 export function listTemplates() {
-  return all(getCompany().db,
+  return all(getBooks().db,
     `SELECT t.id, t.name, t.style, t.accent, t.logo, t.title, t.payment_details AS paymentDetails, t.footer,
             t.show_tax_column AS showTaxColumn, t.is_default AS isDefault, t.layout,
             (SELECT COUNT(*) FROM invoices i WHERE i.template_id = t.id) AS uses
@@ -635,7 +635,7 @@ function parseLayout(json: string | null) {
 }
 
 export function saveTemplate(t: TemplateInput) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const name = clean(t.name);
   if (!name) throw new Error('Give the template a name.');
   if (!['classic', 'modern', 'minimal'].includes(t.style)) throw new Error('Choose a layout.');
@@ -657,7 +657,7 @@ export function saveTemplate(t: TemplateInput) {
 }
 
 export function setDefaultTemplate(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   db.transaction(() => {
     run(db, 'UPDATE invoice_templates SET is_default = 0');
     run(db, 'UPDATE invoice_templates SET is_default = 1 WHERE id = ?', id);
@@ -666,7 +666,7 @@ export function setDefaultTemplate(id: number) {
 }
 
 export function deleteTemplate(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const t = one<any>(db, 'SELECT * FROM invoice_templates WHERE id = ?', id);
   if (!t) return true;
   if (t.is_default) throw new Error('Make another template the default first.');

@@ -40,15 +40,15 @@ import {
   type BankMapping,
   type ContactMapping,
 } from '../lib/import/csvImport';
-import { companyDateOrder, detectDateOrder, parseCsv, type DateOrder } from '../lib/import/parse';
+import { booksDateOrder, detectDateOrder, parseCsv, type DateOrder } from '../lib/import/parse';
 import { looksLikeQboReport, parseQboReport } from '../lib/import/qboReport';
 import { readXlsx, readXlsxBundle } from '../lib/import/xlsx';
 import { hashRef, type ImportCategory } from '../shared/import';
 
 const route = useRoute();
 const router = useRouter();
-const company = computed(() => session.company!);
-const money = (v: number) => formatMoney(v, company.value.currency);
+const books = computed(() => session.books!);
+const money = (v: number) => formatMoney(v, books.value.currency);
 
 type Step = 'pick' | 'review' | 'done';
 const step = ref<Step>('pick');
@@ -137,7 +137,7 @@ onMounted(fromQuery);
 
 // ---- parsing ---------------------------------------------------------------------
 
-const fallbackOrder: DateOrder = companyDateOrder(company.value.currency);
+const fallbackOrder: DateOrder = booksDateOrder(books.value.currency);
 const iifDateOrder = ref<DateOrder>('mdy');
 const csvRows = ref<string[][]>([]);
 const csvMode = ref<'bank' | 'customer' | 'vendor'>('bank');
@@ -405,7 +405,7 @@ const counts = computed(() => {
 });
 
 const lockWarning = computed(() => {
-  const lock = company.value.lockDate;
+  const lock = books.value.lockDate;
   if (!lock || !counts.value.entries) return null;
   const n = batch.value.entries.filter((e) => e.date <= lock).length;
   return n ? `${n} transaction${n === 1 ? ' is' : 's are'} dated on or before your lock date (${formatShortDay(lock)}) and will be left out.` : null;

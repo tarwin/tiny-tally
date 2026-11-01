@@ -18,7 +18,7 @@ import { CLASS_INFO, classOptions } from '../lib/categoryClass';
 import { session } from '../lib/session';
 import { TAX_CODES, TAX_CODE_MAP } from '../shared/tax';
 
-const taxOn = computed(() => !!session.company?.taxEnabled);
+const taxOn = computed(() => !!session.books?.taxEnabled);
 
 const categories = ref<Category[]>([]);
 const loading = ref(true);

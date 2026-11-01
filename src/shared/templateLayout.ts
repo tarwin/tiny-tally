@@ -51,8 +51,8 @@ export type LabelKey = keyof typeof LABELS;
 
 /** Details that can be left off. ABN can't be hidden on a tax invoice. */
 export const SHOW = {
-  companyAddress: 'Your address',
-  companyContact: 'Your email and phone',
+  fromAddress: 'Your address',
+  fromContact: 'Your email and phone',
   abn: 'ABN',
   customerAddress: "Customer's address",
   customerEmail: "Customer's email",
@@ -140,7 +140,7 @@ export const PLACEHOLDERS = {
   due_date: 'Due date',
   total: 'Total',
   amount_due: 'Amount due',
-  company: 'Your company name',
+  business: 'Your business name',
 } as const;
 export type PlaceholderKey = keyof typeof PLACEHOLDERS;
 

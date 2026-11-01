@@ -1,6 +1,6 @@
 import { reactive } from 'vue';
 
-// App-wide preferences (not per company), kept in tiny.store beside the theme.
+// App-wide preferences (not per set of books), kept in tiny.store beside the theme.
 // The backend reads `reopenLast` from the same key at startup (app.start).
 const STORE_KEY = 'appSettings';
 
@@ -11,7 +11,7 @@ export interface AppSettings {
   density: Density;
   /** Whole-interface zoom, applied natively by the webview. */
   zoom: number;
-  /** Open the last company again on launch. */
+  /** Open the last books again on launch. */
   reopenLast: boolean;
 }
 

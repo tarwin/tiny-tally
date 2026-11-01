@@ -15,7 +15,7 @@ import {
   toast,
 } from '@octans/ui';
 import { api, errorMessage } from '../lib/api';
-import { openCompanyAt, pickAndOpenCompany, refreshSession } from '../lib/company';
+import { openBooksAt, pickAndOpenBooks, refreshSession } from '../lib/books';
 import { today } from '../lib/dates';
 import { CURRENCIES } from '../lib/money';
 import { MONTHS, session } from '../lib/session';
@@ -68,7 +68,7 @@ const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
 
 const fileName = computed(() => {
   const safe = name.value.replace(/[^\p{L}\p{N} _.-]+/gu, '').trim().replace(/\s+/g, ' ');
-  return (safe || 'Company') + '.tally';
+  return (safe || 'Books') + '.tally';
 });
 
 const destination = computed(() =>
@@ -98,7 +98,7 @@ async function chooseFolder() {
 }
 
 async function create() {
-  nameError.value = name.value.trim() ? null : 'Give the company a name.';
+  nameError.value = name.value.trim() ? null : 'Give your books a name.';
   if (nameError.value) return;
   if (storage.value === 'folder' && !folder.value) {
     await chooseFolder();
@@ -106,7 +106,7 @@ async function create() {
   }
   creating.value = true;
   try {
-    await api.createCompany({
+    await api.createBooks({
       name: name.value.trim(),
       currency: currency.value,
       fiscalYearStart: fiscalYearStart.value,
@@ -115,7 +115,7 @@ async function create() {
     });
     await refreshSession();
   } catch (e) {
-    toast({ title: "Couldn't create company", content: errorMessage(e), tone: 'error' });
+    toast({ title: "Couldn't create books", content: errorMessage(e), tone: 'error' });
   } finally {
     creating.value = false;
   }
@@ -126,7 +126,7 @@ async function tryDemo() {
   try {
     await api.createDemo(null, today());
     await refreshSession();
-    toast({ title: 'Demo company ready', content: 'Explore freely. It lives in its own file and is separate from your real books.' });
+    toast({ title: 'Demo books ready', content: 'Explore freely. They live in their own file and is separate from your real books.' });
   } catch (e) {
     toast({ title: "Couldn't create the demo", content: errorMessage(e), tone: 'error' });
   } finally {
@@ -135,7 +135,7 @@ async function tryDemo() {
 }
 
 async function forget(path: string) {
-  session.recent = await api.forgetCompany(path);
+  session.recent = await api.forgetBooks(path);
 }
 
 function shortPath(path: string) {
@@ -157,7 +157,7 @@ function shortPath(path: string) {
         <p class="subdued">Bookkeeping for small businesses. Your data stays in one file on your computer.</p>
       </header>
 
-      <Banner v-if="props.notice" status="warning" title="Couldn't reopen your last company">
+      <Banner v-if="props.notice" status="warning" title="Couldn't reopen your last books">
         <p>{{ props.notice }}</p>
         <Button
           v-if="props.noticePath"
@@ -166,11 +166,11 @@ function shortPath(path: string) {
         >Remove from recent</Button>
       </Banner>
 
-      <Card v-if="session.recent.length" title="Recent companies">
+      <Card v-if="session.recent.length" title="Recent books">
         <CardSection>
           <ul class="Recent">
             <li v-for="r in session.recent" :key="r.path" class="Recent__row">
-              <button class="Recent__open" type="button" @click="openCompanyAt(r.path)">
+              <button class="Recent__open" type="button" @click="openBooksAt(r.path)">
                 <span class="Recent__name"><span v-if="r.color" class="Recent__dot" :style="{ background: r.color }" />{{ r.name }}</span>
                 <span class="Recent__path subdued">{{ shortPath(r.path) }}</span>
               </button>
@@ -180,12 +180,12 @@ function shortPath(path: string) {
         </CardSection>
       </Card>
 
-      <Card title="Start a new company">
+      <Card title="Start new books">
         <CardSection>
           <FormLayout>
             <TextField
               v-model="name"
-              label="Company name"
+              label="Name"
               placeholder="e.g. Acme Design Studio"
               required
               :error="nameError"
@@ -203,7 +203,7 @@ function shortPath(path: string) {
               <ToggleSwitch v-model="taxEnabled" label="Registered for GST" help-text="Tracks GST on sales and purchases and prepares your BAS." />
               <TextField v-if="taxEnabled" v-model="abn" label="ABN (optional)" placeholder="51 824 753 556" help-text="Shown on tax invoices. You can add it later in Settings." />
             </template>
-            <ChoiceList v-model="storage" label="Where should the company file live?" :options="storageOptions" />
+            <ChoiceList v-model="storage" label="Where should your books live?" :options="storageOptions" />
             <div v-if="storage === 'folder'" class="Folder">
               <span class="Folder__path" :class="{ subdued: !folder }">
                 {{ folder ? destination : 'No folder chosen yet' }}
@@ -216,15 +216,15 @@ function shortPath(path: string) {
         </CardSection>
         <CardSection>
           <div class="Actions">
-            <Button type="plain" icon="mdi:file-outline" @click="pickAndOpenCompany">Open existing file…</Button>
-            <Button type="primary" :loading="creating" @click="create">Create company</Button>
+            <Button type="plain" icon="mdi:file-outline" @click="pickAndOpenBooks">Open existing file…</Button>
+            <Button type="primary" :loading="creating" @click="create">Create books</Button>
           </div>
         </CardSection>
       </Card>
 
       <div class="Demo">
         <span class="subdued">Just looking?</span>
-        <Button type="plain" icon="mdi:storefront-outline" :loading="demoing" @click="tryDemo">Try a demo company with sample data</Button>
+        <Button type="plain" icon="mdi:storefront-outline" :loading="demoing" @click="tryDemo">Try demo books with sample data</Button>
       </div>
     </div>
   </div>

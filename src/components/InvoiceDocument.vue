@@ -3,7 +3,7 @@
 // near-black ink) on purpose instead of theme tokens: it must look the same
 // in dark mode and when printed.
 import { computed } from 'vue';
-import type { Company, DocType, InvoiceLine, InvoiceStatus, InvoiceTemplate } from '../lib/api';
+import type { Books, DocType, InvoiceLine, InvoiceStatus, InvoiceTemplate } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { TAX_CODE_MAP } from '../shared/tax';
@@ -33,7 +33,7 @@ export interface InvoiceDocData {
 
 const props = defineProps<{
   invoice: InvoiceDocData;
-  company: Company;
+  books: Books;
   template: Pick<InvoiceTemplate, 'style' | 'accent' | 'logo' | 'title' | 'paymentDetails' | 'footer' | 'showTaxColumn'> & {
     layout?: InvoiceTemplate['layout'];
   } | null;
@@ -52,8 +52,8 @@ const t = computed(
     },
 );
 
-const currency = computed(() => props.company.currency);
-const taxOn = computed(() => props.company.taxEnabled);
+const currency = computed(() => props.books.currency);
+const taxOn = computed(() => props.books.taxEnabled);
 const type = computed(() => props.invoice.docType ?? 'invoice');
 // A GST credit note is an "adjustment note" to the ATO; customers know it as a credit note.
 const title = computed(() => {
@@ -91,7 +91,7 @@ const fill = (text: string | null | undefined) =>
     due_date: formatDay(props.invoice.dueDate),
     total: money(props.invoice.total),
     amount_due: money(amountDue.value),
-    company: props.company.name,
+    business: props.books.name,
   }).trim();
 
 /** Whether a section has anything to show on this document. */
@@ -143,11 +143,11 @@ const stamp = computed(() => {
       <header v-if="s.key === 'header'" class="Doc__head" :class="sectionClass(s)">
         <div class="Doc__from">
           <img v-if="t.logo" :src="t.logo" alt="" class="Doc__logo" />
-          <div class="Doc__company">{{ company.name }}</div>
-          <div v-if="company.abn && taxOn && show.abn" class="Doc__abn">ABN {{ company.abn }}</div>
-          <div v-if="company.businessAddress && show.companyAddress" class="Doc__pre">{{ company.businessAddress }}</div>
-          <div v-if="(company.businessEmail || company.businessPhone) && show.companyContact" class="Doc__muted">
-            {{ [company.businessEmail, company.businessPhone].filter(Boolean).join(' · ') }}
+          <div class="Doc__from">{{ books.name }}</div>
+          <div v-if="books.abn && taxOn && show.abn" class="Doc__abn">ABN {{ books.abn }}</div>
+          <div v-if="books.businessAddress && show.fromAddress" class="Doc__pre">{{ books.businessAddress }}</div>
+          <div v-if="(books.businessEmail || books.businessPhone) && show.fromContact" class="Doc__muted">
+            {{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}
           </div>
         </div>
         <div class="Doc__titleBlock">
@@ -284,7 +284,7 @@ const stamp = computed(() => {
   margin-bottom: 4mm;
 }
 
-.Doc__company {
+.Doc__from {
   font-size: 17px;
   font-weight: 700;
 }
@@ -588,7 +588,7 @@ const stamp = computed(() => {
   color: var(--ink);
 }
 
-.Doc--minimal .Doc__company {
+.Doc--minimal .Doc__from {
   font-weight: 600;
 }
 

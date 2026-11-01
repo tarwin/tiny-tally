@@ -8,7 +8,7 @@ import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
 import { api } from './lib/api';
 import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density } from './lib/appSettings';
-import { backupCompany, closeCompany, newCompany, openCompanyAt, pickAndOpenCompany, refreshSession } from './lib/company';
+import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
 import { today } from './lib/dates';
 import { dataChanged, newEntry } from './lib/entryEditor';
 import { session } from './lib/session';
@@ -55,8 +55,8 @@ const sections = computed<NavigationSectionType[]>(() => [
     ],
   },
   {
-    id: 'company',
-    title: 'Company',
+    id: 'books',
+    title: 'Books',
     items: [
       { id: 'import', label: 'Import', icon: 'mdi:tray-arrow-down', url: '/import' },
       { id: 'activity', label: 'Activity', icon: 'mdi:history', url: '/activity' },
@@ -72,19 +72,19 @@ function setNavMin(v: boolean) {
   void tiny.store.set('navMin', v).then(() => api.settingsChanged()).catch(() => {});
 }
 
-// Each window has its own company, so its own menu bar: macOS shows the
+// Each window has its own books, so its own menu bar: macOS shows the
 // focused window's, Windows and Linux draw each in its window.
 const isMain = tiny.win.id === 'main';
 
-/** Menu items that need an open company. */
-const COMPANY_ITEMS = [
-  'company-close', 'company-backup', 'company-reveal', 'company-settings', 'import',
+/** Menu items that need open books. */
+const BOOKS_ITEMS = [
+  'books-close', 'books-backup', 'books-reveal', 'books-settings', 'import',
   'new-expense', 'new-income', 'new-transfer', 'new-invoice', 'new-quote', 'new-bill',
 ];
 
 async function syncMenus() {
-  const on = !!session.company;
-  await Promise.all(COMPANY_ITEMS.map((id) => tiny.win.menu.update(id, { enabled: on }).catch(() => {})));
+  const on = !!session.books;
+  await Promise.all(BOOKS_ITEMS.map((id) => tiny.win.menu.update(id, { enabled: on }).catch(() => {})));
 }
 
 function syncDensityMenu() {
@@ -94,13 +94,13 @@ function syncDensityMenu() {
 const isMac = tiny.system.isMacOS();
 const REVEAL_LABEL = isMac ? 'Show in Finder' : tiny.system.isWindows() ? 'Show in File Explorer' : 'Show in Folder';
 
-/** Recent companies, with the folder added where two share a name. */
+/** Recent books, with the folder added where two share a name. */
 function recentItems() {
   const names = session.recent.map((r) => r.name);
   return session.recent.map((r, i) => {
     const folder = r.path.split(/[\\/]/).slice(-2, -1)[0];
     const label = names.filter((n) => n === r.name).length > 1 && folder ? `${r.name} — ${folder}` : r.name;
-    return { id: `recent-${i}`, label, checked: r.path === session.company?.path };
+    return { id: `recent-${i}`, label, checked: r.path === session.books?.path };
   });
 }
 
@@ -113,26 +113,26 @@ async function buildMenu() {
     {
       title: 'File',
       items: [
-        { id: 'company-new', label: 'New Company…', key: 'N' },
+        { id: 'books-new', label: 'New Books…', key: 'N' },
         { id: 'window-new', label: 'New Window', key: 'alt+n' },
-        { id: 'company-open', label: 'Open Company…', key: 'o' },
+        { id: 'books-open', label: 'Open Books…', key: 'o' },
         {
-          id: 'company-recent',
+          id: 'books-recent',
           label: 'Open Recent',
           submenu: recent.length
             ? [...recent, { separator: true }, { id: 'recent-clear', label: 'Clear Menu' }]
-            : [{ id: 'recent-none', label: 'No recent companies', enabled: false }],
+            : [{ id: 'recent-none', label: 'No recent books', enabled: false }],
         },
         { separator: true },
         { id: 'import', label: 'Import…' },
-        { id: 'company-backup', label: 'Back Up Now' },
-        { id: 'company-reveal', label: REVEAL_LABEL },
+        { id: 'books-backup', label: 'Back Up Now' },
+        { id: 'books-reveal', label: REVEAL_LABEL },
         { separator: true },
-        { id: 'company-settings', label: 'Company Settings…', key: 'alt+,' },
+        { id: 'books-settings', label: 'Books Settings…', key: 'alt+,' },
         // Windows and Linux have no app menu, so app settings live here too.
         ...(isMac ? [] : [{ id: 'app-settings', label: 'App Settings…', key: ',' }]),
         { separator: true },
-        { id: 'company-close', label: 'Close Company', key: 'W' },
+        { id: 'books-close', label: 'Close Books', key: 'W' },
         { id: 'window-close', label: 'Close Window', key: 'w' },
       ],
     },
@@ -171,12 +171,12 @@ async function buildMenu() {
 }
 
 watch(
-  () => [session.recent.map((r) => r.path).join('\n'), session.company?.path, session.recent.map((r) => r.name).join('\n')],
+  () => [session.recent.map((r) => r.path).join('\n'), session.books?.path, session.recent.map((r) => r.name).join('\n')],
   () => void buildMenu(),
 );
 
 async function clearRecent() {
-  for (const r of [...session.recent]) await api.forgetCompany(r.path).catch(() => {});
+  for (const r of [...session.recent]) await api.forgetBooks(r.path).catch(() => {});
   await refreshSession();
 }
 
@@ -199,7 +199,7 @@ async function runSchedules() {
 }
 
 watch(
-  () => session.company?.path,
+  () => session.books?.path,
   (path) => {
     void syncMenus();
     if (path) void runSchedules();
@@ -211,7 +211,7 @@ let lastDay = today();
 const dayTimer = setInterval(() => {
   if (today() === lastDay) return;
   lastDay = today();
-  if (session.company) void runSchedules();
+  if (session.books) void runSchedules();
 }, 10 * 60 * 1000);
 
 // Item urls are router paths. Left as plain links they'd reload the page
@@ -222,16 +222,16 @@ function onNavItem(item: { url?: string }) {
 
 const offs: Array<() => void> = [];
 
-/** Company files double-clicked in Finder (or dropped): open them. */
+/** Books files double-clicked in Finder (or dropped): open them. */
 function openFiles(paths: string[]) {
   const file = paths.find((p) => p.endsWith('.tally'));
-  if (file) void openCompanyAt(file);
+  if (file) void openBooksAt(file);
 }
 
-// Drop a company file to open it, or anything else to import it.
+// Drop a books file to open it, or anything else to import it.
 function onDropped(paths: string[]) {
   if (paths.some((p) => p.endsWith('.tally'))) openFiles(paths);
-  else if (paths[0] && session.company) void router.push({ path: '/import', query: { file: paths[0] } });
+  else if (paths[0] && session.books) void router.push({ path: '/import', query: { file: paths[0] } });
 }
 
 function onMenu(id: string) {
@@ -246,7 +246,7 @@ function onMenu(id: string) {
   }
   if (id.startsWith('recent-') && id !== 'recent-clear') {
     const r = session.recent[Number(id.slice('recent-'.length))];
-    if (r && r.path !== session.company?.path) void openCompanyAt(r.path);
+    if (r && r.path !== session.books?.path) void openBooksAt(r.path);
     return;
   }
   switch (id) {
@@ -256,11 +256,11 @@ function onMenu(id: string) {
     case 'app-settings':
       appSettingsPanel.visible = true;
       break;
-    case 'company-reveal':
-      if (session.company) void tiny.app.shell.reveal(session.company.path);
+    case 'books-reveal':
+      if (session.books) void tiny.app.shell.reveal(session.books.path);
       break;
-    case 'company-new':
-      void newCompany();
+    case 'books-new':
+      void newBooks();
       break;
     case 'window-new':
       void api.newWindow();
@@ -270,34 +270,34 @@ function onMenu(id: string) {
       if (isMain) void tiny.win.hide({ app: false });
       else void tiny.win.close();
       break;
-    case 'company-open':
-      void pickAndOpenCompany();
+    case 'books-open':
+      void pickAndOpenBooks();
       break;
-    case 'company-close':
-      void closeCompany();
+    case 'books-close':
+      void closeBooks();
       break;
-    case 'company-backup':
-      if (session.company) void backupCompany();
+    case 'books-backup':
+      if (session.books) void backupBooks();
       break;
     case 'new-expense':
     case 'new-income':
     case 'new-transfer':
-      if (session.company) newEntry(id.slice('new-'.length) as 'expense' | 'income' | 'transfer');
+      if (session.books) newEntry(id.slice('new-'.length) as 'expense' | 'income' | 'transfer');
       break;
     case 'import':
-      if (session.company) void router.push('/import');
+      if (session.books) void router.push('/import');
       break;
     case 'new-invoice':
-      if (session.company) void router.push('/invoices/new');
+      if (session.books) void router.push('/invoices/new');
       break;
     case 'new-quote':
-      if (session.company) void router.push('/quotes/new');
+      if (session.books) void router.push('/quotes/new');
       break;
     case 'new-bill':
-      if (session.company) void router.push('/bills/new');
+      if (session.books) void router.push('/bills/new');
       break;
-    case 'company-settings':
-      if (session.company) void router.push('/settings');
+    case 'books-settings':
+      if (session.books) void router.push('/settings');
       break;
   }
 }
@@ -317,10 +317,10 @@ onMounted(async () => {
   window.addEventListener('dragover', onDragOver);
   offs.push(() => window.removeEventListener('dragover', onDragOver));
   offs.push(tiny.win.onDrop((paths) => void api.claimDrop(paths, Date.now() - dragOverAt < 3000, document.hasFocus())));
-  // Main was closed (hidden): the backend let go of its company; start fresh for when it's shown again.
+  // Main was closed (hidden): the backend let go of its books; start fresh for when it's shown again.
   offs.push(
     tiny.api.on('window-hidden', () => {
-      session.company = null;
+      session.books = null;
       notice.value = null;
       void router.replace('/');
     }),
@@ -347,13 +347,13 @@ onMounted(async () => {
   );
 
   const s = await api.start();
-  session.company = s.company;
+  session.books = s.books;
   session.recent = s.recent;
   session.internalDir = s.internalDir;
-  if (!s.company && s.lastPath) {
+  if (!s.books && s.lastPath) {
     if (s.locked) {
       // Ask now rather than leaving them on the welcome screen.
-      await openCompanyAt(s.lastPath);
+      await openBooksAt(s.lastPath);
     } else if (s.reopenError) {
       notice.value = s.reopenError;
       noticePath.value = s.lastPath;
@@ -373,29 +373,29 @@ onBeforeUnmount(() => {
 <template>
   <UiProvider>
     <div v-if="!session.ready" class="Boot"><Spinner /></div>
-    <Welcome v-else-if="!session.company" :notice="notice" :notice-path="noticePath" />
+    <Welcome v-else-if="!session.books" :notice="notice" :notice-path="noticePath" />
     <AppFrame v-else layout="sidebarOnly" :sidebar-min="navMin">
       <template #sidebar>
-        <Navigation :sections="sections" :location="route.path" highlight logo allow-minimize :accent-stripe="session.company.color || false" prevent-default @click-item="onNavItem" @toggle-min="setNavMin">
+        <Navigation :sections="sections" :location="route.path" highlight logo allow-minimize :accent-stripe="session.books.color || false" prevent-default @click-item="onNavItem" @toggle-min="setNavMin">
           <template #logo>
             <RouterLink to="/" class="Brand">
-              <span class="Brand__tile" :class="{ 'Brand__tile--own': session.company.logo }"><img :src="session.company.logo || character" alt="" /></span>
+              <span class="Brand__tile" :class="{ 'Brand__tile--own': session.books.logo }"><img :src="session.books.logo || character" alt="" /></span>
               <span class="Brand__text">
-                <span class="Brand__company">{{ session.company.name }}</span>
+                <span class="Brand__books">{{ session.books.name }}</span>
                 <span class="Brand__app">Tiny Tally</span>
               </span>
             </RouterLink>
           </template>
           <template #logoMin>
             <RouterLink to="/" class="Brand">
-              <span class="Brand__tile" :class="{ 'Brand__tile--own': session.company.logo }">
-                <img :src="session.company.logo || character" :alt="session.company.logo ? session.company.name : 'Tiny Tally'" />
+              <span class="Brand__tile" :class="{ 'Brand__tile--own': session.books.logo }">
+                <img :src="session.books.logo || character" :alt="session.books.logo ? session.books.name : 'Tiny Tally'" />
               </span>
             </RouterLink>
           </template>
         </Navigation>
       </template>
-      <RouterView :key="`${session.company.path}|${route.path}`" />
+      <RouterView :key="`${session.books.path}|${route.path}`" />
       <EntryEditor />
     </AppFrame>
     <AppSettings :nav-min="navMin" @update:nav-min="setNavMin" />
@@ -428,7 +428,7 @@ onBeforeUnmount(() => {
   width: 32px;
 }
 
-/* A company's own logo fills the tile, whatever its shape. */
+/* The books' own logo fills the tile, whatever its shape. */
 .Brand__tile--own {
   overflow: hidden;
 }
@@ -446,7 +446,7 @@ onBeforeUnmount(() => {
   line-height: 1.2;
 }
 
-.Brand__company {
+.Brand__books {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;

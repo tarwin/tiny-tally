@@ -12,7 +12,7 @@ import { session } from '../lib/session';
 const schedules = ref<Schedule[]>([]);
 const loading = ref(true);
 const editing = ref<Schedule | null>(null);
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 
 const KIND_LABEL = { entry: 'Transaction', invoice: 'Invoice', bill: 'Bill' } as const;
 
@@ -40,7 +40,7 @@ onMounted(load);
 function amount(s: Schedule) {
   if (s.kind === 'entry') return formatMoney(s.payload.amount ?? 0, currency.value);
   const total = (s.payload.lines ?? []).reduce((t: number, l: any) => t + Math.round((l.qtyMilli * l.unitPrice) / 1000), 0);
-  return formatMoney(total, currency.value) + (s.payload.pricesIncludeTax === false && session.company!.taxEnabled ? ' + GST' : '');
+  return formatMoney(total, currency.value) + (s.payload.pricesIncludeTax === false && session.books!.taxEnabled ? ' + GST' : '');
 }
 
 function kindText(s: Schedule) {
@@ -100,7 +100,7 @@ function toggle(s: Schedule) {
 <template>
   <Page
     title="Recurring"
-    subtitle="Rent, subscriptions, retainers: anything that repeats. Due ones are created when you open the company."
+    subtitle="Rent, subscriptions, retainers: anything that repeats. Due ones are created when you open your books."
     :primary-action="{ label: 'Create due now', icon: 'mdi:play-circle-outline', onAction: runNow }"
   >
     <DataTable

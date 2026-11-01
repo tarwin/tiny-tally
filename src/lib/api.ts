@@ -9,7 +9,7 @@ export type CategoryKind = 'income' | 'expense';
 export type CategoryClass = 'pnl' | 'tax' | 'owner' | 'loan' | 'asset';
 export type DocType = 'invoice' | 'bill' | 'quote' | 'credit';
 
-export interface CompanySettings {
+export interface BooksSettings {
   name: string;
   currency: string;
   fiscalYearStart: number;
@@ -36,12 +36,12 @@ export interface CompanySettings {
   lockDate: string | null;
 }
 
-export interface Company extends CompanySettings {
+export interface Books extends BooksSettings {
   path: string;
   internal: boolean;
 }
 
-export interface RecentCompany {
+export interface RecentBooks {
   path: string;
   name: string;
   lastOpened: string;
@@ -49,8 +49,8 @@ export interface RecentCompany {
 }
 
 export interface StartState {
-  company: Company | null;
-  recent: RecentCompany[];
+  books: Books | null;
+  recent: RecentBooks[];
   lastPath: string | null;
   reopenError: string | null;
   locked: boolean;
@@ -60,7 +60,7 @@ export interface StartState {
 }
 
 export type OpenResult =
-  | { ok: true; company: Company }
+  | { ok: true; books: Books }
   | { ok: false; locked: boolean; message: string; elsewhere?: boolean };
 
 export interface Account {
@@ -540,7 +540,7 @@ export interface ChangeBatch {
   /** the backend call that made it, e.g. 'entries.save' */
   action: string;
   host: string | null;
-  /** JSON with extra detail for some actions (archive markers, new companies) */
+  /** JSON with extra detail for some actions (archive markers, new books) */
   summary: string | null;
   count: number;
 }
@@ -592,19 +592,19 @@ export const api = {
     call<Record<string, { categoryId: number; kind: 'income' | 'expense' }>>('import.suggest', { names }),
   commitImport: (plan: ImportPlan) => call<ImportResult>('import.commit', plan),
   start: () => call<StartState>('app.start'),
-  createCompany: (p: { name: string; currency: string; fiscalYearStart: number; dir: string | null; taxEnabled?: boolean; abn?: string }) =>
-    call<Company>('company.create', p),
-  createDemo: (dir: string | null, today: string) => call<Company>('company.createDemo', { dir, today }),
-  openCompany: (path: string, force = false) => call<OpenResult>('company.open', { path, force }),
-  openInNewWindow: (path: string) => call<{ focused: boolean }>('company.openInNewWindow', { path }),
+  createBooks: (p: { name: string; currency: string; fiscalYearStart: number; dir: string | null; taxEnabled?: boolean; abn?: string }) =>
+    call<Books>('books.create', p),
+  createDemo: (dir: string | null, today: string) => call<Books>('books.createDemo', { dir, today }),
+  openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),
+  openInNewWindow: (path: string) => call<{ focused: boolean }>('books.openInNewWindow', { path }),
   windowHidden: () => call<boolean>('app.windowHidden'),
   newWindow: () => call<true>('app.newWindow'),
   settingsChanged: () => call<true>('app.settingsChanged'),
   claimDrop: (paths: string[], over: boolean, focused: boolean) => call<true>('drop.claim', { paths, over, focused }),
-  closeCompany: () => call<true>('company.close'),
-  forgetCompany: (path: string) => call<RecentCompany[]>('company.forget', { path }),
-  backupCompany: (stamp: string) => call<string>('company.backup', { stamp }),
-  updateSettings: (p: Partial<CompanySettings>) => call<Company>('settings.update', p),
+  closeBooks: () => call<true>('books.close'),
+  forgetBooks: (path: string) => call<RecentBooks[]>('books.forget', { path }),
+  backupBooks: (stamp: string) => call<string>('books.backup', { stamp }),
+  updateSettings: (p: Partial<BooksSettings>) => call<Books>('settings.update', p),
 
   listAccounts: () => call<Account[]>('accounts.list'),
   saveAccount: (p: Omit<Account, 'id' | 'archived' | 'balance' | 'reconciledTo'> & { id?: number }) =>
@@ -695,8 +695,8 @@ export const api = {
   setPref: (key: string, value: unknown) => call<true>('prefs.set', { key, value }),
   listBasReturns: () => call<BasReturn[]>('bas.list'),
   saveBasReturn: (p: { periodStart: string; periodEnd: string; basis: Basis; w1: number; w2: number; t7: number; lodge?: boolean }) =>
-    call<Company>('bas.save', p),
-  reopenBasReturn: (id: number) => call<Company>('bas.reopen', { id }),
+    call<Books>('bas.save', p),
+  reopenBasReturn: (id: number) => call<Books>('bas.reopen', { id }),
   deleteBasReturn: (id: number) => call<true>('bas.delete', { id }),
 
   writeText: (path: string, text: string) => call<string>('file.writeText', { path, text }),

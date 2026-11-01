@@ -12,8 +12,8 @@ import { printElement } from '../lib/print';
 import { session } from '../lib/session';
 
 const router = useRouter();
-const company = computed(() => session.company!);
-const money = (v: number) => formatMoney(v, company.value.currency);
+const books = computed(() => session.books!);
+const money = (v: number) => formatMoney(v, books.value.currency);
 
 const asOf = ref(today());
 const sheet = ref<BalanceSheet | null>(null);
@@ -22,7 +22,7 @@ const el = ref<HTMLElement | null>(null);
 /** Start of the financial year that `iso` falls in. */
 function yearStart(iso: string) {
   const [y, m] = iso.split('-').map(Number);
-  const fs = company.value.fiscalYearStart;
+  const fs = books.value.fiscalYearStart;
   const year = m >= fs ? y : y - 1;
   return `${year}-${String(fs).padStart(2, '0')}-01`;
 }
@@ -70,7 +70,7 @@ function exportCsv() {
       <CardSection>
         <div ref="el">
           <div class="ReportHead">
-            <h2>{{ company.name }}: Balance Sheet</h2>
+            <h2>{{ books.name }}: Balance Sheet</h2>
             <p>As at {{ formatDay(asOf) }} · accrual basis (invoices and bills count once approved)</p>
           </div>
           <table class="Report">

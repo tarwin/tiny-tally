@@ -40,7 +40,7 @@ const saving = ref(false);
 const form = ref<TemplateInput>(blank());
 const dirty = ref(false);
 
-const company = computed(() => session.company!);
+const books = computed(() => session.books!);
 
 const ACCENTS = ['#2f6fde', '#0f766e', '#7c3aed', '#be123c', '#c2410c', '#1d1f24'];
 
@@ -102,10 +102,10 @@ const panelOptions = [
   { label: 'Layout', value: 'layout' },
 ];
 
-const labelKeys = (Object.keys(LABELS) as LabelKey[]).filter((k) => company.value.taxEnabled || !['gst', 'gstTotal', 'subtotal'].includes(k));
+const labelKeys = (Object.keys(LABELS) as LabelKey[]).filter((k) => books.value.taxEnabled || !['gst', 'gstTotal', 'subtotal'].includes(k));
 const showKeys = Object.keys(SHOW) as ShowKey[];
 const placeholderText = Object.keys(PLACEHOLDERS).map((k) => `{${k}}`).join(' ');
-const priceDefault = computed(() => (company.value.taxEnabled ? 'Price ex. GST / inc. GST' : 'Price'));
+const priceDefault = computed(() => (books.value.taxEnabled ? 'Price ex. GST / inc. GST' : 'Price'));
 
 function setLabel(key: LabelKey, value: string) {
   form.value.layout.labels[key] = value;
@@ -205,18 +205,18 @@ function startNew() {
 
 // A realistic sample so layout decisions are made against real content.
 const sample = computed<InvoiceDocData>(() => {
-  const taxOn = company.value.taxEnabled;
+  const taxOn = books.value.taxEnabled;
   const raw = [
     { description: 'Brand strategy workshop', qtyMilli: 1000, unitPrice: 150000, taxCode: 'GST' as const },
     { description: 'Logo design: three concepts, two rounds of changes', qtyMilli: 1000, unitPrice: 240000, taxCode: 'GST' as const },
     { description: 'Design hours', qtyMilli: 6500, unitPrice: 14000, taxCode: 'GST' as const },
   ];
-  const lines = raw.map((l) => ({ ...l, categoryId: null, ...lineTotals(l, false, taxOn, company.value.taxRateBp) }));
+  const lines = raw.map((l) => ({ ...l, categoryId: null, ...lineTotals(l, false, taxOn, books.value.taxRateBp) }));
   const t = sumTotals(lines);
   return {
-    number: `${company.value.invoicePrefix}0042`,
+    number: `${books.value.invoicePrefix}0042`,
     issueDate: today(),
-    dueDate: addDays(today(), company.value.paymentTermsDays),
+    dueDate: addDays(today(), books.value.paymentTermsDays),
     reference: 'PO 7781',
     notes: 'Thanks for the brief. Final files are delivered once this invoice is paid.',
     contactName: 'Sample Customer Pty Ltd',
@@ -302,7 +302,7 @@ onMounted(() => load());
               <TextField
                 v-model="form.title"
                 label="Document title"
-                :help-text="company.taxEnabled ? 'GST-registered businesses must use “Tax Invoice” for taxable sales.' : ''"
+                :help-text="books.taxEnabled ? 'GST-registered businesses must use “Tax Invoice” for taxable sales.' : ''"
                 @update:model-value="touch"
               />
               <TextField
@@ -313,7 +313,7 @@ onMounted(() => load());
                 @update:model-value="touch"
               />
               <TextField v-model="form.footer" label="Footer" multiline="2" placeholder="Thank-you note, terms, website…" @update:model-value="touch" />
-              <ToggleSwitch v-if="company.taxEnabled" v-model="form.showTaxColumn" label="Show GST on each line" @update:model-value="touch" />
+              <ToggleSwitch v-if="books.taxEnabled" v-model="form.showTaxColumn" label="Show GST on each line" @update:model-value="touch" />
             </FormLayout>
           </CardSection>
 
@@ -335,13 +335,13 @@ onMounted(() => load());
                   <Checkbox
                     v-for="k in showKeys"
                     :key="k"
-                    :model-value="k === 'abn' && company.taxEnabled ? true : form.layout.show[k]"
-                    :disabled="k === 'abn' && company.taxEnabled"
+                    :model-value="k === 'abn' && books.taxEnabled ? true : form.layout.show[k]"
+                    :disabled="k === 'abn' && books.taxEnabled"
                     :label="SHOW[k]"
                     @update:model-value="(v: boolean) => setShow(k, v)"
                   />
                 </div>
-                <p v-if="company.taxEnabled" class="subdued Small Flush">Tax invoices must show your ABN, so it can't be hidden.</p>
+                <p v-if="books.taxEnabled" class="subdued Small Flush">Tax invoices must show your ABN, so it can't be hidden.</p>
               </div>
               <div>
                 <div class="Label">Labels <span class="subdued Small">· leave blank for the standard wording</span></div>
@@ -410,9 +410,9 @@ onMounted(() => load());
       <div class="Preview">
         <div class="Preview__label subdued">Preview with sample data</div>
         <PaperPreview zoomable>
-          <InvoiceDocument :invoice="sample" :company="company" :template="form" />
+          <InvoiceDocument :invoice="sample" :books="books" :template="form" />
         </PaperPreview>
-        <p v-if="!company.abn || !company.businessAddress" class="subdued Preview__hint">
+        <p v-if="!books.abn || !books.businessAddress" class="subdued Preview__hint">
           Add your ABN and address in <a href="#/settings">Settings</a> so they appear on invoices.
         </p>
       </div>

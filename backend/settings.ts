@@ -1,7 +1,7 @@
-// Company settings live as key/value rows in `meta`.
-import { getCompany, one } from './db';
+// Books settings live as key/value rows in `meta`.
+import { getBooks, one } from './db';
 
-export interface CompanySettings {
+export interface BooksSettings {
   name: string;
   currency: string;
   fiscalYearStart: number;
@@ -23,7 +23,7 @@ export interface CompanySettings {
   businessAddress: string;
   businessEmail: string;
   businessPhone: string;
-  /** '#rrggbb' or '' — the stripe beside the menu that tells open companies apart. */
+  /** '#rrggbb' or '' — the stripe beside the menu that tells open books apart. */
   color: string;
   /** data: URL, or '' — shown top left instead of the app's logo. */
   logo: string;
@@ -54,8 +54,8 @@ const oneOf = <T extends string>(values: T[], d: T): Omit<Field, 'key'> => ({
   },
 });
 
-const FIELDS: Record<keyof CompanySettings, Field> = {
-  name: { key: 'company_name', ...str('Company') },
+const FIELDS: Record<keyof BooksSettings, Field> = {
+  name: { key: 'books_name', ...str('Books') },
   currency: { key: 'currency', ...str('USD') },
   fiscalYearStart: { key: 'fiscal_year_start', ...int(1, 1, 12) },
   taxEnabled: { key: 'tax_enabled', ...bool(false) },
@@ -77,7 +77,7 @@ const FIELDS: Record<keyof CompanySettings, Field> = {
   businessEmail: { key: 'business_email', ...str() },
   businessPhone: { key: 'business_phone', ...str() },
   logo: {
-    key: 'company_logo',
+    key: 'books_logo',
     parse: (v) => v ?? '',
     write: (v) => {
       const s = String(v ?? '');
@@ -86,7 +86,7 @@ const FIELDS: Record<keyof CompanySettings, Field> = {
     },
   },
   color: {
-    key: 'company_color',
+    key: 'books_color',
     parse: (v) => v ?? '',
     write: (v) => {
       const c = String(v ?? '').trim().toLowerCase();
@@ -105,8 +105,8 @@ const FIELDS: Record<keyof CompanySettings, Field> = {
   },
 };
 
-export function getSettings(): CompanySettings {
-  const { db } = getCompany();
+export function getSettings(): BooksSettings {
+  const { db } = getBooks();
   const rows = db.prepare('SELECT key, value FROM meta').all() as { key: string; value: string }[];
   const map = new Map(rows.map((r) => [r.key, r.value]));
   const out: any = {};
@@ -114,15 +114,15 @@ export function getSettings(): CompanySettings {
   return out;
 }
 
-export function updateSettings(patch: Partial<CompanySettings>) {
-  const { db } = getCompany();
+export function updateSettings(patch: Partial<BooksSettings>) {
+  const { db } = getBooks();
   const writes: [string, string | null][] = [];
   for (const [name, value] of Object.entries(patch)) {
-    const f = FIELDS[name as keyof CompanySettings];
+    const f = FIELDS[name as keyof BooksSettings];
     if (!f) continue;
     writes.push([f.key, f.write(value)]);
   }
-  if (patch.name !== undefined && !String(patch.name).trim()) throw new Error('Give the company a name.');
+  if (patch.name !== undefined && !String(patch.name).trim()) throw new Error('Give your books a name.');
   db.transaction(() => {
     const set = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
     const del = db.prepare('DELETE FROM meta WHERE key = ?');
@@ -145,5 +145,5 @@ export function assertUnlocked(...dates: (string | null | undefined)[]) {
 }
 
 export function metaValue(key: string) {
-  return one<{ value: string }>(getCompany().db, 'SELECT value FROM meta WHERE key = ?', key)?.value ?? null;
+  return one<{ value: string }>(getBooks().db, 'SELECT value FROM meta WHERE key = ?', key)?.value ?? null;
 }

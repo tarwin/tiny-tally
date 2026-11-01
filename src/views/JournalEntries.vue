@@ -26,7 +26,7 @@ import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { session } from '../lib/session';
 
 const router = useRouter();
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 const money = (v: number) => formatMoney(v, currency.value);
 
 const rows = ref<JournalEntryRow[]>([]);

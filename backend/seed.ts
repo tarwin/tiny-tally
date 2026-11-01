@@ -1,6 +1,6 @@
 import type { Database } from 'tjs:sqlite';
 
-export interface CompanySetup {
+export interface BooksSetup {
   name: string;
   currency: string;
   /** 1–12, the month the financial year starts in. */
@@ -36,9 +36,9 @@ const EXPENSE = [
   'Uncategorised Expense',
 ];
 
-export function seedCompany(db: Database, setup: CompanySetup) {
+export function seedBooks(db: Database, setup: BooksSetup) {
   const meta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
-  meta.run('company_name', setup.name);
+  meta.run('books_name', setup.name);
   meta.run('currency', setup.currency);
   meta.run('fiscal_year_start', String(setup.fiscalYearStart));
   meta.run('created_at', new Date().toISOString());

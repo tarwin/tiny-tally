@@ -30,7 +30,7 @@ const accounts = ref<Account[]>([]);
 const loading = ref(true);
 const showArchived = ref(false);
 
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 const rows = computed(() => accounts.value.filter((a) => showArchived.value || !a.archived));
 const hasArchived = computed(() => accounts.value.some((a) => a.archived));
 

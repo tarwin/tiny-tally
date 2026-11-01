@@ -18,7 +18,7 @@ const loading = ref(true);
 const filter = ref<InvoiceStatus | 'unpaid' | 'all'>('all');
 const search = ref('');
 
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 const money = (v: number) => formatMoney(v, currency.value);
 
 const filterOptions = computed(() => {

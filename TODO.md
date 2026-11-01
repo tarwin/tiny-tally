@@ -12,4 +12,4 @@ Done: non-P&L categories (tax, owner, loans, assets), bills, bank reconciliation
 Done: credit notes (applied to invoices or refunded), quotes that turn into invoices, customer and supplier statements, remittance advice for bill payments.
 
 ## App
-Done: app settings (theme, density, size, sidebar, reopen last), File → Open Recent and Show in Finder, a company per window (New Window, open a second company), and a change log of every edit (Activity page, History on transactions, documents and journals) with older history archived to a `.tallylog` file.
+Done: app settings (theme, density, size, sidebar, reopen last), File → Open Recent and Show in Finder, a set of books per window (New Window, open a second set), and a change log of every edit (Activity page, History on transactions, documents and journals) with older history archived to a `.tallylog` file.

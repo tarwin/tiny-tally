@@ -58,14 +58,14 @@ export function localeDateOrder(): DateOrder {
   }
 }
 
-// Ambiguous dates (03/10/2026) follow the company's country: only US-dollar
+// Ambiguous dates (03/10/2026) follow the books' country: only US-dollar
 // books default to month-first. The webview's locale is often en-US even in
 // Australia, so it's only the tie-breaker for currencies we can't place.
 const MONTH_FIRST = new Set(['USD', 'PHP']);
 const DAY_FIRST = new Set(['AUD', 'NZD', 'GBP', 'EUR', 'ZAR', 'INR', 'SGD', 'HKD', 'MYR', 'IDR', 'THB', 'VND', 'CHF']);
 
-/** The day/month order to assume for a company's files when the dates themselves don't say. */
-export function companyDateOrder(currency: string): DateOrder {
+/** The day/month order to assume for a books' files when the dates themselves don't say. */
+export function booksDateOrder(currency: string): DateOrder {
   if (MONTH_FIRST.has(currency)) return 'mdy';
   if (DAY_FIRST.has(currency)) return 'dmy';
   return localeDateOrder() === 'mdy' ? 'mdy' : 'dmy';

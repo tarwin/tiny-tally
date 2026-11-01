@@ -44,9 +44,9 @@ interface LineForm {
 
 const doc = computed(() => DOCS[route.meta.docType ?? 'invoice']);
 const isBill = computed(() => doc.value.type === 'bill');
-const company = computed(() => session.company!);
-const currency = computed(() => company.value.currency);
-const taxOn = computed(() => company.value.taxEnabled);
+const books = computed(() => session.books!);
+const currency = computed(() => books.value.currency);
+const taxOn = computed(() => books.value.taxEnabled);
 const money = (v: number) => formatMoney(v, currency.value);
 
 const editingId = computed(() => (route.params.id ? Number(route.params.id) : null));
@@ -70,7 +70,7 @@ const blankLine = (): LineForm => ({
 });
 
 const startTerms = (): number | 'custom' =>
-  doc.value.type === 'quote' ? 30 : doc.value.type === 'credit' ? 0 : isBill.value ? 30 : company.value.paymentTermsDays;
+  doc.value.type === 'quote' ? 30 : doc.value.type === 'credit' ? 0 : isBill.value ? 30 : books.value.paymentTermsDays;
 
 const form = ref({
   contactId: null as number | null,
@@ -81,7 +81,7 @@ const form = ref({
   dueDate: addDays(today(), startTerms() as number),
   templateId: null as number | null,
   // Supplier bills almost always show GST-inclusive totals.
-  pricesIncludeTax: isBill.value ? true : company.value.pricesIncludeTax,
+  pricesIncludeTax: isBill.value ? true : books.value.pricesIncludeTax,
   notes: '',
   lines: [] as LineForm[],
 });
@@ -165,7 +165,7 @@ const computedLines = computed(() =>
   form.value.lines.map((l) => {
     const qtyMilli = parseQty(l.qty) ?? 0;
     const unitPrice = parseMoney(l.price, currency.value) ?? 0;
-    return { ...lineTotals({ qtyMilli, unitPrice, taxCode: l.taxCode }, form.value.pricesIncludeTax, taxOn.value, company.value.taxRateBp), qtyMilli, unitPrice };
+    return { ...lineTotals({ qtyMilli, unitPrice, taxCode: l.taxCode }, form.value.pricesIncludeTax, taxOn.value, books.value.taxRateBp), qtyMilli, unitPrice };
   }),
 );
 const totals = computed(() => sumTotals(computedLines.value));

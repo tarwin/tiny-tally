@@ -16,7 +16,7 @@
 //   credit refund     Dr receivables  Cr money
 //   opening balance   Dr money        Cr opening balance equity
 //   manual journal    whatever its lines say (journals.ts)
-import { all, getCompany } from './db';
+import { all, getBooks } from './db';
 import { SYSTEM_ACCOUNTS, journalLinesTo } from './journals';
 
 export type LedgerType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
@@ -43,7 +43,7 @@ const GST: LedgerAccount = { key: 'gst', name: 'GST', type: 'liability', group: 
 const OPENING: LedgerAccount = { key: 'opening', name: 'Opening balance equity', type: 'equity', group: 'Equity' };
 
 function chart() {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const accounts = new Map<string, LedgerAccount>();
   for (const a of [AR, AP, GST, OPENING]) accounts.set(a.key, a);
   // Only manual journals post to these; they show once they have a balance.
@@ -76,7 +76,7 @@ function chart() {
 
 /** Every journal line up to `to` (and from `from`, when given), in date order. */
 export function journal(p: { from?: string; to: string }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const { accounts, catKey, money } = chart();
   const lines: JournalLine[] = [];
   const cat = (id: number | null) => (id !== null && catKey.has(id) ? catKey.get(id)! : 'uncat');
@@ -157,7 +157,7 @@ const ORDER: LedgerType[] = ['asset', 'liability', 'equity', 'income', 'expense'
  * receivables or payables (see schema v7).
  */
 export function journalAccounts() {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const { accounts, catKey } = chart();
   const cats = all<any>(db, 'SELECT id, name, kind, class, is_archived FROM categories ORDER BY name COLLATE NOCASE');
   const out: { key: string; name: string; type: LedgerType; group: string; archived: boolean }[] = [];

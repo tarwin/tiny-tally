@@ -4,19 +4,19 @@
 // Each reconciliation starts from the previous one's statement balance (or
 // the account's opening balance). A transfer touches two accounts, so the
 // "from" side is ticked in entries.rec_id and the "to" side in to_rec_id.
-import { all, getCompany, one, run } from './db';
+import { all, getBooks, one, run } from './db';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function account(id: number) {
-  const a = one<any>(getCompany().db, 'SELECT * FROM accounts WHERE id = ?', id);
+  const a = one<any>(getBooks().db, 'SELECT * FROM accounts WHERE id = ?', id);
   if (!a) throw new Error('That account no longer exists.');
   return a;
 }
 
 /** Where this reconciliation starts: the last finished one before it, or the opening balance. */
 function startingPoint(accountId: number, beforeId?: number) {
-  const prev = one<any>(getCompany().db,
+  const prev = one<any>(getBooks().db,
     `SELECT statement_date, statement_balance FROM reconciliations
      WHERE account_id = ? AND status = 'done' AND id IS NOT ?
      ORDER BY statement_date DESC, id DESC LIMIT 1`, accountId, beforeId ?? null);
@@ -30,7 +30,7 @@ const SIGNED = `CASE WHEN e.to_account_id = ?1 THEN e.amount WHEN e.kind = 'inco
 const SIDE_REC = `CASE WHEN e.to_account_id = ?1 THEN e.to_rec_id ELSE e.rec_id END`;
 
 export function reconcileState(accountId: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const a = account(accountId);
   const open = one<any>(db,
     `SELECT id, statement_date AS statementDate, statement_balance AS statementBalance
@@ -67,7 +67,7 @@ export function reconcileState(accountId: number) {
 }
 
 export function startReconcile(p: { accountId: number; statementDate: string; statementBalance: number }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   account(p.accountId);
   if (!DATE.test(String(p.statementDate))) throw new Error('Pick the statement end date.');
   const bal = Math.round(Number(p.statementBalance));
@@ -87,14 +87,14 @@ export function startReconcile(p: { accountId: number; statementDate: string; st
 }
 
 function openRec(id: number) {
-  const r = one<any>(getCompany().db, 'SELECT * FROM reconciliations WHERE id = ?', id);
+  const r = one<any>(getBooks().db, 'SELECT * FROM reconciliations WHERE id = ?', id);
   if (!r) throw new Error('That reconciliation no longer exists.');
   if (r.status !== 'open') throw new Error('That reconciliation is finished. Undo it to make changes.');
   return r;
 }
 
 export function tick(p: { recId: number; entryIds: number[]; cleared: boolean }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const r = openRec(p.recId);
   const ids = (p.entryIds ?? []).filter((n) => Number.isInteger(n));
   db.transaction(() => {
@@ -120,13 +120,13 @@ export function finishReconcile(id: number) {
   }
   const late = state.rows.find((row) => row.ticked && row.date > r.statement_date);
   if (late) throw new Error(`A ticked transaction (${late.date}) is after the statement date.`);
-  run(getCompany().db, "UPDATE reconciliations SET status = 'done', completed_at = datetime('now') WHERE id = ?", id);
+  run(getBooks().db, "UPDATE reconciliations SET status = 'done', completed_at = datetime('now') WHERE id = ?", id);
   return true;
 }
 
 /** Throws away an unfinished reconciliation and its ticks. */
 export function cancelReconcile(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   openRec(id);
   db.transaction(() => {
     run(db, 'UPDATE entries SET rec_id = NULL WHERE rec_id = ?', id);
@@ -138,7 +138,7 @@ export function cancelReconcile(id: number) {
 
 /** Reopens the latest finished reconciliation so its ticks can change. */
 export function undoReconcile(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const r = one<any>(db, 'SELECT * FROM reconciliations WHERE id = ?', id);
   if (!r || r.status !== 'done') throw new Error('That reconciliation is not finished.');
   const later = one(db,
@@ -151,6 +151,6 @@ export function undoReconcile(id: number) {
 
 /** Last reconciled date per account, for the accounts list. */
 export function reconciledDates() {
-  return all<{ accountId: number; date: string }>(getCompany().db,
+  return all<{ accountId: number; date: string }>(getBooks().db,
     `SELECT account_id AS accountId, MAX(statement_date) AS date FROM reconciliations WHERE status = 'done' GROUP BY account_id`);
 }

@@ -16,30 +16,30 @@ import {
   confirmModal,
   toast,
 } from '@octans/ui';
-import { api, errorMessage, type Company } from '../lib/api';
+import { api, errorMessage, type Books } from '../lib/api';
 import { appSettingsPanel } from '../lib/appSettings';
-import { backupCompany, closeCompany } from '../lib/company';
+import { backupBooks, closeBooks } from '../lib/books';
 import { formatDay } from '../lib/dates';
 import { CURRENCIES } from '../lib/money';
 import { MONTHS, session } from '../lib/session';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 type Form = Omit<
-  Company,
+  Books,
   'path' | 'internal' | 'taxRateBp' | 'lockDate' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
 > & {
   invoiceNext: string;
   paymentTermsDays: string;
 };
 
-const company = computed(() => session.company!);
-const COMPANY_COLORS = ['#2d8c49', '#2f6fde', '#7c3aed', '#db2777', '#dc2626', '#ea580c', '#ca8a04', '#0891b2'];
+const books = computed(() => session.books!);
+const BOOKS_COLORS = ['#2d8c49', '#2f6fde', '#7c3aed', '#db2777', '#dc2626', '#ea580c', '#ca8a04', '#0891b2'];
 
-const form = ref<Form>(fromCompany(company.value));
+const form = ref<Form>(fromBooks(books.value));
 const saving = ref(false);
 const nameError = ref<string | null>(null);
 
-function fromCompany(c: Company): Form {
+function fromBooks(c: Books): Form {
   return {
     name: c.name,
     currency: c.currency,
@@ -63,9 +63,9 @@ function fromCompany(c: Company): Form {
   };
 }
 
-watch(company, (c) => (form.value = fromCompany(c)));
+watch(books, (c) => (form.value = fromBooks(c)));
 
-const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fromCompany(company.value)));
+const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fromBooks(books.value)));
 
 const currencyOptions = CURRENCIES.map((c) => ({ label: c, value: c }));
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
@@ -97,15 +97,15 @@ async function chooseLogo() {
 }
 
 function reveal() {
-  void tiny.app.shell.reveal(company.value.path);
+  void tiny.app.shell.reveal(books.value.path);
 }
 
 async function save() {
-  nameError.value = form.value.name.trim() ? null : 'Give the company a name.';
+  nameError.value = form.value.name.trim() ? null : 'Give your books a name.';
   if (nameError.value) return;
   saving.value = true;
   try {
-    session.company = await api.updateSettings({
+    session.books = await api.updateSettings({
       ...form.value,
       invoiceNext: Number(form.value.invoiceNext),
       paymentTermsDays: Number(form.value.paymentTermsDays),
@@ -134,7 +134,7 @@ async function setLock(date: string | null) {
     if (!ok) return;
   }
   try {
-    session.company = await api.updateSettings({ lockDate: date });
+    session.books = await api.updateSettings({ lockDate: date });
     newLock.value = undefined;
     toast({ title: date ? `Locked up to ${formatDay(date)}` : 'Lock removed' });
   } catch (e) {
@@ -146,10 +146,10 @@ async function setLock(date: string | null) {
 <template>
   <Page title="Settings" size="narrow">
     <div class="Stack">
-      <Card title="Company">
+      <Card title="Books">
         <CardSection>
           <FormLayout>
-            <TextField v-model="form.name" label="Company name" required :error="nameError" />
+            <TextField v-model="form.name" label="Name" required :error="nameError" />
             <FormLayoutGroup>
               <Select
                 v-model="form.currency"
@@ -189,7 +189,7 @@ async function setLock(date: string | null) {
                   @click="form.color = ''"
                 />
                 <button
-                  v-for="c in COMPANY_COLORS"
+                  v-for="c in BOOKS_COLORS"
                   :key="c"
                   type="button"
                   class="Swatch"
@@ -202,7 +202,7 @@ async function setLock(date: string | null) {
                   <input :value="form.color || '#2d8c49'" type="color" @input="form.color = ($event.target as HTMLInputElement).value" />
                 </label>
               </div>
-              <p class="subdued Help">A stripe down the left of the menu, so you can tell companies apart with several open.</p>
+              <p class="subdued Help">A stripe down the left of the menu, so you can tell your books apart with several open.</p>
             </div>
           </FormLayout>
         </CardSection>
@@ -251,15 +251,15 @@ async function setLock(date: string | null) {
 
       <div v-if="changed" class="SaveBar">
         <span class="subdued">You have unsaved changes</span>
-        <Button type="plain" @click="form = fromCompany(company)">Discard</Button>
+        <Button type="plain" @click="form = fromBooks(books)">Discard</Button>
         <Button type="primary" :loading="saving" @click="save">Save changes</Button>
       </div>
 
       <Card title="Lock date">
         <CardSection>
           <p class="Hint Top">
-            <template v-if="company.lockDate">
-              Transactions and invoices on or before <strong>{{ formatDay(company.lockDate) }}</strong> can't be changed.
+            <template v-if="books.lockDate">
+              Transactions and invoices on or before <strong>{{ formatDay(books.lockDate) }}</strong> can't be changed.
               Lodging a BAS moves this forward automatically.
             </template>
             <template v-else>Nothing is locked. Lodging a BAS locks its period, or you can set a date yourself.</template>
@@ -267,7 +267,7 @@ async function setLock(date: string | null) {
           <div class="Buttons Bottom">
             <DatePicker v-model="newLock" type="date" model-format="YYYY-MM-DD" placeholder="Lock up to…" />
             <Button :disabled="!newLock" @click="setLock(newLock ?? null)">Set lock</Button>
-            <Button v-if="company.lockDate" type="plain" @click="setLock(null)">Remove lock</Button>
+            <Button v-if="books.lockDate" type="plain" @click="setLock(null)">Remove lock</Button>
           </div>
         </CardSection>
       </Card>
@@ -278,25 +278,25 @@ async function setLock(date: string | null) {
             <span>Theme</span>
             <ThemeSwitch />
           </div>
-          <p class="subdued Hint">Theme, density and size apply to every company. Change them all in App settings.</p>
+          <p class="subdued Hint">Theme, density and size apply to all your books. Change them all in App settings.</p>
           <div class="Buttons">
             <Button icon="mdi:tune-variant" @click="appSettingsPanel.visible = true">App settings…</Button>
           </div>
         </CardSection>
       </Card>
 
-      <Card title="Company file">
+      <Card title="Books file">
         <CardSection>
-          <p class="subdued Label">{{ company.internal ? 'Stored internally' : 'Stored in your folder' }}</p>
-          <p class="Path">{{ company.path }}</p>
+          <p class="subdued Label">{{ books.internal ? 'Stored internally' : 'Stored in your folder' }}</p>
+          <p class="Path">{{ books.path }}</p>
           <div class="Buttons">
             <Button icon="mdi:folder-search-outline" @click="reveal">Show in Finder</Button>
-            <Button icon="mdi:content-save-move-outline" @click="backupCompany">Back up now</Button>
+            <Button icon="mdi:content-save-move-outline" @click="backupBooks">Back up now</Button>
           </div>
         </CardSection>
         <CardSection>
           <div class="Buttons">
-            <Button type="plain" icon="mdi:logout" @click="closeCompany">Close company</Button>
+            <Button type="plain" icon="mdi:logout" @click="closeBooks">Close books</Button>
           </div>
         </CardSection>
       </Card>

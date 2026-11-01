@@ -5,10 +5,10 @@ import { formatMoney } from './money';
 
 /** Backend call → what the person did. Unknown calls fall back to the name. */
 const ACTIONS: Record<string, string> = {
-  'company.create': 'Created the company',
-  'company.createDemo': 'Created the sample company',
+  'books.create': 'Created the books',
+  'books.createDemo': 'Created the demo books',
   'history.archive': 'Archived older history',
-  'settings.update': 'Changed company settings',
+  'settings.update': 'Changed settings',
   'accounts.save': 'Saved a money account',
   'accounts.archive': 'Archived or restored a money account',
   'categories.save': 'Saved a category',
@@ -126,7 +126,7 @@ export function changedFields(c: Change) {
 /** A few words naming the row: its number, name, or date and amount. */
 export function rowLabel(c: Change, currency: string) {
   const r = (c.after ?? c.before ?? {}) as Record<string, any>;
-  if (c.tableName === 'meta') return fieldName(String(c.rowKey ?? '').replace(/^company_/, ''));
+  if (c.tableName === 'meta') return fieldName(String(c.rowKey ?? '').replace(/^books_/, ''));
   const what = TABLES[c.tableName] ?? c.tableName;
   if (r.number) return `${what} ${r.number}`;
   if (r.name) return `${what} “${r.name}”`;

@@ -4,7 +4,7 @@ import { api, type ReconcileRow } from './api';
 import { addDays } from './dates';
 import { guessBankMapping, csvToBatch, type BankMapping } from './import/csvImport';
 import { looksLikeOfx, parseOfx } from './import/ofx';
-import { companyDateOrder, detectDateOrder, parseCsv } from './import/parse';
+import { booksDateOrder, detectDateOrder, parseCsv } from './import/parse';
 import { readXlsx } from './import/xlsx';
 import { hashRef } from '../shared/import';
 
@@ -28,7 +28,7 @@ export async function readStatement(path: string, currency: string): Promise<{ n
     const head = rows[0] ?? [];
     const key = head.some((c) => /[a-z]/i.test(c)) ? `csv-mapping:${hashRef(...head.map((c) => c.trim().toLowerCase()))}` : null;
     const saved = key ? await api.getPref<{ bank: BankMapping | null }>(key).catch(() => null) : null;
-    const mapping = saved?.bank ?? guessBankMapping(rows, detectDateOrder(rows.slice(0, 200).flat(), companyDateOrder(currency)));
+    const mapping = saved?.bank ?? guessBankMapping(rows, detectDateOrder(rows.slice(0, 200).flat(), booksDateOrder(currency)));
     batch = csvToBatch(rows, mapping, 'statement', file.name);
   }
   const lines = batch.entries.map((e) => ({ date: e.date, signed: e.kind === 'income' ? e.amount : -e.amount, memo: e.memo ?? '' }));

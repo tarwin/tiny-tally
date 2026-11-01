@@ -1,7 +1,7 @@
 // A sample Australian business: a small design studio, GST registered, with
 // activity from the start of last financial year up to "today". Everything
 // goes through the same save functions the app uses, so it's valid data.
-import { all, getCompany, one, run } from './db';
+import { all, getBooks, one, run } from './db';
 import { saveContact, saveEntry } from './entries';
 import {
   applyCredit,
@@ -43,7 +43,7 @@ const addDays = (date: string, n: number) => {
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
 export function seedDemo(today: string) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const r = rng(20250701);
   const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)];
   const between = (lo: number, hi: number) => Math.round(lo + r() * (hi - lo));

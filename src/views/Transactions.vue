@@ -23,7 +23,7 @@ const search = ref('');
 const offset = ref(0);
 const limit = ref(50);
 
-const currency = computed(() => session.company!.currency);
+const currency = computed(() => session.books!.currency);
 
 const kindOptions = [
   { label: 'All', value: 'all' },
@@ -42,7 +42,7 @@ async function load() {
   const mine = ++seq;
   loading.value = true;
   try {
-    const range = periodRange(period.value, session.company!.fiscalYearStart);
+    const range = periodRange(period.value, session.books!.fiscalYearStart);
     const result = await api.listEntries({
       ...range,
       kind: kind.value === 'all' ? undefined : kind.value,

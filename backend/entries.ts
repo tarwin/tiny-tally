@@ -1,5 +1,5 @@
 // Income, expenses, transfers and the contacts they name.
-import { all, getCompany, one, run } from './db';
+import { all, getBooks, one, run } from './db';
 import { assertUnlocked, getSettings } from './settings';
 import { TAX_CODE_MAP, isTaxCode, taxFromInclusive, type TaxCode } from '../src/shared/tax';
 
@@ -101,7 +101,7 @@ function filters(q: EntryQuery, col = TABLE_COLS) {
 }
 
 export function listEntries(q: EntryQuery) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
   const offset = Math.max(Number(q.offset) || 0, 0);
   const { where, args } = filters(q, q.accountId ? REGISTER_COLS : TABLE_COLS);
@@ -154,13 +154,13 @@ export function listEntries(q: EntryQuery) {
 function requireRow(table: string, id: unknown, what: string) {
   // Check before binding: tjs:sqlite doesn't treat an undefined param as NULL.
   if (typeof id !== 'number' || !Number.isInteger(id)) throw new Error(`Choose ${what}.`);
-  const row = one(getCompany().db, `SELECT * FROM ${table} WHERE id = ?`, id);
+  const row = one(getBooks().db, `SELECT * FROM ${table} WHERE id = ?`, id);
   if (!row) throw new Error(`Choose ${what}.`);
   return row;
 }
 
 export function saveEntry(input: EntryInput) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const kind = input.kind;
   if (!['income', 'expense', 'transfer'].includes(kind)) throw new Error('Unknown transaction type.');
   if (!DATE.test(String(input.date))) throw new Error('Pick a date.');
@@ -236,7 +236,7 @@ export function saveEntry(input: EntryInput) {
 }
 
 export function deleteEntry(id: number) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const existing = one<any>(db, 'SELECT * FROM entries WHERE id = ?', id);
   if (!existing) return true;
   assertUnlocked(existing.date);
@@ -250,7 +250,7 @@ export function deleteEntry(id: number) {
  * exclusive. Invoice payments are spread over their invoice's categories.
  */
 export function summarise({ from, to, basis }: { from: string; to: string; basis?: 'cash' | 'accrual' }) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   if (!DATE.test(from) || !DATE.test(to)) throw new Error('Pick a date range.');
   const view = basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
   const byCategory = all(db,
@@ -283,7 +283,7 @@ export interface ContactInput {
 }
 
 export function listContacts() {
-  return all(getCompany().db,
+  return all(getBooks().db,
     `SELECT ct.id, ct.kind, ct.name, ct.email, ct.phone, ct.address, ct.notes, ct.is_archived AS archived,
        COUNT(e.id) AS uses,
        COALESCE(SUM(CASE WHEN e.kind = 'income' THEN e.amount END), 0) AS received,
@@ -298,7 +298,7 @@ export function listContacts() {
 const clean = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
 export function saveContact(input: ContactInput) {
-  const { db } = getCompany();
+  const { db } = getBooks();
   const name = clean(input.name);
   if (!name) throw new Error('Give the contact a name.');
   if (input.kind !== 'customer' && input.kind !== 'vendor') throw new Error('Choose customer or vendor.');
@@ -314,6 +314,6 @@ export function saveContact(input: ContactInput) {
 }
 
 export function archiveContact(id: number, archived: boolean) {
-  run(getCompany().db, 'UPDATE contacts SET is_archived = ? WHERE id = ?', archived ? 1 : 0, id);
+  run(getBooks().db, 'UPDATE contacts SET is_archived = ? WHERE id = ?', archived ? 1 : 0, id);
   return true;
 }

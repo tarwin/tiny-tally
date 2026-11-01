@@ -1,10 +1,10 @@
 import { reactive } from 'vue';
-import type { Company, RecentCompany } from './api';
+import type { Books, RecentBooks } from './api';
 
 export const session = reactive({
   ready: false,
-  company: null as Company | null,
-  recent: [] as RecentCompany[],
+  books: null as Books | null,
+  recent: [] as RecentBooks[],
   internalDir: '',
 });
 
