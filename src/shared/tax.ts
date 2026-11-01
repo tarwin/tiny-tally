@@ -1,16 +1,19 @@
-// Tax codes and GST maths, shared by the backend and the page.
+// Tax codes and tax maths, shared by the backend and the page.
 // No tjs:* imports and no Intl here: this file ships in both.
 //
-// Codes follow the usual Australian bookkeeping set. Each maps onto BAS
-// labels (see basLabelsFor). Amounts are integer cents; entry amounts are
-// always tax-inclusive (what actually left or hit the bank).
+// Every country's codes live here; the books' country picks its set
+// (countries.ts). Australia uses the usual bookkeeping set, each mapped onto
+// BAS labels (see basLabelsFor). The US has sales tax on sales only. Amounts
+// are integer cents; entry amounts are always tax-inclusive (what actually
+// left or hit the bank).
+import type { CountryTax } from './countries';
 
-export type TaxCode = 'GST' | 'FRE' | 'EXP' | 'CAP' | 'INP' | 'NTR';
+export type TaxCode = 'GST' | 'FRE' | 'EXP' | 'CAP' | 'INP' | 'NTR' | 'TAX' | 'NON';
 
 export interface TaxCodeInfo {
   code: TaxCode;
   label: string;
-  /** Whether GST is charged / claimable on it. */
+  /** Whether tax is charged / claimable on it. */
   taxable: boolean;
   /** Which sides it makes sense on. */
   sales: boolean;
@@ -24,7 +27,10 @@ export const TAX_CODES: TaxCodeInfo[] = [
   { code: 'EXP', label: 'Export (GST free)', taxable: false, sales: true, purchases: false, help: 'Sales of goods or services exported overseas (G2)' },
   { code: 'CAP', label: 'Capital purchase', taxable: true, sales: false, purchases: true, help: 'Equipment and other assets, with GST (G10)' },
   { code: 'INP', label: 'Input taxed', taxable: false, sales: true, purchases: true, help: 'Financial supplies, residential rent, interest' },
-  { code: 'NTR', label: 'Not reportable', taxable: false, sales: true, purchases: true, help: 'Left off the BAS entirely: wages, owner drawings, loans, tax payments' },
+  { code: 'NTR', label: 'Not reportable', taxable: false, sales: true, purchases: true, help: 'Left off the tax return entirely: wages, owner drawings, loans, tax payments' },
+  // US sales tax: charged on sales only; tax paid on purchases is part of the cost.
+  { code: 'TAX', label: 'Taxable', taxable: true, sales: true, purchases: false, help: 'Sales tax charged at your rate' },
+  { code: 'NON', label: 'Not taxable', taxable: false, sales: true, purchases: false, help: 'Exempt or out of state: no sales tax charged' },
 ];
 
 export const TAX_CODE_MAP: Record<TaxCode, TaxCodeInfo> = Object.fromEntries(TAX_CODES.map((t) => [t.code, t])) as any;
@@ -33,19 +39,19 @@ export function isTaxCode(v: unknown): v is TaxCode {
   return typeof v === 'string' && v in TAX_CODE_MAP;
 }
 
-/** Basis points: 1000 = 10%. */
-export const DEFAULT_TAX_RATE_BP = 1000;
+/** Parts per million: 100000 = 10%. Fine enough for rates like 8.875%. */
+export const DEFAULT_TAX_RATE_PPM = 100_000;
 
-/** GST contained in a tax-inclusive amount (1/11th at 10%). */
-export function taxFromInclusive(gross: number, code: TaxCode | null | undefined, rateBp = DEFAULT_TAX_RATE_BP) {
+/** Tax contained in a tax-inclusive amount (1/11th at 10%). */
+export function taxFromInclusive(gross: number, code: TaxCode | null | undefined, ratePpm = DEFAULT_TAX_RATE_PPM) {
   if (!code || !TAX_CODE_MAP[code]?.taxable) return 0;
-  return Math.round((gross * rateBp) / (10000 + rateBp));
+  return Math.round((gross * ratePpm) / (1_000_000 + ratePpm));
 }
 
-/** GST to add on top of a tax-exclusive amount. */
-export function taxOnExclusive(net: number, code: TaxCode | null | undefined, rateBp = DEFAULT_TAX_RATE_BP) {
+/** Tax to add on top of a tax-exclusive amount. */
+export function taxOnExclusive(net: number, code: TaxCode | null | undefined, ratePpm = DEFAULT_TAX_RATE_PPM) {
   if (!code || !TAX_CODE_MAP[code]?.taxable) return 0;
-  return Math.round((net * rateBp) / 10000);
+  return Math.round((net * ratePpm) / 1_000_000);
 }
 
 export interface LineInput {
@@ -62,14 +68,14 @@ export interface LineTotals {
   gross: number;
 }
 
-export function lineTotals(line: LineInput, pricesIncludeTax: boolean, taxEnabled: boolean, rateBp = DEFAULT_TAX_RATE_BP): LineTotals {
+export function lineTotals(line: LineInput, pricesIncludeTax: boolean, taxEnabled: boolean, ratePpm = DEFAULT_TAX_RATE_PPM): LineTotals {
   const amount = Math.round((line.qtyMilli * line.unitPrice) / 1000);
   const code = taxEnabled ? line.taxCode : null;
   if (pricesIncludeTax) {
-    const tax = taxFromInclusive(amount, code, rateBp);
+    const tax = taxFromInclusive(amount, code, ratePpm);
     return { net: amount - tax, tax, gross: amount };
   }
-  const tax = taxOnExclusive(amount, code, rateBp);
+  const tax = taxOnExclusive(amount, code, ratePpm);
   return { net: amount, tax, gross: amount + tax };
 }
 
@@ -92,4 +98,25 @@ export function basLabelsFor(kind: 'income' | 'expense', code: TaxCode | null) {
   }
   if (code === 'CAP') return { g: ['G10'], tax: '1B' as const };
   return { g: ['G11'], tax: TAX_CODE_MAP[code].taxable ? ('1B' as const) : null };
+}
+
+// ---- per country --------------------------------------------------------------
+// These take the books' CountryTax (countryProfile(country).tax), which is
+// null where tax isn't supported.
+
+/** The tax codes that make sense on one side. Empty without tax support. */
+export function taxCodesFor(tax: CountryTax | null | undefined, kind: 'income' | 'expense'): TaxCodeInfo[] {
+  if (!tax) return [];
+  return tax.codes.map((c) => TAX_CODE_MAP[c]).filter((t) => (kind === 'income' ? t.sales : t.purchases));
+}
+
+/** `code` when the country uses it on that side, otherwise the side's default. */
+export function taxCodeOr(tax: CountryTax | null | undefined, kind: 'income' | 'expense', code: unknown): TaxCode | null {
+  if (!tax) return null;
+  return taxCodesFor(tax, kind).some((t) => t.code === code) ? (code as TaxCode) : tax.defaultCode[kind === 'income' ? 'sales' : 'purchases'];
+}
+
+/** Whether tax is ever charged or claimed on that side (US purchases: no). */
+export function tracksTax(tax: CountryTax | null | undefined, kind: 'income' | 'expense') {
+  return taxCodesFor(tax, kind).some((t) => t.taxable);
 }

@@ -20,9 +20,9 @@ import { CLASS_INFO } from '../lib/categoryClass';
 import { FREQUENCY_OPTIONS, nextOccurrence } from '../lib/schedule';
 import { today } from '../lib/dates';
 import { dataChanged, entryEditor } from '../lib/entryEditor';
-import { formatMoney, parseMoney, toInput } from '../lib/money';
-import { session } from '../lib/session';
-import { TAX_CODES, TAX_CODE_MAP, taxFromInclusive } from '../shared/tax';
+import { formatMoney, parseMoney, ratePercent, toInput } from '../lib/money';
+import { booksProfile, booksTax, session } from '../lib/session';
+import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, taxFromInclusive, tracksTax } from '../shared/tax';
 
 const accounts = ref<Account[]>([]);
 const categories = ref<Category[]>([]);
@@ -82,7 +82,7 @@ const categoryOptions = computed(() =>
   ).map((c) => ({ label: c.name, value: c.id, description: c.class === 'pnl' ? undefined : CLASS_INFO[c.class].label })),
 );
 const category = computed(() => categories.value.find((c) => c.id === form.value.categoryId) ?? null);
-/** Tax payments, owner's money and loans: no GST, not on the BAS. */
+/** Tax payments, owner's money and loans: no tax, not on a tax return. */
 const offBas = computed(() => !!category.value && CLASS_INFO[category.value.class].offBas);
 
 const contactGroups = computed(() => {
@@ -105,10 +105,15 @@ const labels = computed(() => {
   }
 });
 
-// ---- GST ----------------------------------------------------------------------
-const taxOn = computed(() => !!session.books?.taxEnabled && !isTransfer.value && !offBas.value);
+// ---- tax ----------------------------------------------------------------------
+const tax = computed(() => booksTax());
+const taxKind = computed(() => (form.value.kind === 'income' ? 'income' : 'expense'));
+// US purchases carry no tax to claim, so there's nothing to pick.
+const taxOn = computed(
+  () => !!tax.value && !isTransfer.value && !offBas.value && tracksTax(booksProfile().tax, taxKind.value),
+);
 const taxOptions = computed(() =>
-  TAX_CODES.filter((t) => (form.value.kind === 'income' ? t.sales : t.purchases)).map((t) => ({
+  taxCodesFor(booksProfile().tax, taxKind.value).map((t) => ({
     label: t.label,
     value: t.code,
     description: t.help,
@@ -116,7 +121,7 @@ const taxOptions = computed(() =>
 );
 const autoTax = computed(() => {
   const amount = parseMoney(form.value.amount, currency.value) ?? 0;
-  return taxFromInclusive(amount, form.value.taxCode, session.books?.taxRateBp);
+  return taxFromInclusive(amount, form.value.taxCode, session.books?.taxRatePpm);
 });
 const taxable = computed(() => !!form.value.taxCode && TAX_CODE_MAP[form.value.taxCode].taxable);
 const taxDisplay = computed({
@@ -131,7 +136,7 @@ watch(
     if (id === prev || !id) return;
     const cat = categories.value.find((c) => c.id === id);
     if (cat?.taxCode) {
-      form.value.taxCode = cat.taxCode;
+      form.value.taxCode = taxCodeOr(booksProfile().tax, taxKind.value, cat.taxCode);
       form.value.taxAmount = null;
     }
   },
@@ -295,9 +300,9 @@ function validate() {
     categoryId: !isTransfer.value && !f.categoryId ? 'Choose a category.' : undefined,
     taxAmount:
       taxOn.value && taxable.value && f.taxAmount !== null && (parseMoney(f.taxAmount, currency.value) ?? -1) < 0
-        ? 'Enter the GST amount.'
+        ? `Enter the ${tax.value?.short} amount.`
         : taxOn.value && f.taxAmount !== null && (parseMoney(f.taxAmount, currency.value) ?? 0) > (amount ?? 0)
-          ? "GST can't be more than the amount."
+          ? `${tax.value?.name} can't be more than the amount.`
           : undefined,
   };
   return Object.values(errors.value).some(Boolean) ? null : amount!;
@@ -476,12 +481,12 @@ async function addContact() {
           <Select v-model="form.taxCode" label="Tax code" :options="taxOptions" show-description @update:model-value="form.taxAmount = null" />
           <TextField
             v-model="taxDisplay"
-            label="GST included"
+            :label="`${tax?.name} included`"
             :prefix="currency"
             align="right"
             :disabled="!taxable"
             :error="errors.taxAmount"
-            :help-text="form.taxAmount !== null ? 'Entered by hand' : taxable ? 'Worked out at 1/11 of the amount' : ''"
+            :help-text="form.taxAmount !== null ? 'Entered by hand' : taxable ? `Worked out at ${ratePercent(session.books?.taxRatePpm ?? 0)}%` : ''"
           />
         </FormLayoutGroup>
 

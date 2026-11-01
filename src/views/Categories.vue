@@ -15,10 +15,14 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type Category, type CategoryClass, type CategoryKind, type TaxCode } from '../lib/api';
 import { CLASS_INFO, classOptions } from '../lib/categoryClass';
-import { session } from '../lib/session';
-import { TAX_CODES, TAX_CODE_MAP } from '../shared/tax';
+import { booksProfile, booksTax, session } from '../lib/session';
+import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
+import { SCHEDULE_C_LINES, SCHEDULE_C_MAP } from '../shared/scheduleC';
 
-const taxOn = computed(() => !!session.books?.taxEnabled);
+const country = computed(() => session.books?.country);
+/** Tax codes matter on this side (not US purchases). */
+const taxOnFor = (k: CategoryKind) => !!booksTax() && tracksTax(booksProfile().tax, k);
+const usesScheduleC = computed(() => country.value === 'US');
 
 const categories = ref<Category[]>([]);
 const loading = ref(true);
@@ -38,14 +42,28 @@ const kindOptions = [
 const columns = computed<DataTableColumnType[]>(() => [
   { key: 'name', label: 'Name', formatFunc: (v, row) => (row.archived ? `${v} (archived)` : v) },
   { key: 'class', label: 'Type', width: 200, formatFunc: (v: CategoryClass) => (v === 'pnl' ? '' : CLASS_INFO[v].label) },
-  ...(taxOn.value
-    ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, formatFunc: (v: TaxCode | null) => (v ? TAX_CODE_MAP[v].label : 'None (not on BAS)') }]
+  ...(taxOnFor(kind.value)
+    ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, formatFunc: (v: TaxCode | null) => (v ? TAX_CODE_MAP[v].label : 'None') }]
+    : []),
+  ...(usesScheduleC.value
+    ? [{
+        key: 'reportLine',
+        label: 'Schedule C',
+        width: 240,
+        formatFunc: (v: string | null, row: Category) =>
+          row.class !== 'pnl' ? '' : v && SCHEDULE_C_MAP[v] ? `${v} ${SCHEDULE_C_MAP[v].label}` : 'Not mapped',
+      }]
     : []),
   { key: 'uses', label: 'Transactions', type: 'integer' as const, width: 140 },
 ]);
 
+const lineOptions = computed(() => [
+  { label: 'Not mapped', value: null },
+  ...SCHEDULE_C_LINES.filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.line} ${l.label}`, value: l.line })),
+]);
+
 const taxOptions = computed(() =>
-  TAX_CODES.filter((t) => (form.value.kind === 'income' ? t.sales : t.purchases)).map((t) => ({
+  taxCodesFor(booksProfile().tax, form.value.kind).map((t) => ({
     label: t.label,
     value: t.code,
     description: t.help,
@@ -68,7 +86,8 @@ const form = ref({
   name: '',
   kind: 'expense' as CategoryKind,
   class: 'pnl' as CategoryClass,
-  taxCode: 'GST' as TaxCode | null,
+  taxCode: null as TaxCode | null,
+  reportLine: null as string | null,
 });
 const offBas = computed(() => CLASS_INFO[form.value.class].offBas);
 const nameError = ref<string | null>(null);
@@ -76,8 +95,8 @@ const nameError = ref<string | null>(null);
 function openEditor(c?: Category) {
   nameError.value = null;
   form.value = c
-    ? { id: c.id, name: c.name, kind: c.kind, class: c.class, taxCode: c.taxCode }
-    : { id: undefined, name: '', kind: kind.value, class: 'pnl', taxCode: taxOn.value ? 'GST' : null };
+    ? { id: c.id, name: c.name, kind: c.kind, class: c.class, taxCode: c.taxCode, reportLine: c.reportLine }
+    : { id: undefined, name: '', kind: kind.value, class: 'pnl', taxCode: taxCodeOr(booksProfile().tax, kind.value, null), reportLine: null };
   editing.value = true;
 }
 
@@ -163,7 +182,14 @@ onMounted(load);
             :help-text="form.class === 'pnl' ? '' : 'Kept off Profit & Loss. Shown below it as other money in and out.'"
           />
           <Select
-            v-if="taxOn && !offBas"
+            v-if="usesScheduleC && form.class === 'pnl'"
+            v-model="form.reportLine"
+            label="Schedule C line"
+            :options="lineOptions"
+            help-text="Where this category's total goes on your Schedule C."
+          />
+          <Select
+            v-if="taxOnFor(form.kind) && !offBas"
             v-model="form.taxCode"
             label="Usual tax code"
             :options="taxOptions"

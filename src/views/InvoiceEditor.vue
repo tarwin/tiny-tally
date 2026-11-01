@@ -28,8 +28,8 @@ import { addDays, today } from '../lib/dates';
 import { DOCS } from '../lib/documents';
 import { dataChanged } from '../lib/entryEditor';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
-import { session } from '../lib/session';
-import { TAX_CODES, lineTotals, sumTotals } from '../shared/tax';
+import { booksProfile, booksTax, session } from '../lib/session';
+import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
 
 const route = useRoute();
 const router = useRouter();
@@ -47,7 +47,10 @@ const doc = computed(() => DOCS[route.meta.docType ?? 'invoice']);
 const isBill = computed(() => doc.value.type === 'bill');
 const books = computed(() => session.books!);
 const currency = computed(() => books.value.currency);
-const taxOn = computed(() => books.value.taxEnabled);
+const tax = computed(() => booksTax());
+const taxKind = computed(() => (isBill.value ? 'expense' : 'income'));
+// No tax on the bills side where it isn't claimed (US).
+const taxOn = computed(() => !!tax.value && tracksTax(booksProfile().tax, taxKind.value));
 const money = (v: number) => formatMoney(v, currency.value);
 
 const editingId = computed(() => (route.params.id ? Number(route.params.id) : null));
@@ -84,7 +87,7 @@ const form = ref({
   templateId: null as number | null,
   /** Who it's from. Bills don't have one. */
   tradingNameId: null as number | null,
-  // Supplier bills almost always show GST-inclusive totals.
+  // Supplier bills almost always show tax-inclusive totals.
   pricesIncludeTax: isBill.value ? true : books.value.pricesIncludeTax,
   notes: '',
   lines: [] as LineForm[],
@@ -98,9 +101,8 @@ function defaultCategory() {
   return (usable.find((c) => c.name === preferred) ?? usable[0])?.id ?? null;
 }
 
-function defaultTaxFor(categoryId: number | null): TaxCode {
-  const code = categories.value.find((c) => c.id === categoryId)?.taxCode;
-  return code && taxOptions.value.some((t) => t.value === code) ? code : 'GST';
+function defaultTaxFor(categoryId: number | null): TaxCode | null {
+  return taxCodeOr(booksProfile().tax, taxKind.value, categories.value.find((c) => c.id === categoryId)?.taxCode);
 }
 
 const termOptions = computed(() =>
@@ -154,7 +156,7 @@ const categoryOptions = computed(() =>
     .map((c) => ({ label: c.name, value: c.id })),
 );
 const taxOptions = computed(() =>
-  TAX_CODES.filter((t) => (isBill.value ? t.purchases : t.sales)).map((t) => ({ label: t.label, value: t.code })),
+  taxCodesFor(booksProfile().tax, taxKind.value).map((t) => ({ label: t.label, value: t.code })),
 );
 const templateOptions = computed(() =>
   templates.value.map((t) => ({ label: t.isDefault ? `${t.name} (default)` : t.name, value: t.id })),
@@ -205,7 +207,7 @@ const computedLines = computed(() =>
   form.value.lines.map((l) => {
     const qtyMilli = parseQty(l.qty) ?? 0;
     const unitPrice = parseMoney(l.price, currency.value) ?? 0;
-    return { ...lineTotals({ qtyMilli, unitPrice, taxCode: l.taxCode }, form.value.pricesIncludeTax, taxOn.value, books.value.taxRateBp), qtyMilli, unitPrice };
+    return { ...lineTotals({ qtyMilli, unitPrice, taxCode: l.taxCode }, form.value.pricesIncludeTax, taxOn.value, books.value.taxRatePpm), qtyMilli, unitPrice };
   }),
 );
 const totals = computed(() => sumTotals(computedLines.value));
@@ -316,7 +318,7 @@ onMounted(async () => {
         qty: String(l.qtyMilli / 1000),
         price: toInput(l.unitPrice, currency.value),
         categoryId: l.categoryId,
-        taxCode: l.taxCode ?? (taxOn.value ? 'GST' : null),
+        taxCode: l.taxCode ?? (taxOn.value ? defaultTaxFor(l.categoryId) : null),
       })),
     };
   } else {
@@ -399,7 +401,7 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
               <SegmentedControl
                 v-model="form.pricesIncludeTax"
                 size="small"
-                :options="[{ label: 'GST inclusive', value: true }, { label: 'GST exclusive', value: false }]"
+                :options="[{ label: `${tax?.short} inclusive`, value: true }, { label: `${tax?.short} exclusive`, value: false }]"
               />
             </div>
           </CardSection>
@@ -408,7 +410,7 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
               <div class="Lines__head subdued">
                 <span>Description</span>
                 <span class="num">Qty</span>
-                <span class="num">{{ taxOn ? (form.pricesIncludeTax ? 'Price inc. GST' : 'Price ex. GST') : 'Price' }}</span>
+                <span class="num">{{ taxOn ? (form.pricesIncludeTax ? `Price inc. ${tax?.short}` : `Price ex. ${tax?.short}`) : 'Price' }}</span>
                 <span class="num">Amount</span>
                 <span />
               </div>
@@ -439,8 +441,8 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
           <CardSection>
             <dl class="Totals">
               <template v-if="taxOn">
-                <div><dt>Subtotal (ex. GST)</dt><dd class="money">{{ money(totals.net) }}</dd></div>
-                <div><dt>GST</dt><dd class="money">{{ money(totals.tax) }}</dd></div>
+                <div><dt>Subtotal (ex. {{ tax?.short }})</dt><dd class="money">{{ money(totals.net) }}</dd></div>
+                <div><dt>{{ tax?.name }}</dt><dd class="money">{{ money(totals.tax) }}</dd></div>
               </template>
               <div class="Totals__grand"><dt>Total</dt><dd class="money">{{ money(totals.gross) }}</dd></div>
             </dl>

@@ -20,7 +20,7 @@ export interface BooksSettings {
   /** 'MM-DD', day 1–28. */
   fiscalYearStart: string;
   taxEnabled: boolean;
-  taxRateBp: number;
+  taxRatePpm: number;
   /** ABN, NZ GST number or EIN, per the country. */
   taxId: string;
   taxBasis: 'cash' | 'accrual';
@@ -89,6 +89,8 @@ export interface Category {
   archived: boolean;
   uses: number;
   taxCode: TaxCode | null;
+  /** US: the Schedule C line. */
+  reportLine: string | null;
 }
 
 export type EntryKind = 'income' | 'expense' | 'transfer';
@@ -380,6 +382,29 @@ export interface BasReport {
   untagged: number;
 }
 
+export interface SalesTaxReport {
+  totals: { taxableSales: number; nonTaxableSales: number; totalSales: number; taxCollected: number };
+  detail: Omit<BasDetailRow, 'kind' | 'labels'>[];
+  untagged: number;
+}
+
+export interface ScheduleCRow {
+  line: string;
+  label: string;
+  kind: 'income' | 'expense';
+  total: number;
+  /** After the 50% limit on meals; the total elsewhere. */
+  deductible: number;
+  categories: { id: number; name: string; total: number }[];
+}
+
+export interface ScheduleCReport {
+  lines: ScheduleCRow[];
+  /** Categories with no Schedule C line (left out of the totals). */
+  unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[];
+  totals: { grossIncome: number; totalExpenses: number; netProfit: number };
+}
+
 export interface BasReturn {
   id: number;
   periodStart: string;
@@ -636,7 +661,7 @@ export const api = {
     call<Record<string, { categoryId: number; kind: 'income' | 'expense' }>>('import.suggest', { names }),
   commitImport: (plan: ImportPlan) => call<ImportResult>('import.commit', plan),
   start: () => call<StartState>('app.start'),
-  createBooks: (p: { name: string; tradingName?: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxId?: string }) =>
+  createBooks: (p: { name: string; tradingName?: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxRatePpm?: number; taxId?: string }) =>
     call<Books>('books.create', p),
   createDemo: (dir: string | null, today: string) => call<Books>('books.createDemo', { dir, today }),
   openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),
@@ -656,7 +681,7 @@ export const api = {
   archiveAccount: (id: number, archived: boolean) => call<true>('accounts.archive', { id, archived }),
 
   listCategories: () => call<Category[]>('categories.list'),
-  saveCategory: (p: { id?: number; name: string; kind: CategoryKind; taxCode?: TaxCode | null; class?: CategoryClass }) =>
+  saveCategory: (p: { id?: number; name: string; kind: CategoryKind; taxCode?: TaxCode | null; class?: CategoryClass; reportLine?: string | null }) =>
     call<number>('categories.save', p),
   archiveCategory: (id: number, archived: boolean) => call<true>('categories.archive', { id, archived }),
 
@@ -699,6 +724,8 @@ export const api = {
   profitAndLoss: (p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string }) =>
     call<ProfitAndLoss>('reports.profitAndLoss', p),
   basReport: (p: { from: string; to: string; basis: Basis }) => call<BasReport>('reports.bas', p),
+  salesTaxReport: (p: { from: string; to: string; basis: Basis }) => call<SalesTaxReport>('reports.salesTax', p),
+  scheduleCReport: (p: { from: string; to: string; basis: Basis }) => call<ScheduleCReport>('reports.scheduleC', p),
   agedReceivables: (asOf: string) => call<AgedContact[]>('reports.agedReceivables', { asOf }),
   agedPayables: (asOf: string) => call<AgedContact[]>('reports.agedPayables', { asOf }),
   statement: (p: { contactId: number; from: string; to: string; tradingNameId?: number | null }) => call<Statement>('reports.statement', p),

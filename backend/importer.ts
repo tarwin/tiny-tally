@@ -4,6 +4,8 @@
 import { all, getBooks, one, run } from './db';
 import { OFF_BAS, saveEntry } from './entries';
 import { getSettings } from './settings';
+import { countryProfile } from '../src/shared/countries';
+import { taxCodeOr } from '../src/shared/tax';
 import type { ImportPlan, ImportResult } from '../src/shared/import';
 
 const MAX_FILE = 25 * 1024 * 1024;
@@ -129,7 +131,7 @@ export function commitImport(plan: ImportPlan): ImportResult {
       }
       const cls = c.class && ['pnl', 'tax', 'owner', 'loan', 'asset'].includes(c.class) ? c.class : 'pnl';
       // Tax payments, owner's money and loans never carry GST; assets bought are capital purchases.
-      const taxCode = OFF_BAS.includes(cls) ? 'NTR' : !settings.taxEnabled ? null : cls === 'asset' ? 'CAP' : 'GST';
+      const taxCode = !settings.taxEnabled ? null : OFF_BAS.includes(cls) ? 'NTR' : taxCodeOr(countryProfile(settings.country).tax, c.kind, cls === 'asset' ? 'CAP' : null);
       const id = one<{ id: number }>(db,
         'INSERT INTO categories (name, kind, tax_code, class) VALUES (?, ?, ?, ?) RETURNING id',
         name, c.kind, taxCode, cls)!.id;

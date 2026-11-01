@@ -3,18 +3,37 @@
 //
 // The country is picked when the books are made and can't change. It sets
 // the currency, the financial year, how ambiguous dates read on import, the
-// tax ID and the tax rules. Only Australia has tax support so far; New
-// Zealand GST and US sales tax come later (docs/PLAN-countries-trading-names.md).
+// tax ID and the tax rules. Australia has GST and the BAS; the US has a
+// flat sales tax (or none). New Zealand GST comes later
+// (docs/PLAN-countries-trading-names.md).
 import type { TaxCode } from './tax';
 
 export type Country = 'AU' | 'NZ' | 'US';
 
 export interface CountryTax {
-  /** What the tax is called: 'GST'. */
+  /** What the tax is called: 'GST', 'Sales tax'. */
   name: string;
-  defaultRateBp: number;
-  /** The tax return the books prepare. */
-  report: 'bas';
+  /** In running text: "inc. GST", "plus tax". */
+  short: string;
+  /** The switch that turns it on. */
+  registered: { label: string; help: string };
+  defaultRatePpm: number;
+  /** Whether the rate is the person's to set (US) or fixed by law (AU). */
+  rateEditable: boolean;
+  /** The default for new invoices. */
+  pricesIncludeTax: boolean;
+  /** Documents spell out "ex. GST" and "inc. GST" (AU), or just say Subtotal and Total (US). */
+  spellOut: boolean;
+  /** A credit note is called an adjustment note (AU, for the ATO). */
+  adjustmentNote: boolean;
+  /** Every code this country uses. */
+  codes: TaxCode[];
+  /** The code for a new line on each side. */
+  defaultCode: { sales: TaxCode; purchases: TaxCode };
+  /** The ledger account the tax sits in. */
+  account: string;
+  /** The tax report the books prepare. */
+  report: 'bas' | 'us-sales-tax';
 }
 
 export interface CountryProfile {
@@ -43,6 +62,8 @@ export interface SeedCategory {
   taxCode: TaxCode | null;
   /** Default 'pnl'. The rest are money kept off Profit & Loss. */
   class?: 'tax' | 'owner' | 'loan';
+  /** The tax form line it maps onto (US: Schedule C). */
+  reportLine?: string;
 }
 
 /** ABNs are 11 digits with a weighted checksum; catch typos early. */
@@ -77,18 +98,34 @@ function einError(ein: string) {
   return /^\d{2}-?\d{7}$/.test(v) ? null : 'An EIN is 9 digits, like 12-3456789.';
 }
 
-/**
- * The starting categories. The tax code is only used where tax is on.
- * `taxPayment` names the category tax payments go to, if the country has GST.
- */
-function categories(codes: Partial<Record<string, TaxCode>>, fallback: TaxCode | null, taxPayment: string | null) {
-  const make = (names: string[]) => names.map((name): SeedCategory => ({ name, taxCode: codes[name] ?? fallback }));
+interface SeedOptions {
+  /** Per-category tax codes; the rest get the side's default. */
+  codes?: Partial<Record<string, TaxCode>>;
+  /** The default code per side; null when the country has no tax support yet. */
+  fallback: { income: TaxCode; expense: TaxCode } | null;
+  /** The categories tax payments and refunds go to. */
+  taxPayment?: string;
+  taxRefund?: string;
+  /** Extra expense categories this country starts with. */
+  extraExpenses?: string[];
+  /** Tax form line per category name. */
+  lines?: Record<string, string>;
+}
+
+/** The starting categories. The tax code is only used where tax is on. */
+function categories(o: SeedOptions) {
+  const make = (names: string[], kind: 'income' | 'expense') =>
+    names.map((name): SeedCategory => ({
+      name,
+      taxCode: o.codes?.[name] ?? o.fallback?.[kind] ?? null,
+      ...(o.lines?.[name] ? { reportLine: o.lines[name] } : {}),
+    }));
   // Off Profit & Loss, and never on a tax return.
-  const off = (name: string, cls: 'tax' | 'owner' | 'loan'): SeedCategory => ({ name, taxCode: fallback && 'NTR', class: cls });
+  const off = (name: string, cls: 'tax' | 'owner' | 'loan'): SeedCategory => ({ name, taxCode: o.fallback && 'NTR', class: cls });
   return {
     income: [
-      ...make(['Sales', 'Services', 'Interest Income', 'Other Income']),
-      ...(taxPayment ? [off('GST Refund', 'tax')] : []),
+      ...make(['Sales', 'Services', 'Interest Income', 'Other Income'], 'income'),
+      ...(o.taxRefund ? [off(o.taxRefund, 'tax')] : []),
       off('Owner Contribution', 'owner'),
       off('Loan Received', 'loan'),
     ],
@@ -107,9 +144,10 @@ function categories(codes: Partial<Record<string, TaxCode>>, fallback: TaxCode |
         'Taxes & Licences',
         'Travel',
         'Utilities',
+        ...(o.extraExpenses ?? []),
         'Uncategorised Expense',
-      ]),
-      ...(taxPayment ? [off(taxPayment, 'tax')] : []),
+      ], 'expense'),
+      ...(o.taxPayment ? [off(o.taxPayment, 'tax')] : []),
       off('Income Tax Payment', 'tax'),
       off('Owner Drawings', 'owner'),
       off('Loan Repayment', 'loan'),
@@ -125,9 +163,27 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
     fiscalYearStart: '07-01',
     dateOrder: 'dmy',
     taxId: { label: 'ABN', placeholder: '51 824 753 556', check: abnError },
-    tax: { name: 'GST', defaultRateBp: 1000, report: 'bas' },
+    tax: {
+      name: 'GST',
+      short: 'GST',
+      registered: { label: 'Registered for GST', help: 'Tracks GST on sales and purchases and prepares your BAS.' },
+      defaultRatePpm: 100_000,
+      rateEditable: false,
+      pricesIncludeTax: true,
+      spellOut: true,
+      adjustmentNote: true,
+      codes: ['GST', 'FRE', 'EXP', 'CAP', 'INP', 'NTR'],
+      defaultCode: { sales: 'GST', purchases: 'GST' },
+      account: 'GST',
+      report: 'bas',
+    },
     invoiceTitle: (registered) => (registered ? 'Tax Invoice' : 'Invoice'),
-    categories: categories({ 'Interest Income': 'INP', 'Bank Fees': 'FRE', 'Taxes & Licences': 'FRE', Equipment: 'CAP' }, 'GST', 'GST / BAS Payment'),
+    categories: categories({
+      codes: { 'Interest Income': 'INP', 'Bank Fees': 'FRE', 'Taxes & Licences': 'FRE', Equipment: 'CAP' },
+      fallback: { income: 'GST', expense: 'GST' },
+      taxPayment: 'GST / BAS Payment',
+      taxRefund: 'GST Refund',
+    }),
   },
   NZ: {
     code: 'NZ',
@@ -138,7 +194,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
     taxId: { label: 'GST number', placeholder: '49-091-850', check: irdError },
     tax: null,
     invoiceTitle: (registered) => (registered ? 'Tax Invoice' : 'Invoice'),
-    categories: categories({}, null, 'GST Payment'),
+    categories: categories({ fallback: null, taxPayment: 'GST Payment', taxRefund: 'GST Refund' }),
   },
   US: {
     code: 'US',
@@ -147,9 +203,51 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
     fiscalYearStart: '01-01',
     dateOrder: 'mdy',
     taxId: { label: 'EIN', placeholder: '12-3456789', check: einError },
-    tax: null,
+    tax: {
+      name: 'Sales tax',
+      short: 'tax',
+      registered: { label: 'Charge sales tax', help: 'Adds sales tax at your rate to taxable sales, and totals what you collected.' },
+      // No sensible default: the rate depends on the state, county and city.
+      defaultRatePpm: 0,
+      rateEditable: true,
+      pricesIncludeTax: false,
+      spellOut: false,
+      adjustmentNote: false,
+      codes: ['TAX', 'NON', 'NTR'],
+      // Sales tax paid on purchases isn't claimed back: it's part of the cost.
+      defaultCode: { sales: 'TAX', purchases: 'NTR' },
+      account: 'Sales tax payable',
+      report: 'us-sales-tax',
+    },
     invoiceTitle: () => 'Invoice',
-    categories: categories({}, null, null),
+    categories: categories({
+      codes: { 'Interest Income': 'NON', 'Other Income': 'NON' },
+      fallback: { income: 'TAX', expense: 'NTR' },
+      taxPayment: 'Sales Tax Payment',
+      extraExpenses: ['Car & Truck', 'Supplies'],
+      lines: {
+        Sales: '1',
+        Services: '1',
+        'Interest Income': '6',
+        'Other Income': '6',
+        'Advertising & Marketing': '8',
+        'Car & Truck': '9',
+        Contractors: '11',
+        Insurance: '15',
+        'Professional Fees': '17',
+        'Office Supplies': '18',
+        'Software & Subscriptions': '18',
+        Rent: '20b',
+        Supplies: '22',
+        'Taxes & Licences': '23',
+        Travel: '24a',
+        'Meals & Entertainment': '24b',
+        Utilities: '25',
+        'Bank Fees': '27a',
+        Equipment: '27a',
+        'Uncategorised Expense': '27a',
+      },
+    }),
   },
 };
 

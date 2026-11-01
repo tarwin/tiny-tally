@@ -18,6 +18,8 @@
 //   manual journal    whatever its lines say (journals.ts)
 import { all, getBooks } from './db';
 import { SYSTEM_ACCOUNTS, journalLinesTo } from './journals';
+import { getSettings } from './settings';
+import { countryProfile } from '../src/shared/countries';
 
 export type LedgerType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
 
@@ -39,12 +41,14 @@ export interface JournalLine {
 
 const AR: LedgerAccount = { key: 'ar', name: 'Accounts receivable', type: 'asset', group: 'Money owed to you' };
 const AP: LedgerAccount = { key: 'ap', name: 'Accounts payable', type: 'liability', group: 'Money you owe' };
-const GST: LedgerAccount = { key: 'gst', name: 'GST', type: 'liability', group: 'Tax' };
+/** GST, or US sales tax collected: named for the books' country. */
+const taxAccount = (): LedgerAccount => ({ key: 'gst', name: countryProfile(getSettings().country).tax?.account ?? 'GST', type: 'liability', group: 'Tax' });
 const OPENING: LedgerAccount = { key: 'opening', name: 'Opening balance equity', type: 'equity', group: 'Equity' };
 
 function chart() {
   const { db } = getBooks();
   const accounts = new Map<string, LedgerAccount>();
+  const GST = taxAccount();
   for (const a of [AR, AP, GST, OPENING]) accounts.set(a.key, a);
   // Only manual journals post to these; they show once they have a balance.
   for (const key of ['accruals', 'prepayments', 'accumdep'] as const) accounts.set(key, { key, ...SYSTEM_ACCOUNTS[key] });
@@ -62,7 +66,7 @@ function chart() {
   for (const c of cats) {
     let acct: LedgerAccount;
     if (c.class === 'pnl') acct = { key: `cat:${c.id}`, name: c.name, type: c.kind, group: c.kind === 'income' ? 'Income' : 'Expenses' };
-    else if (c.class === 'tax' && /gst|bas/i.test(c.name)) acct = GST;
+    else if (c.class === 'tax' && /gst|bas|sales tax/i.test(c.name)) acct = GST;
     else if (c.class === 'tax') acct = { key: `cat:${c.id}`, name: c.name, type: 'asset', group: 'Tax paid in advance' };
     else if (c.class === 'loan') acct = { key: 'loans', name: 'Loans', type: 'liability', group: 'Loans' };
     else if (c.class === 'owner') acct = { key: `cat:${c.id}`, name: c.name, type: 'equity', group: 'Equity' };
@@ -167,7 +171,7 @@ export function journalAccounts() {
     out.push({ key: `cat:${c.id}`, name: c.name, type: a.type, group: a.group, archived: !!c.is_archived });
   }
   for (const key of Object.keys(SYSTEM_ACCOUNTS) as (keyof typeof SYSTEM_ACCOUNTS)[]) {
-    out.push({ key, ...SYSTEM_ACCOUNTS[key], archived: false });
+    out.push({ key, ...SYSTEM_ACCOUNTS[key], ...(key === 'gst' ? { name: taxAccount().name } : {}), archived: false });
   }
   return out.sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type) || a.name.localeCompare(b.name));
 }

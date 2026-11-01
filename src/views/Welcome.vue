@@ -15,6 +15,7 @@ import {
   toast,
 } from '@octans/ui';
 import { api, errorMessage } from '../lib/api';
+import { parseRate } from '../lib/money';
 import { openBooksAt, pickAndOpenBooks, refreshSession } from '../lib/books';
 import { today } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
@@ -43,11 +44,16 @@ const countryError = ref<string | null>(null);
 const profile = computed(() => (country.value ? COUNTRIES[country.value] : null));
 const fiscalYearStart = ref('01-01');
 const taxEnabled = ref(true);
+/** US sales tax: the person's rate, as a percent. */
+const taxRate = ref('');
+const rateError = ref<string | null>(null);
 const taxId = ref('');
 const demoing = ref(false);
 
 watch(country, (c) => {
   if (c) fiscalYearStart.value = COUNTRIES[c].fiscalYearStart;
+  // Most US sole traders sell services and don't collect sales tax.
+  if (c) taxEnabled.value = !COUNTRIES[c].tax?.rateEditable;
   countryError.value = null;
 });
 const fyMonth = computed({
@@ -98,7 +104,10 @@ async function chooseFolder() {
 async function create() {
   nameError.value = name.value.trim() ? null : 'Enter your name.';
   countryError.value = country.value ? null : 'Choose the country your business is in.';
-  if (nameError.value || !country.value) return;
+  const askRate = !!profile.value?.tax?.rateEditable && taxEnabled.value;
+  const ppm = askRate ? parseRate(taxRate.value) : null;
+  rateError.value = askRate && !ppm ? 'Enter your sales tax rate, like 8.875.' : null;
+  if (nameError.value || !country.value || rateError.value) return;
   if (storage.value === 'folder' && !folder.value) {
     await chooseFolder();
     if (!folder.value) return;
@@ -111,6 +120,7 @@ async function create() {
       country: country.value,
       fiscalYearStart: fiscalYearStart.value,
       taxEnabled: !!profile.value?.tax && taxEnabled.value,
+      ...(ppm ? { taxRatePpm: ppm } : {}),
       taxId: taxId.value.trim(),
       dir: storage.value === 'internal' ? null : folder.value,
     });
@@ -215,7 +225,18 @@ function shortPath(path: string) {
                 <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
                 <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />
               </FormLayoutGroup>
-              <ToggleSwitch v-if="profile.tax" v-model="taxEnabled" label="Registered for GST" help-text="Tracks GST on sales and purchases and prepares your BAS." />
+              <ToggleSwitch v-if="profile.tax" v-model="taxEnabled" :label="profile.tax.registered.label" :help-text="profile.tax.registered.help" />
+              <TextField
+                v-if="profile.tax?.rateEditable && taxEnabled"
+                v-model="taxRate"
+                label="Sales tax rate"
+                suffix="%"
+                inputmode="decimal"
+                placeholder="e.g. 8.875"
+                required
+                :error="rateError"
+                help-text="Your combined state and local rate. You can change it in Settings."
+              />
               <TextField
                 v-model="taxId"
                 :label="`${profile.taxId.label} (optional)`"

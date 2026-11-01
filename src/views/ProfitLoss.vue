@@ -8,7 +8,7 @@ import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { PERIOD_OPTIONS, periodRange, previousPeriod, type PeriodKey } from '../lib/periods';
 import { printElement } from '../lib/print';
-import { session } from '../lib/session';
+import { booksTax, session } from '../lib/session';
 
 const router = useRouter();
 const books = computed(() => session.books!);
@@ -46,7 +46,7 @@ watch([range, basis, compare], load, { deep: true });
 onMounted(load);
 
 const subtitle = computed(
-  () => `${formatDay(range.value.from)} – ${formatDay(range.value.to)} · ${basis.value === 'cash' ? 'Cash' : 'Accrual'} basis${books.value.taxEnabled ? ' · GST exclusive' : ''}`,
+  () => `${formatDay(range.value.from)} – ${formatDay(range.value.to)} · ${basis.value === 'cash' ? 'Cash' : 'Accrual'} basis${booksTax() ? ` · ${booksTax()!.short} exclusive` : ''}`,
 );
 
 function change(now: number, before: number) {
@@ -168,7 +168,7 @@ function exportCsv() {
           <template v-if="report?.other.length">
             <h3 class="Other__title">Not profit or loss</h3>
             <p class="subdued Note Other__note">
-              Money that moved but isn't income or an expense: tax payments, owner drawings, loans and assets. Amounts include GST.
+              Money that moved but isn't income or an expense: tax payments, owner drawings, loans and assets. Amounts include any tax.
             </p>
             <table class="Report">
               <tbody>

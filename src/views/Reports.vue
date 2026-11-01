@@ -5,7 +5,7 @@ import { Card, CardSection, Icon, Page } from '@octans/ui';
 import { api, type BasFigures } from '../lib/api';
 import { formatMoney } from '../lib/money';
 import { taxPeriods } from '../lib/periods';
-import { session } from '../lib/session';
+import { booksTax, session } from '../lib/session';
 
 const router = useRouter();
 const books = computed(() => session.books!);
@@ -13,6 +13,7 @@ const money = (v: number) => formatMoney(v, books.value.currency);
 
 const period = computed(() => taxPeriods(books.value.basFrequency, books.value.fiscalYearStart, 1)[0]);
 const gst = ref<BasFigures | null>(null);
+const tax = computed(() => booksTax());
 
 const reports = computed(() => [
   {
@@ -21,12 +22,28 @@ const reports = computed(() => [
     title: 'Profit & Loss',
     body: 'Income minus expenses for any period, by category. Compare with the period before.',
   },
-  ...(books.value.taxEnabled
+  ...(tax.value?.report === 'bas'
     ? [{
         to: '/reports/bas',
         icon: 'mdi:bank-outline',
         title: 'BAS & GST',
         body: 'Your Business Activity Statement figures (G1, 1A, 1B…), ready to copy into the ATO portal.',
+      }]
+    : []),
+  ...(tax.value?.report === 'us-sales-tax'
+    ? [{
+        to: '/reports/sales-tax',
+        icon: 'mdi:bank-outline',
+        title: 'Sales tax',
+        body: 'Taxable and non-taxable sales and the sales tax you collected, for your state return.',
+      }]
+    : []),
+  ...(books.value.country === 'US'
+    ? [{
+        to: '/reports/schedule-c',
+        icon: 'mdi:file-document-outline',
+        title: 'Schedule C',
+        body: 'Profit & Loss by Schedule C line for the tax year, for your return or your tax preparer.',
       }]
     : []),
   {
@@ -45,7 +62,7 @@ const reports = computed(() => [
     to: '/reports/balance-sheet',
     icon: 'mdi:scale-balance',
     title: 'Balance Sheet',
-    body: 'What the business has and owes on a date: bank, money owed both ways, GST, loans and owner equity.',
+    body: `What the business has and owes on a date: bank, money owed both ways, ${tax.value?.short ?? 'tax'}, loans and owner equity.`,
   },
   {
     to: '/reports/journal',
@@ -68,7 +85,7 @@ const reports = computed(() => [
 ]);
 
 onMounted(async () => {
-  if (!books.value.taxEnabled) return;
+  if (tax.value?.report !== 'bas') return;
   gst.value = (await api.basReport({ from: period.value.from, to: period.value.to, basis: books.value.taxBasis })).figures;
 });
 </script>

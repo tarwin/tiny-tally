@@ -1,7 +1,8 @@
 // Income, expenses, transfers and the contacts they name.
 import { all, getBooks, one, run } from './db';
 import { assertUnlocked, getSettings } from './settings';
-import { TAX_CODE_MAP, isTaxCode, taxFromInclusive, type TaxCode } from '../src/shared/tax';
+import { TAX_CODE_MAP, isTaxCode, taxCodeOr, taxFromInclusive, type TaxCode } from '../src/shared/tax';
+import { countryProfile } from '../src/shared/countries';
 
 type EntryKind = 'income' | 'expense' | 'transfer';
 
@@ -206,14 +207,14 @@ export function saveEntry(input: EntryInput) {
     // Tax payments, owner's money and loans are never on the BAS.
     if (settings.taxEnabled && OFF_BAS.includes(cat.class)) taxCode = 'NTR';
     else if (settings.taxEnabled) {
-      const code: TaxCode = isTaxCode(input.taxCode) ? input.taxCode : isTaxCode(cat.tax_code) ? cat.tax_code : 'GST';
+      const code = taxCodeOr(countryProfile(settings.country).tax, kind, isTaxCode(input.taxCode) ? input.taxCode : cat.tax_code) ?? 'NTR';
       taxCode = code;
       const override = input.taxAmount;
       if (!TAX_CODE_MAP[code].taxable) taxAmount = 0;
       else if (typeof override === 'number' && Number.isFinite(override)) {
         taxAmount = Math.round(override);
-        if (taxAmount < 0 || taxAmount > amount) throw new Error("GST can't be more than the amount.");
-      } else taxAmount = taxFromInclusive(amount, code, settings.taxRateBp);
+        if (taxAmount < 0 || taxAmount > amount) throw new Error("Tax can't be more than the amount.");
+      } else taxAmount = taxFromInclusive(amount, code, settings.taxRatePpm);
     }
   }
 

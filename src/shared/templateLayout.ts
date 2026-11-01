@@ -4,6 +4,8 @@
 // the page both normalise it through here, so a template saved by an older
 // version simply picks up the defaults.
 
+import type { CountryTax } from './countries';
+
 export type SectionKey = 'header' | 'to' | 'intro' | 'lines' | 'totals' | 'notes' | 'payment' | 'footer';
 export type SectionAlign = 'left' | 'center' | 'right';
 export type SectionSize = 'small' | 'normal' | 'large';
@@ -37,10 +39,10 @@ export const LABELS = {
   description: { label: 'Description column', default: 'Description' },
   qty: { label: 'Quantity column', default: 'Qty' },
   price: { label: 'Price column', default: '' },
-  gst: { label: 'GST column', default: 'GST' },
+  gst: { label: 'Tax column', default: 'GST' },
   amount: { label: 'Amount column', default: 'Amount' },
   subtotal: { label: 'Subtotal', default: 'Subtotal (ex. GST)' },
-  gstTotal: { label: 'GST total', default: 'GST' },
+  gstTotal: { label: 'Tax total', default: 'GST' },
   total: { label: 'Total', default: 'Total' },
   credited: { label: 'Credited', default: 'Credited' },
   paid: { label: 'Paid', default: 'Paid' },
@@ -48,6 +50,21 @@ export const LABELS = {
   payment: { label: 'Payment heading', default: 'Payment' },
 } as const;
 export type LabelKey = keyof typeof LABELS;
+
+/** A label's default for the books' tax ('GST', 'Sales tax'). */
+export function labelDefault(key: LabelKey, tax: CountryTax | null) {
+  if (!tax) return LABELS[key].default;
+  if (key === 'gst' || key === 'gstTotal') return tax.name;
+  if (key === 'subtotal') return tax.spellOut ? `Subtotal (ex. ${tax.short})` : 'Subtotal';
+  return LABELS[key].default;
+}
+
+/** The price column: says whether prices include tax where the country spells it out. */
+export function priceLabel(tax: CountryTax | null, pricesIncludeTax: boolean) {
+  if (!tax) return 'Price';
+  if (!tax.spellOut && !pricesIncludeTax) return 'Price';
+  return pricesIncludeTax ? `Price inc. ${tax.short}` : `Price ex. ${tax.short}`;
+}
 
 /** Details that can be left off. The tax ID can't be hidden on a tax invoice. */
 export const SHOW = {

@@ -47,3 +47,16 @@ export function toInput(minor: number, currency: string) {
   const digits = minorDigits(currency);
   return (minor / 10 ** digits).toFixed(digits);
 }
+
+/** A tax rate in parts per million as a percent for typing: 88750 → '8.875'. */
+export function ratePercent(ppm: number) {
+  return String(ppm / 10_000);
+}
+
+/** '8.875' or '8.875%' → 88750; null unless it's 0–50% with up to 4 decimals. */
+export function parseRate(input: string): number | null {
+  const v = input.trim().replace(/%$/, '').trim();
+  if (!/^\d{1,2}(\.\d{1,4})?$|^\.\d{1,4}$/.test(v)) return null;
+  const ppm = Math.round(Number(v) * 10_000);
+  return ppm <= 500_000 ? ppm : null;
+}

@@ -23,7 +23,7 @@ import { api, errorMessage, type JournalAccount, type JournalEntryRow } from '..
 import { addDays, formatDay, today } from '../lib/dates';
 import { dataChanged, dataVersion } from '../lib/entryEditor';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
-import { session } from '../lib/session';
+import { booksProfile, session } from '../lib/session';
 
 const router = useRouter();
 const currency = computed(() => session.books!.currency);
@@ -309,7 +309,7 @@ watch(
 
           <p v-if="error" class="Error">{{ error }}</p>
           <p class="subdued Small">
-            Journals can use any category plus GST, opening balance equity, accrued expenses, prepayments and accumulated
+            Journals can use any category plus {{ booksProfile().tax?.account ?? 'GST' }}, opening balance equity, accrued expenses, prepayments and accumulated
             depreciation. Money accounts, receivables and payables change through transactions, invoices and bills
             instead.
           </p>

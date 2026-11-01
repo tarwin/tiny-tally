@@ -27,8 +27,8 @@ import { dataChanged, dataVersion } from '../lib/entryEditor';
 import { dueText, statusInfo } from '../lib/invoiceStatus';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { printElement } from '../lib/print';
-import { session } from '../lib/session';
-import { TAX_CODE_MAP } from '../shared/tax';
+import { booksProfile, booksTax, session } from '../lib/session';
+import { TAX_CODE_MAP, tracksTax } from '../shared/tax';
 
 const route = useRoute();
 const router = useRouter();
@@ -41,6 +41,11 @@ const paper = ref<HTMLElement | null>(null);
 const doc = computed(() => DOCS[invoice.value?.docType ?? route.meta.docType ?? 'invoice']);
 const id = computed(() => Number(route.params.id));
 const books = computed(() => session.books!);
+/** The books' tax, where this document carries it (US bills don't). */
+const tax = computed(() => {
+  const t = booksTax();
+  return t && tracksTax(booksProfile().tax, invoice.value?.docType === 'bill' ? 'expense' : 'income') ? t : null;
+});
 const currency = computed(() => books.value.currency);
 const money = (v: number) => formatMoney(v, currency.value);
 
@@ -398,13 +403,13 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
           <CardSection>
             <table class="Report">
               <thead>
-                <tr><th>Description</th><th>Category</th><th v-if="books.taxEnabled">Tax</th><th class="num">Amount</th></tr>
+                <tr><th>Description</th><th>Category</th><th v-if="tax">Tax</th><th class="num">Amount</th></tr>
               </thead>
               <tbody>
                 <tr v-for="l in invoice.lines" :key="l.id">
                   <td>{{ l.description || '—' }}</td>
                   <td class="subdued">{{ l.categoryName }}</td>
-                  <td v-if="books.taxEnabled" class="subdued">{{ l.taxCode ? TAX_CODE_MAP[l.taxCode].label : '' }}</td>
+                  <td v-if="tax" class="subdued">{{ l.taxCode ? TAX_CODE_MAP[l.taxCode].label : '' }}</td>
                   <td class="num money">{{ money(l.net + l.tax) }}</td>
                 </tr>
               </tbody>
@@ -422,7 +427,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
               </div>
               <dl class="Sum">
                 <div><dt>Total</dt><dd class="money">{{ money(invoice.total) }}</dd></div>
-                <div v-if="books.taxEnabled"><dt>Includes GST</dt><dd class="money">{{ money(invoice.tax) }}</dd></div>
+                <div v-if="tax"><dt>Includes {{ tax.short }}</dt><dd class="money">{{ money(invoice.tax) }}</dd></div>
                 <template v-if="invoice.docType !== 'quote'">
                   <div v-if="invoice.credited"><dt>{{ invoice.docType === 'credit' ? 'Used on invoices' : 'Credited' }}</dt><dd class="money">{{ money(invoice.credited) }}</dd></div>
                   <div><dt>{{ settledLabel }}</dt><dd class="money">{{ money(invoice.paid) }}</dd></div>

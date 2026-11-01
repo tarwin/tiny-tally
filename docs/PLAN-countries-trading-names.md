@@ -200,6 +200,21 @@ panel is the main refactor here. Rename `bas_returns` to `tax_returns` and
   shown under 27a with a note that depreciation and section 179 are worked
   out separately. Estimated quarterly tax is out of scope.
 
+### US as built
+
+- The tax rate is stored in parts per million (`tax_rate_ppm`), not basis
+  points, so rates like 8.875% fit. Australia's 10% is 100000.
+- US purchases use NTR only: no tax amount, and the tax code picker and
+  "inc./ex. tax" switch are hidden on expenses and bills.
+- A "Sales Tax Payment" category is seeded so paying the state clears the
+  "Sales tax payable" account.
+- "Car & Truck" and "Supplies" are extra US expense categories, as in the
+  table above.
+- The sales tax filing frequency reuses `bas_frequency` until NZ renames it
+  to `tax_period`.
+- Sales tax is off by default for new US books (most sole traders sell
+  services); turning it on asks for the rate.
+
 ## 4. Trading names
 
 ### Schema

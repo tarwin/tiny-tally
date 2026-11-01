@@ -1,8 +1,9 @@
-// Profit & Loss, BAS / GST, and lodged BAS returns.
+// Profit & Loss, BAS / GST, US sales tax and Schedule C, and lodged BAS returns.
 import { all, getBooks, one, run } from './db';
 import { summarise } from './entries';
 import { getSettings, updateSettings } from './settings';
 import { basLabelsFor, type TaxCode } from '../src/shared/tax';
+import { SCHEDULE_C_LINES, SCHEDULE_C_MAP } from '../src/shared/scheduleC';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 type Basis = 'cash' | 'accrual';
@@ -86,6 +87,68 @@ export function basReport(p: { from: string; to: string; basis: Basis }) {
     if (g.length || tax) detail.push({ ...r, labels: [...g, ...(tax ? [tax] : [])] });
   }
   return { figures, detail, untagged };
+}
+
+// ---- US -----------------------------------------------------------------------
+
+/**
+ * US sales tax collected over a period: taxable sales (before tax), sales
+ * with no tax charged, and the tax itself. Copy it into the state's return.
+ */
+export function salesTaxReport(p: { from: string; to: string; basis: Basis }) {
+  range(p.from, p.to);
+  const { db } = getBooks();
+  const view = p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
+  const rows = all<any>(db,
+    `SELECT l.entry_id AS entryId, l.invoice_id AS invoiceId, l.date, l.gross, l.tax, l.tax_code AS taxCode,
+            l.memo, c.name AS categoryName, ct.name AS contactName
+     FROM ${view} l
+     LEFT JOIN categories c ON c.id = l.category_id
+     LEFT JOIN contacts ct ON ct.id = l.contact_id
+     WHERE l.kind = 'income' AND l.date BETWEEN ? AND ? AND COALESCE(l.tax_code, '') <> 'NTR'
+     ORDER BY l.date, l.entry_id`, p.from, p.to);
+  const totals = { taxableSales: 0, nonTaxableSales: 0, taxCollected: 0 };
+  let untagged = 0;
+  for (const r of rows) {
+    if (r.taxCode === 'TAX') {
+      totals.taxableSales += r.gross - r.tax;
+      totals.taxCollected += r.tax;
+    } else {
+      totals.nonTaxableSales += r.gross;
+      if (!r.taxCode) untagged++;
+    }
+  }
+  return { totals: { ...totals, totalSales: totals.taxableSales + totals.nonTaxableSales }, detail: rows, untagged };
+}
+
+/**
+ * Profit & Loss grouped by Schedule C line. Categories with no line are
+ * listed so they can be mapped; meals show the deductible half.
+ */
+export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
+  range(p.from, p.to);
+  const { db } = getBooks();
+  const lineOf = new Map(all<any>(db, 'SELECT id, report_line FROM categories').map((c) => [c.id, c.report_line as string | null]));
+  const { byCategory } = summarise({ from: p.from, to: p.to, basis: p.basis });
+  const lines = new Map<string, { line: string; label: string; kind: 'income' | 'expense'; total: number; deductible: number; categories: { id: number; name: string; total: number }[] }>();
+  const unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[] = [];
+  for (const r of byCategory as any[]) {
+    const def = SCHEDULE_C_MAP[lineOf.get(r.id) ?? ''];
+    if (!def || def.kind !== r.kind) {
+      unmapped.push({ id: r.id, name: r.name, kind: r.kind, total: r.total });
+      continue;
+    }
+    const row = lines.get(def.line) ?? { line: def.line, label: def.label, kind: def.kind, total: 0, deductible: 0, categories: [] };
+    row.total += r.total;
+    row.deductible = Math.round((row.total * (def.deductiblePct ?? 100)) / 100);
+    row.categories.push({ id: r.id, name: r.name, total: r.total });
+    lines.set(def.line, row);
+  }
+  const ordered = SCHEDULE_C_LINES.map((l) => lines.get(l.line)).filter((l) => !!l);
+  const sum = (kind: 'income' | 'expense') => ordered.filter((l) => l.kind === kind).reduce((t, l) => t + l.deductible, 0);
+  const grossIncome = sum('income');
+  const totalExpenses = sum('expense');
+  return { lines: ordered, unmapped, totals: { grossIncome, totalExpenses, netProfit: grossIncome - totalExpenses } };
 }
 
 // ---- lodged returns ---------------------------------------------------------

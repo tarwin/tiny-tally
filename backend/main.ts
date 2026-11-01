@@ -56,6 +56,8 @@ import {
 } from './invoices';
 import {
   basReport,
+  salesTaxReport,
+  scheduleCReport,
   deleteBasReturn,
   listBasReturns,
   profitAndLoss,
@@ -89,9 +91,10 @@ import {
   sha256,
   startHistory,
 } from './changelog';
-import { COUNTRIES, isCountry, type Country } from '../src/shared/countries';
+import { COUNTRIES, countryProfile, isCountry, type Country } from '../src/shared/countries';
 import type { ImportPlan } from '../src/shared/import';
-import { isTaxCode, type TaxCode } from '../src/shared/tax';
+import { taxCodeOr, type TaxCode } from '../src/shared/tax';
+import { SCHEDULE_C_MAP, isScheduleCLine } from '../src/shared/scheduleC';
 
 interface RecentBooks {
   path: string;
@@ -302,7 +305,7 @@ export const api: Record<string, TinyApiHandler> = {
     };
   },
 
-  'books.create': async ({ name, tradingName, country, fiscalYearStart, dir, taxEnabled, taxId }: {
+  'books.create': async ({ name, tradingName, country, fiscalYearStart, dir, taxEnabled, taxRatePpm, taxId }: {
     name: string;
     tradingName?: string;
     country: Country;
@@ -310,14 +313,18 @@ export const api: Record<string, TinyApiHandler> = {
     /** null = store internally */
     dir: string | null;
     taxEnabled?: boolean;
+    /** US sales tax: the person's rate. */
+    taxRatePpm?: number;
     taxId?: string;
   }, _app, { window: win }) => {
     name = String(name ?? '').trim();
     if (!name) throw new Error('Enter your name.');
     if (!isCountry(country)) throw new Error('Choose the country your business is in.');
+    const rate = Math.round(Number(taxRatePpm));
+    if (taxRatePpm != null && !(rate >= 0 && rate <= 500_000)) throw new Error('Enter a tax rate between 0% and 50%.');
     const folder = dir ?? (await internalDir());
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(String(tradingName ?? '').trim() || name);
-    await createBooks(win, path, dir === null, { name, tradingName, country, fiscalYearStart: isYearStart(String(fiscalYearStart)) ? fiscalYearStart : COUNTRIES[country].fiscalYearStart, taxEnabled });
+    await createBooks(win, path, dir === null, { name, tradingName, country, fiscalYearStart: isYearStart(String(fiscalYearStart)) ? fiscalYearStart : COUNTRIES[country].fiscalYearStart, taxEnabled, taxRatePpm: taxRatePpm == null ? undefined : rate });
     inWindow(win, () => {
       if (taxId) updateSettings({ taxId });
       startHistory('books.create', JSON.stringify({ name }));
@@ -466,6 +473,7 @@ export const api: Record<string, TinyApiHandler> = {
     return all(
       db,
       `SELECT c.id, c.name, c.kind, c.class AS class, c.is_archived AS archived, c.tax_code AS taxCode,
+              c.report_line AS reportLine,
               (SELECT COUNT(*) FROM entries e WHERE e.category_id = c.id)
                 + (SELECT COUNT(*) FROM invoice_lines l WHERE l.category_id = c.id)
                 + (SELECT COUNT(*) FROM journal_lines j WHERE j.category_id = c.id) AS uses
@@ -474,16 +482,21 @@ export const api: Record<string, TinyApiHandler> = {
     ).map((r: any) => ({ ...r, archived: !!r.archived }));
   },
 
-  'categories.save': async ({ id, name, kind, taxCode, class: cls }: {
+  'categories.save': async ({ id, name, kind, taxCode, class: cls, reportLine }: {
     id?: number;
     name: string;
     kind: 'income' | 'expense';
     taxCode?: TaxCode | null;
     class?: 'pnl' | 'tax' | 'owner' | 'loan' | 'asset';
+    /** US: the Schedule C line. */
+    reportLine?: string | null;
   }) => {
     const klass = ['pnl', 'tax', 'owner', 'loan', 'asset'].includes(cls as string) ? cls! : 'pnl';
     // Tax payments, owner's money and loans never go on the BAS.
-    const code = ['tax', 'owner', 'loan'].includes(klass) ? 'NTR' : isTaxCode(taxCode) ? taxCode : 'GST';
+    const country = getSettings().country;
+    const code = ['tax', 'owner', 'loan'].includes(klass) ? (countryProfile(country).tax ? 'NTR' : null) : taxCodeOr(countryProfile(country).tax, kind, taxCode);
+    // Only P&L categories land on Schedule C.
+    const line = klass === 'pnl' && country === 'US' && isScheduleCLine(reportLine) && SCHEDULE_C_MAP[reportLine].kind === kind ? reportLine : null;
     name = String(blankToNull(name) ?? '').trim();
     if (!name) throw new Error('Give the category a name.');
     const { db } = getBooks();
@@ -491,11 +504,11 @@ export const api: Record<string, TinyApiHandler> = {
       kind, name, id ?? null);
     if (clash) throw new Error(`There's already a${kind === 'income' ? 'n income' : 'n expense'} category called “${name}”.`);
     if (id) {
-      run(db, 'UPDATE categories SET name = ?, kind = ?, tax_code = ?, class = ? WHERE id = ?', name, kind, code, klass, id);
+      run(db, 'UPDATE categories SET name = ?, kind = ?, tax_code = ?, class = ?, report_line = ? WHERE id = ?', name, kind, code, klass, line, id);
       return id;
     }
-    return one<{ id: number }>(db, 'INSERT INTO categories (name, kind, tax_code, class) VALUES (?, ?, ?, ?) RETURNING id',
-      name, kind, code, klass)!.id;
+    return one<{ id: number }>(db, 'INSERT INTO categories (name, kind, tax_code, class, report_line) VALUES (?, ?, ?, ?, ?) RETURNING id',
+      name, kind, code, klass, line)!.id;
   },
 
   'categories.archive': async ({ id, archived }: { id: number; archived: boolean }) => {
@@ -580,6 +593,8 @@ Object.assign(api, {
 
   'reports.profitAndLoss': async (p: Parameters<typeof profitAndLoss>[0]) => profitAndLoss(p),
   'reports.bas': async (p: Parameters<typeof basReport>[0]) => basReport(p),
+  'reports.salesTax': async (p: Parameters<typeof salesTaxReport>[0]) => salesTaxReport(p),
+  'reports.scheduleC': async (p: Parameters<typeof scheduleCReport>[0]) => scheduleCReport(p),
   'reports.agedReceivables': async ({ asOf }: { asOf: string }) => agedReceivables(asOf),
   'bas.list': async () => listBasReturns(),
   'bas.save': async (p: Parameters<typeof saveBasReturn>[0], _app, { window: win }) => {

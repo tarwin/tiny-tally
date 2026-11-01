@@ -7,7 +7,7 @@ import { formatDay, today } from '../lib/dates';
 import { dataChanged, dataVersion } from '../lib/entryEditor';
 import { formatMoney } from '../lib/money';
 import { FREQUENCY_LABEL } from '../lib/schedule';
-import { session } from '../lib/session';
+import { booksTax, session } from '../lib/session';
 
 const schedules = ref<Schedule[]>([]);
 const loading = ref(true);
@@ -36,11 +36,11 @@ async function load() {
 watch(dataVersion, load);
 onMounted(load);
 
-/** Entries store an amount; invoices and bills a list of lines (shown before GST when prices exclude it). */
+/** Entries store an amount; invoices and bills a list of lines (shown before tax when prices exclude it). */
 function amount(s: Schedule) {
   if (s.kind === 'entry') return formatMoney(s.payload.amount ?? 0, currency.value);
   const total = (s.payload.lines ?? []).reduce((t: number, l: any) => t + Math.round((l.qtyMilli * l.unitPrice) / 1000), 0);
-  return formatMoney(total, currency.value) + (s.payload.pricesIncludeTax === false && session.books!.taxEnabled ? ' + GST' : '');
+  return formatMoney(total, currency.value) + (s.payload.pricesIncludeTax === false && booksTax() ? ` + ${booksTax()!.short}` : '');
 }
 
 function kindText(s: Schedule) {

@@ -472,4 +472,12 @@ export const migrations: string[] = [
   DROP TRIGGER IF EXISTS log_invoice_templates_delete;
   ALTER TABLE invoice_templates DROP COLUMN payment_details;
   `,
+  // v10: US support. Categories map onto a tax form line (Schedule C for
+  // the US). The tax rate moves to parts per million, for rates like 8.875%.
+  `
+  ALTER TABLE categories ADD COLUMN report_line TEXT;
+  INSERT OR REPLACE INTO meta (key, value)
+    SELECT 'tax_rate_ppm', CAST(value AS INTEGER) * 100 FROM meta WHERE key = 'tax_rate_bp';
+  DELETE FROM meta WHERE key = 'tax_rate_bp';
+  `,
 ];

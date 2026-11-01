@@ -12,7 +12,7 @@ export interface BooksSettings {
   /** 'MM-DD', day 1–28. */
   fiscalYearStart: string;
   taxEnabled: boolean;
-  taxRateBp: number;
+  taxRatePpm: number;
   /** ABN, NZ GST number or EIN, per the country. */
   taxId: string;
   taxBasis: 'cash' | 'accrual';
@@ -84,7 +84,7 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
     },
   },
   taxEnabled: { key: 'tax_enabled', ...bool(false) },
-  taxRateBp: { key: 'tax_rate_bp', ...int(1000, 0, 5000) },
+  taxRatePpm: { key: 'tax_rate_ppm', ...int(100_000, 0, 500_000) },
   taxId: { key: 'tax_id', ...str() },
   taxBasis: { key: 'tax_basis', ...oneOf(['cash', 'accrual'], 'cash') },
   basFrequency: { key: 'bas_frequency', ...oneOf(['monthly', 'quarterly', 'annual'], 'quarterly') },

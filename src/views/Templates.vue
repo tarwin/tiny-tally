@@ -24,6 +24,8 @@ import { countryProfile } from '../shared/countries';
 import { lineTotals, sumTotals } from '../shared/tax';
 import {
   LABELS,
+  labelDefault,
+  priceLabel,
   PLACEHOLDERS,
   SECTION_INFO,
   SHOW,
@@ -111,7 +113,10 @@ const panelOptions = [
 const labelKeys = (Object.keys(LABELS) as LabelKey[]).filter((k) => books.value.taxEnabled || !['gst', 'gstTotal', 'subtotal'].includes(k));
 const showKeys = Object.keys(SHOW) as ShowKey[];
 const placeholderText = Object.keys(PLACEHOLDERS).map((k) => `{${k}}`).join(' ');
-const priceDefault = computed(() => (books.value.taxEnabled ? 'Price ex. GST / inc. GST' : 'Price'));
+const tax = computed(() => (books.value.taxEnabled ? profile.value.tax : null));
+const priceDefault = computed(() =>
+  tax.value?.spellOut ? `${priceLabel(tax.value, false)} / inc. ${tax.value.short}` : priceLabel(tax.value, false),
+);
 
 function setLabel(key: LabelKey, value: string) {
   form.value.layout.labels[key] = value;
@@ -212,12 +217,13 @@ function startNew() {
 // A realistic sample so layout decisions are made against real content.
 const sample = computed<InvoiceDocData>(() => {
   const taxOn = books.value.taxEnabled;
+  const code = profile.value.tax?.defaultCode.sales ?? null;
   const raw = [
-    { description: 'Brand strategy workshop', qtyMilli: 1000, unitPrice: 150000, taxCode: 'GST' as const },
-    { description: 'Logo design: three concepts, two rounds of changes', qtyMilli: 1000, unitPrice: 240000, taxCode: 'GST' as const },
-    { description: 'Design hours', qtyMilli: 6500, unitPrice: 14000, taxCode: 'GST' as const },
+    { description: 'Brand strategy workshop', qtyMilli: 1000, unitPrice: 150000, taxCode: code },
+    { description: 'Logo design: three concepts, two rounds of changes', qtyMilli: 1000, unitPrice: 240000, taxCode: code },
+    { description: 'Design hours', qtyMilli: 6500, unitPrice: 14000, taxCode: code },
   ];
-  const lines = raw.map((l) => ({ ...l, categoryId: null, ...lineTotals(l, false, taxOn, books.value.taxRateBp) }));
+  const lines = raw.map((l) => ({ ...l, categoryId: null, ...lineTotals(l, false, taxOn, books.value.taxRatePpm) }));
   const t = sumTotals(lines);
   return {
     number: `${books.value.invoicePrefix}0042`,
@@ -308,11 +314,11 @@ onMounted(() => load());
               <TextField
                 v-model="form.title"
                 label="Document title"
-                :help-text="books.taxEnabled ? 'GST-registered businesses must use “Tax Invoice” for taxable sales.' : ''"
+                :help-text="tax?.report === 'bas' ? 'GST-registered businesses must use “Tax Invoice” for taxable sales.' : ''"
                 @update:model-value="touch"
               />
               <TextField v-model="form.footer" label="Footer" multiline="2" placeholder="Thank-you note, terms, website…" @update:model-value="touch" />
-              <ToggleSwitch v-if="books.taxEnabled" v-model="form.showTaxColumn" label="Show GST on each line" @update:model-value="touch" />
+              <ToggleSwitch v-if="tax" v-model="form.showTaxColumn" :label="`Show ${tax.short} on each line`" @update:model-value="touch" />
             </FormLayout>
           </CardSection>
 
@@ -350,7 +356,7 @@ onMounted(() => load());
                     :key="k"
                     :model-value="form.layout.labels[k] ?? ''"
                     :label="LABELS[k].label"
-                    :placeholder="k === 'price' ? priceDefault : LABELS[k].default"
+                    :placeholder="k === 'price' ? priceDefault : labelDefault(k, tax)"
                     size="small"
                     @update:model-value="(v) => setLabel(k, String(v ?? ''))"
                   />

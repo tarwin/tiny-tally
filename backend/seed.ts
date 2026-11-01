@@ -11,6 +11,8 @@ export interface BooksSetup {
   fiscalYearStart: string;
   /** Registered for the country's tax (only where it's supported). */
   taxEnabled?: boolean;
+  /** Where the person sets the rate (US sales tax); parts per million. */
+  taxRatePpm?: number;
 }
 
 export function seedBooks(db: Database, setup: BooksSetup) {
@@ -22,10 +24,10 @@ export function seedBooks(db: Database, setup: BooksSetup) {
   meta.run('fiscal_year_start', setup.fiscalYearStart);
   meta.run('created_at', new Date().toISOString());
   meta.run('tax_enabled', profile.tax && (setup.taxEnabled ?? true) ? '1' : '0');
-  if (profile.tax) meta.run('tax_rate_bp', String(profile.tax.defaultRateBp));
+  if (profile.tax) meta.run('tax_rate_ppm', String(profile.tax.rateEditable ? (setup.taxRatePpm ?? profile.tax.defaultRatePpm) : profile.tax.defaultRatePpm));
   meta.run('tax_basis', 'cash');
   meta.run('bas_frequency', 'quarterly');
-  meta.run('prices_include_tax', '1');
+  meta.run('prices_include_tax', profile.tax && !profile.tax.pricesIncludeTax ? '0' : '1');
   meta.run('invoice_prefix', 'INV-');
   meta.run('invoice_next', '1');
   meta.run('payment_terms_days', '14');
@@ -33,9 +35,9 @@ export function seedBooks(db: Database, setup: BooksSetup) {
 
   // The v3 migration already ran on this fresh file and found no categories,
   // so set codes here.
-  const cat = db.prepare('INSERT INTO categories (name, kind, class, sort, tax_code) VALUES (?, ?, ?, ?, ?)');
+  const cat = db.prepare('INSERT INTO categories (name, kind, class, sort, tax_code, report_line) VALUES (?, ?, ?, ?, ?, ?)');
   // Off-P&L categories sort after the rest, as they always have.
-  const add = (kind: 'income' | 'expense') => (c: SeedCategory, i: number) => cat.run(c.name, kind, c.class ?? 'pnl', c.class ? 90 + i : i, c.taxCode);
+  const add = (kind: 'income' | 'expense') => (c: SeedCategory, i: number) => cat.run(c.name, kind, c.class ?? 'pnl', c.class ? 90 + i : i, c.taxCode, c.reportLine ?? null);
   profile.categories.income.forEach(add('income'));
   profile.categories.expense.forEach(add('expense'));
   cat.finalize();

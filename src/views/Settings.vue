@@ -23,15 +23,18 @@ import { formatDay } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
 import { countryProfile } from '../shared/countries';
+import { parseRate, ratePercent } from '../lib/money';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import TradingNames from '../components/TradingNames.vue';
 
 type Form = Omit<
   Books,
-  'path' | 'internal' | 'country' | 'currency' | 'taxRateBp' | 'lockDate' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
+  'path' | 'internal' | 'country' | 'currency' | 'taxRatePpm' | 'lockDate' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
 > & {
   invoiceNext: string;
   paymentTermsDays: string;
+  /** Percent, as typed; only where the rate is the person's to set (US). */
+  taxRate: string;
 };
 
 const books = computed(() => session.books!);
@@ -56,6 +59,7 @@ function fromBooks(c: Books): Form {
     billPrefix: c.billPrefix,
     invoiceNext: String(c.invoiceNext),
     paymentTermsDays: String(c.paymentTermsDays),
+    taxRate: ratePercent(c.taxRatePpm),
     color: c.color,
     logo: c.logo,
   };
@@ -75,13 +79,23 @@ const fyDay = computed({
 const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fromBooks(books.value)));
 
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
-const frequencyOptions = [
+const basFrequencyOptions = [
   { label: 'Quarterly', value: 'quarterly', description: 'Most small businesses. Uses Simpler BAS (G1, 1A, 1B).' },
   { label: 'Monthly', value: 'monthly', description: 'Required if GST turnover is $20 million or more; shows the full set of labels.' },
   { label: 'Annually', value: 'annual', description: 'For voluntary registrations under $75,000.' },
 ];
 
 const profile = computed(() => countryProfile(books.value.country));
+const frequencyOptions = computed(() =>
+  profile.value.tax?.report === 'bas'
+    ? basFrequencyOptions
+    : [
+        { label: 'Monthly', value: 'monthly' },
+        { label: 'Quarterly', value: 'quarterly' },
+        { label: 'Annually', value: 'annual' },
+      ],
+);
+const rateError = ref<string | null>(null);
 const taxIdProblem = computed(() => profile.value.taxId.check(form.value.taxId));
 
 async function chooseLogo() {
@@ -100,11 +114,15 @@ function reveal() {
 
 async function save() {
   nameError.value = form.value.name.trim() ? null : 'Enter your name.';
-  if (nameError.value) return;
+  const ppm = parseRate(form.value.taxRate);
+  rateError.value = profile.value.tax?.rateEditable && form.value.taxEnabled && ppm === null ? 'Enter a rate between 0% and 50%, like 8.875.' : null;
+  if (nameError.value || rateError.value) return;
   saving.value = true;
   try {
+    const { taxRate: _, ...rest } = form.value;
     session.books = await api.updateSettings({
-      ...form.value,
+      ...rest,
+      ...(profile.value.tax?.rateEditable && ppm !== null ? { taxRatePpm: ppm } : {}),
       invoiceNext: Number(form.value.invoiceNext),
       paymentTermsDays: Number(form.value.paymentTermsDays),
     });
@@ -209,23 +227,37 @@ async function setLock(date: string | null) {
 
       <TradingNames />
 
-      <Card v-if="profile.tax" title="GST & BAS">
+      <Card v-if="profile.tax" :title="profile.tax.report === 'bas' ? 'GST & BAS' : profile.tax.name">
         <CardSection>
           <FormLayout>
-            <ToggleSwitch v-model="form.taxEnabled" label="Registered for GST" />
+            <ToggleSwitch v-model="form.taxEnabled" :label="profile.tax.registered.label" />
             <template v-if="form.taxEnabled">
+              <TextField
+                v-if="profile.tax.rateEditable"
+                v-model="form.taxRate"
+                label="Rate"
+                suffix="%"
+                inputmode="decimal"
+                :error="rateError"
+                help-text="Your combined state and local rate. Charged on taxable sales."
+              />
               <div>
-                <div class="Label">Accounting basis for GST</div>
+                <div class="Label">Accounting basis</div>
                 <SegmentedControl
                   v-model="form.taxBasis"
                   :options="[{ label: 'Cash', value: 'cash' }, { label: 'Accrual', value: 'accrual' }]"
                 />
                 <p class="subdued Hint">
-                  Cash: report GST when money changes hands (most small businesses). Accrual: report it when you invoice or are billed.
+                  Cash: report {{ profile.tax.short }} when money changes hands (most small businesses). Accrual: report it when you invoice or are billed.
                 </p>
               </div>
-              <Select v-model="form.basFrequency" label="BAS reporting" :options="frequencyOptions" show-description />
-              <ToggleSwitch v-model="form.pricesIncludeTax" label="Invoice prices include GST by default" />
+              <Select
+                v-model="form.basFrequency"
+                :label="profile.tax.report === 'bas' ? 'BAS reporting' : 'Filing frequency'"
+                :options="frequencyOptions"
+                :show-description="profile.tax.report === 'bas'"
+              />
+              <ToggleSwitch v-model="form.pricesIncludeTax" :label="`Invoice prices include ${profile.tax.short} by default`" />
             </template>
           </FormLayout>
         </CardSection>

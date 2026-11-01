@@ -10,10 +10,17 @@ import { formatDay, today } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { toIso, yearStartFor } from '../lib/periods';
 import { printElement } from '../lib/print';
-import { session } from '../lib/session';
+import { booksProfile, session } from '../lib/session';
 
 const router = useRouter();
 const books = computed(() => session.books!);
+const taxNote = computed(() => {
+  const tax = booksProfile().tax;
+  if (!tax) return '';
+  return tax.report === 'bas'
+    ? "GST is what you've collected less what you've claimed and paid the ATO."
+    : `${tax.account} is what you've collected less what you've paid the state.`;
+});
 const money = (v: number) => formatMoney(v, books.value.currency);
 
 const asOf = ref(today());
@@ -99,7 +106,7 @@ function exportCsv() {
             </tbody>
           </table>
           <p class="subdued Note no-print">
-            Owner drawings show as negative equity. GST is what you've collected less what you've claimed and paid the ATO.
+            Owner drawings show as negative equity. {{ taxNote }}
           </p>
         </div>
       </CardSection>

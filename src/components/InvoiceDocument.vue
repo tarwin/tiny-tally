@@ -8,7 +8,7 @@ import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { countryProfile } from '../shared/countries';
 import { TAX_CODE_MAP } from '../shared/tax';
-import { LABELS, fillPlaceholders, normaliseLayout, type LabelKey, type TemplateSection } from '../shared/templateLayout';
+import { fillPlaceholders, labelDefault, normaliseLayout, priceLabel, type LabelKey, type TemplateSection } from '../shared/templateLayout';
 
 export interface InvoiceDocData {
   docType?: DocType;
@@ -48,24 +48,27 @@ const t = computed(
       style: 'classic' as const,
       accent: '#2f6fde',
       logo: null,
-      title: countryProfile(props.books.country).invoiceTitle(true),
+      title: countryProfile(props.books.country).invoiceTitle(props.books.taxEnabled),
       footer: null,
       showTaxColumn: true,
     },
 );
 
 const currency = computed(() => props.books.currency);
-const taxOn = computed(() => props.books.taxEnabled);
+const profile = computed(() => countryProfile(props.books.country));
+const tax = computed(() => (props.books.taxEnabled ? profile.value.tax : null));
+const taxOn = computed(() => !!tax.value);
 const type = computed(() => props.invoice.docType ?? 'invoice');
-// A GST credit note is an "adjustment note" to the ATO; customers know it as a credit note.
+// An Australian GST credit note is an "adjustment note" to the ATO; customers know it as a credit note.
 const title = computed(() => {
   if (type.value === 'quote') return 'Quote';
-  if (type.value === 'credit') return taxOn.value ? 'Adjustment Note' : 'Credit Note';
-  return taxOn.value ? t.value.title || 'Tax Invoice' : t.value.title === 'Tax Invoice' ? 'Invoice' : t.value.title;
+  if (type.value === 'credit') return tax.value?.adjustmentNote ? 'Adjustment Note' : 'Credit Note';
+  const registered = profile.value.invoiceTitle(true);
+  return taxOn.value ? t.value.title || registered : t.value.title === registered ? profile.value.invoiceTitle(false) : t.value.title;
 });
 const layout = computed(() => normaliseLayout(props.template?.layout));
 const show = computed(() => ({ ...layout.value.show, taxId: layout.value.show.taxId || taxOn.value }));
-const taxIdLabel = computed(() => countryProfile(props.books.country).taxId.label);
+const taxIdLabel = computed(() => profile.value.taxId.label);
 const showTax = computed(() => taxOn.value && t.value.showTaxColumn);
 const from = computed(() => props.sender ?? { name: props.books.name, address: null, email: null, phone: null, paymentDetails: null, logo: null });
 // A template's own logo wins; otherwise the trading name's.
@@ -84,8 +87,8 @@ function label(key: LabelKey) {
   if (special) return special;
   const own = layout.value.labels[key];
   if (own) return own;
-  if (key === 'price') return taxOn.value ? (props.invoice.pricesIncludeTax ? 'Price inc. GST' : 'Price ex. GST') : 'Price';
-  return LABELS[key].default;
+  if (key === 'price') return priceLabel(tax.value, props.invoice.pricesIncludeTax);
+  return labelDefault(key, tax.value);
 }
 
 const amountDue = computed(() => props.invoice.balance ?? props.invoice.total - (props.invoice.paid ?? 0));
@@ -195,7 +198,7 @@ const stamp = computed(() => {
             <tr v-for="(l, i) in invoice.lines" :key="i">
               <td class="Doc__desc">
                 {{ l.description || '—' }}
-                <span v-if="taxOn && l.taxCode && l.taxCode !== 'GST'" class="Doc__code">{{ TAX_CODE_MAP[l.taxCode].label }}</span>
+                <span v-if="taxOn && l.taxCode && l.taxCode !== tax?.defaultCode.sales" class="Doc__code">{{ TAX_CODE_MAP[l.taxCode].label }}</span>
               </td>
               <template v-if="show.qtyPrice">
                 <td class="num">{{ qty(l.qtyMilli) }}</td>
@@ -215,7 +218,7 @@ const stamp = computed(() => {
             <div><dt>{{ label('gstTotal') }}</dt><dd>{{ money(invoice.tax) }}</dd></div>
           </template>
           <div class="Doc__grand">
-            <dt>{{ label('total') }}{{ taxOn ? ' (inc. GST)' : '' }}</dt><dd>{{ money(invoice.total) }}</dd>
+            <dt>{{ label('total') }}{{ tax?.spellOut ? ` (inc. ${tax.short})` : '' }}</dt><dd>{{ money(invoice.total) }}</dd>
           </div>
           <template v-if="type === 'invoice' && (invoice.paid || invoice.credited)">
             <div v-if="invoice.credited"><dt>{{ label('credited') }}</dt><dd>−{{ money(invoice.credited) }}</dd></div>

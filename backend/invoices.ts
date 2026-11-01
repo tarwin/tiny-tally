@@ -11,7 +11,7 @@
 // invoice (credit_allocations, no money moves) or refunded (a payment out).
 import { all, getBooks, one, run } from './db';
 import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from './settings';
-import { isTaxCode, lineTotals, sumTotals, type TaxCode } from '../src/shared/tax';
+import { isTaxCode, lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
 import { countryProfile } from '../src/shared/countries';
 import { normaliseLayout } from '../src/shared/templateLayout';
 import { defaultTradingNameId, resolveTradingName, senderFor, snapshotOf } from './tradingNames';
@@ -249,8 +249,8 @@ export function saveInvoice(input: InvoiceInput) {
       categoryId = cat.id;
     }
     if (categoryId === null) throw new Error(`Line ${i + 1}: choose an ${kind} category.`);
-    const taxCode: TaxCode | null = settings.taxEnabled ? (isTaxCode(l.taxCode) ? l.taxCode : 'GST') : null;
-    const t = lineTotals({ qtyMilli, unitPrice, taxCode }, !!input.pricesIncludeTax, settings.taxEnabled, settings.taxRateBp);
+    const taxCode: TaxCode | null = settings.taxEnabled ? taxCodeOr(countryProfile(settings.country).tax, kind, l.taxCode) : null;
+    const t = lineTotals({ qtyMilli, unitPrice, taxCode }, !!input.pricesIncludeTax, settings.taxEnabled, settings.taxRatePpm);
     return { description: clean(l.description) ?? '', qtyMilli, unitPrice, categoryId, taxCode, ...t, sort: i };
   });
   const totals = sumTotals(computed);
