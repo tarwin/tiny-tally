@@ -12,7 +12,7 @@ import { api } from './lib/api';
 import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density } from './lib/appSettings';
 import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
 import { today } from './lib/dates';
-import { dataChanged, newEntry } from './lib/entryEditor';
+import { dataChanged, dataVersion, newEntry } from './lib/entryEditor';
 import { canGoBack, canGoForward, goBack, goForward } from './lib/navHistory';
 import { session } from './lib/session';
 import { THEME_OPTIONS, applyTheme, restoreTheme, syncThemeMenu } from './lib/theme';
@@ -23,6 +23,23 @@ const router = useRouter();
 
 const notice = ref<string | null>(null);
 const noticePath = ref<string | null>(null);
+
+/** Overdue counts for the sidebar badges. */
+const overdue = ref({ invoices: 0, bills: 0 });
+async function loadOverdue() {
+  if (!session.books) return;
+  try {
+    const [inv, bill] = await Promise.all([
+      api.listInvoices({ status: 'overdue' }),
+      api.listInvoices({ docType: 'bill', status: 'overdue' }),
+    ]);
+    overdue.value = { invoices: inv.rows.length, bills: bill.rows.length };
+  } catch {
+    // A badge isn't worth an error.
+  }
+}
+watch([dataVersion, () => session.books?.path], loadOverdue, { immediate: true });
+const badge = (n: number) => (n ? String(n) : undefined);
 
 const sections = computed<NavigationSectionType[]>(() => [
   {
@@ -37,7 +54,7 @@ const sections = computed<NavigationSectionType[]>(() => [
     id: 'sales',
     title: 'Sales',
     items: [
-      { id: 'invoices', label: 'Invoices', icon: 'mdi:file-document-outline', url: '/invoices' },
+      { id: 'invoices', label: 'Invoices', icon: 'mdi:file-document-outline', url: '/invoices', badge: badge(overdue.value.invoices) },
       { id: 'quotes', label: 'Quotes', icon: 'mdi:file-document-edit-outline', url: '/quotes' },
       { id: 'credits', label: 'Credit notes', icon: 'mdi:file-undo-outline', url: '/credit-notes' },
     ],
@@ -45,7 +62,7 @@ const sections = computed<NavigationSectionType[]>(() => [
   {
     id: 'purchases',
     title: 'Purchases',
-    items: [{ id: 'bills', label: 'Bills', icon: 'mdi:receipt-text-outline', url: '/bills' }],
+    items: [{ id: 'bills', label: 'Bills', icon: 'mdi:receipt-text-outline', url: '/bills', badge: badge(overdue.value.bills) }],
   },
   {
     id: 'books',
@@ -53,6 +70,7 @@ const sections = computed<NavigationSectionType[]>(() => [
     items: [
       { id: 'accounts', label: 'Money accounts', icon: 'mdi:bank-outline', url: '/accounts' },
       { id: 'contacts', label: 'Contacts', icon: 'mdi:account-multiple-outline', url: '/contacts' },
+      { id: 'items', label: 'Products & services', icon: 'mdi:package-variant-closed', url: '/items' },
       { id: 'categories', label: 'Categories', icon: 'mdi:shape-outline', url: '/categories' },
       { id: 'recurring', label: 'Recurring', icon: 'mdi:repeat', url: '/recurring' },
       { id: 'journals', label: 'Journal entries', icon: 'mdi:book-edit-outline', url: '/journals' },

@@ -26,6 +26,18 @@ const reports = computed(() => [
     title: 'Profit & Loss',
     body: 'Income minus expenses for any period, by category. Compare with the period before.',
   },
+  {
+    to: '/reports/sales-by-customer',
+    icon: 'mdi:account-star-outline',
+    title: 'Sales by customer',
+    body: 'Who your income came from over a period, and how that compares with the period before.',
+  },
+  {
+    to: '/reports/expenses-by-supplier',
+    icon: 'mdi:storefront-outline',
+    title: 'Expenses by supplier',
+    body: 'Where your money went, by who you paid, for any period.',
+  },
   ...(tax.value?.report === 'nz-gst'
     ? [{
         to: '/reports/tax-return',

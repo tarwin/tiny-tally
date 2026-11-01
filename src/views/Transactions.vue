@@ -5,6 +5,7 @@ import { Page, SegmentedControl, Select, TextField } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
 import { api, type Account, type EntryKind, type EntryList } from '../lib/api';
 import { dataVersion, newEntry } from '../lib/entryEditor';
+import { allEntries, entryCsvRows, saveCsv } from '../lib/csv';
 import { formatMoney } from '../lib/money';
 import { PERIOD_OPTIONS, periodRange, type PeriodKey } from '../lib/periods';
 import { session } from '../lib/session';
@@ -37,21 +38,23 @@ const accountOptions = computed(() => [
   ...accounts.value.map((a) => ({ label: a.archived ? `${a.name} (archived)` : a.name, value: a.id })),
 ]);
 
+/** What the filters ask for, before paging. */
+function query() {
+  return {
+    ...periodRange(period.value, session.books!.fiscalYearStart),
+    kind: kind.value === 'all' ? undefined : kind.value,
+    q: search.value || undefined,
+    // An account filter here is a plain filter, not register mode.
+    ...(accountId.value ? { accountId: accountId.value } : {}),
+  };
+}
+
 let seq = 0;
 async function load() {
   const mine = ++seq;
   loading.value = true;
   try {
-    const range = periodRange(period.value, session.books!.fiscalYearStart);
-    const result = await api.listEntries({
-      ...range,
-      kind: kind.value === 'all' ? undefined : kind.value,
-      q: search.value || undefined,
-      limit: limit.value,
-      offset: offset.value,
-      // An account filter here is a plain filter, not register mode.
-      ...(accountId.value ? { accountId: accountId.value } : {}),
-    });
+    const result = await api.listEntries({ ...query(), limit: limit.value, offset: offset.value });
     if (mine === seq) list.value = result;
   } finally {
     if (mine === seq) loading.value = false;
@@ -86,6 +89,12 @@ onMounted(async () => {
   await load();
 });
 
+/** Every row the filters match, not just this page. */
+async function exportCsv() {
+  const q = query();
+  await saveCsv(`Transactions${q.from ? ` ${q.from} to ${q.to}` : ''}`, entryCsvRows(await allEntries(q)));
+}
+
 const pagination = computed(() => ({
   offset: offset.value,
   updateOffset: (v: number) => (offset.value = v),
@@ -104,6 +113,7 @@ const pagination = computed(() => ({
     :secondary-actions="[
       { label: 'New income', icon: 'mdi:arrow-down-bold-circle-outline', onAction: () => newEntry('income', accountId) },
       { label: 'New transfer', icon: 'mdi:swap-horizontal', onAction: () => newEntry('transfer', accountId) },
+      { label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv },
     ]"
   >
     <div class="Filters">

@@ -28,6 +28,7 @@ import {
   type EntryQuery,
 } from './entries';
 import { search } from './search';
+import { archiveItem, deleteItem, listItems, saveItem, type ItemInput } from './items';
 import {
   agedBalances,
   agedReceivables,
@@ -57,6 +58,8 @@ import {
 } from './invoices';
 import {
   basReport,
+  byContact,
+  monthlyTotals,
   salesTaxReport,
   scheduleCReport,
   deleteTaxReturn,
@@ -575,6 +578,11 @@ Object.assign(api, {
   'schedules.skip': async ({ id }: { id: number }) => skipNext(id),
   'schedules.run': async ({ today }: { today: string }) => runSchedules(today),
 
+  'items.list': async () => listItems(),
+  'items.save': async (input: ItemInput) => saveItem(input),
+  'items.archive': async ({ id, archived }: { id: number; archived: boolean }) => archiveItem(id, archived),
+  'items.delete': async ({ id }: { id: number }) => deleteItem(id),
+
   'rules.list': async () => listRules(),
   'rules.save': async (input: RuleInput) => saveRule(input),
   'rules.delete': async ({ id }: { id: number }) => deleteRule(id),
@@ -604,6 +612,8 @@ Object.assign(api, {
   'templates.readLogo': async ({ path }: { path: string }) => readLogo(path),
 
   'reports.profitAndLoss': async (p: Parameters<typeof profitAndLoss>[0]) => profitAndLoss(p),
+  'reports.monthly': async (p: Parameters<typeof monthlyTotals>[0]) => monthlyTotals(p),
+  'reports.byContact': async (p: Parameters<typeof byContact>[0]) => byContact(p),
   'reports.bas': async (p: Parameters<typeof basReport>[0]) => basReport(p),
   'reports.salesTax': async (p: Parameters<typeof salesTaxReport>[0]) => salesTaxReport(p),
   'reports.scheduleC': async (p: Parameters<typeof scheduleCReport>[0]) => scheduleCReport(p),

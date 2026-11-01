@@ -4,6 +4,8 @@ import type { DocType } from './lib/api';
 declare module 'vue-router' {
   interface RouteMeta {
     docType?: DocType;
+    /** Reports that show either side: sales or expenses. */
+    kind?: 'income' | 'expense';
   }
 }
 
@@ -37,7 +39,10 @@ export const router = createRouter({
     { path: '/accounts/:id(\\d+)/reconcile', name: 'reconcile', component: () => import('./views/Reconcile.vue') },
     { path: '/contacts/:id(\\d+)/statement', name: 'statement', component: () => import('./views/Statement.vue') },
     { path: '/recurring', name: 'recurring', component: () => import('./views/Recurring.vue') },
+    { path: '/items', name: 'items', component: () => import('./views/Items.vue') },
     { path: '/rules', name: 'rules', component: () => import('./views/Rules.vue') },
+    { path: '/reports/sales-by-customer', name: 'sales-by-customer', component: () => import('./views/ByContact.vue'), meta: { kind: 'income' } },
+    { path: '/reports/expenses-by-supplier', name: 'expenses-by-supplier', component: () => import('./views/ByContact.vue'), meta: { kind: 'expense' } },
     { path: '/reports/payables', name: 'payables', component: () => import('./views/Receivables.vue'), meta: { docType: 'bill' } },
     { path: '/reports/balance-sheet', name: 'balance-sheet', component: () => import('./views/BalanceSheet.vue') },
     { path: '/reports/journal', name: 'journal', component: () => import('./views/Journal.vue') },

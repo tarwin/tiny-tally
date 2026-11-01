@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { Button, Card, CardSection, Icon, Page } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
+import MonthlyChart from '../components/MonthlyChart.vue';
 import { api, type Account, type Entry, type InvoiceList, type Summary } from '../lib/api';
 import { dataVersion, newEntry } from '../lib/entryEditor';
 import { formatMoney } from '../lib/money';
@@ -18,6 +19,15 @@ const loaded = ref(false);
 const emptySummary = (): InvoiceList['summary'] => ({ outstanding: 0, overdue: 0, overdueCount: 0, drafts: 0, open: 0, openValue: 0 });
 const invoices = ref(emptySummary());
 const bills = ref(emptySummary());
+const months = ref<{ month: string; income: number; expense: number }[]>([]);
+const hasHistory = computed(() => months.value.some((m) => m.income || m.expense));
+
+/** The first of the month eleven months back, to the end of this one. */
+function lastTwelveMonths() {
+  const now = new Date();
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { from: iso(new Date(now.getFullYear(), now.getMonth() - 11, 1)), to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)) };
+}
 
 const currency = computed(() => session.books!.currency);
 const active = computed(() => accounts.value.filter((a) => !a.archived));
@@ -59,13 +69,15 @@ const showSteps = computed(() => loaded.value && steps.value.some((s) => !s.done
 
 async function load() {
   const { from, to } = periodRange('thisMonth');
-  const [a, m, r, inv, bill] = await Promise.all([
+  const [a, m, r, inv, bill, year] = await Promise.all([
     api.listAccounts(),
     api.summary(from!, to!),
     api.listEntries({ limit: 8 }),
     api.listInvoices({ status: 'unpaid' }),
     api.listInvoices({ docType: 'bill', status: 'unpaid' }),
+    api.monthly(lastTwelveMonths()),
   ]);
+  months.value = year;
   invoices.value = inv.summary;
   bills.value = bill.summary;
   accounts.value = a;
@@ -152,6 +164,17 @@ onMounted(load);
       </CardSection>
     </Card>
 
+    <Card
+      v-if="hasHistory"
+      title="Last 12 months"
+      :actions="[{ label: 'Profit & Loss', onAction: () => router.push('/reports/profit-and-loss') }]"
+      class="Trend"
+    >
+      <CardSection>
+        <MonthlyChart :months="months" :currency="currency" />
+      </CardSection>
+    </Card>
+
     <div class="Columns">
       <Card
         title="Recent transactions"
@@ -235,7 +258,8 @@ onMounted(load);
   color: var(--octans-text-error);
 }
 
-.Steps {
+.Steps,
+.Trend {
   margin-bottom: 16px;
 }
 

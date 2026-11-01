@@ -86,6 +86,7 @@ export const TABLES: Record<string, string> = {
   bas_returns: 'BAS',
   tax_returns: 'tax return',
   trading_names: 'Trading name',
+  items: 'Product or service',
   meta: 'Setting',
 };
 

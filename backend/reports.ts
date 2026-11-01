@@ -63,6 +63,59 @@ export function profitAndLoss(p: { from: string; to: string; basis: Basis; compa
   };
 }
 
+/** Income and expenses per calendar month (before tax), oldest first, with empty months filled in. */
+export function monthlyTotals(p: { from: string; to: string; basis?: Basis }) {
+  range(p.from, p.to);
+  const view = p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
+  const found = new Map(all<{ month: string; income: number; expense: number }>(getBooks().db,
+    `SELECT substr(l.date, 1, 7) AS month,
+            COALESCE(SUM(CASE WHEN l.kind = 'income' THEN l.gross - l.tax END), 0) AS income,
+            COALESCE(SUM(CASE WHEN l.kind = 'expense' THEN l.gross - l.tax END), 0) AS expense
+     FROM ${view} l LEFT JOIN categories c ON c.id = l.category_id
+     WHERE l.date BETWEEN ? AND ? AND COALESCE(c.class, 'pnl') = 'pnl'
+     GROUP BY month`, p.from, p.to).map((r) => [r.month, r]));
+  const out = [];
+  let [y, m] = p.from.slice(0, 7).split('-').map(Number);
+  for (let key = p.from.slice(0, 7); key <= p.to.slice(0, 7); key = `${y}-${String(m).padStart(2, '0')}`) {
+    out.push(found.get(key) ?? { month: key, income: 0, expense: 0 });
+    if (++m > 12) [y, m] = [y + 1, 1];
+  }
+  return out;
+}
+
+/**
+ * Sales by customer, or expenses by supplier: the P&L's income or expense
+ * total split by contact (before tax), with the previous period beside it.
+ */
+export function byContact(p: { from: string; to: string; basis: Basis; kind: 'income' | 'expense'; compareFrom?: string; compareTo?: string }) {
+  range(p.from, p.to);
+  if (p.kind !== 'income' && p.kind !== 'expense') throw new Error('Choose sales or expenses.');
+  const view = p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
+  const sums = (from: string, to: string) => all<{ id: number; name: string; total: number; count: number }>(getBooks().db,
+    `SELECT COALESCE(ct.id, 0) AS id, COALESCE(ct.name, 'No contact') AS name, SUM(l.gross - l.tax) AS total, COUNT(*) AS count
+     FROM ${view} l
+     LEFT JOIN categories c ON c.id = l.category_id
+     LEFT JOIN contacts ct ON ct.id = l.contact_id
+     WHERE l.kind = ? AND l.date BETWEEN ? AND ? AND COALESCE(c.class, 'pnl') = 'pnl'
+     GROUP BY ct.id`, p.kind, from, to);
+  const map = new Map<number, { id: number; name: string; total: number; count: number; compare: number }>();
+  for (const r of sums(p.from, p.to)) map.set(r.id, { ...r, compare: 0 });
+  if (p.compareFrom && p.compareTo) {
+    range(p.compareFrom, p.compareTo);
+    for (const r of sums(p.compareFrom, p.compareTo)) {
+      const row = map.get(r.id) ?? { id: r.id, name: r.name, total: 0, count: 0, compare: 0 };
+      row.compare = r.total;
+      map.set(r.id, row);
+    }
+  }
+  const rows = [...map.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  return {
+    rows,
+    total: rows.reduce((t, r) => t + r.total, 0),
+    compareTotal: rows.reduce((t, r) => t + r.compare, 0),
+  };
+}
+
 export interface BasFigures {
   G1: number;
   G2: number;

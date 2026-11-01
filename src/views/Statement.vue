@@ -9,6 +9,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Card, CardSection, DatePicker, FormLayoutGroup, Page, Select, toast } from '@octans/ui';
 import PaperPreview from '../components/PaperPreview.vue';
 import { api, errorMessage, type InvoiceTemplate, type Statement, type StatementLine } from '../lib/api';
+import { csvMoney, saveCsv } from '../lib/csv';
 import { addDays, formatDay, today } from '../lib/dates';
 import { docPath } from '../lib/documents';
 import { formatMoney } from '../lib/money';
@@ -70,6 +71,19 @@ function lineDoc(type: StatementLine['type']) {
   return type === 'refund' || type === 'credit' ? ('credit' as const) : ('invoice' as const);
 }
 
+function exportCsv() {
+  const s = statement.value;
+  if (!s) return;
+  void saveCsv(`Statement ${s.contact.name} ${s.from} to ${s.to}`, [
+    ['Date', 'Type', 'Reference', ...(supplier.value ? ['Their reference'] : []), 'Due', 'Amount', 'Balance'],
+    [s.from, 'Opening balance', '', ...(supplier.value ? [''] : []), '', '', csvMoney(s.opening)],
+    ...s.lines.map((l) => [
+      l.date, TYPE_LABEL[l.type], l.ref, ...(supplier.value ? [l.theirRef] : []), l.dueDate, csvMoney(l.amount), csvMoney(l.balance),
+    ]),
+    [s.to, 'Closing balance', '', ...(supplier.value ? [''] : []), '', '', csvMoney(s.closing)],
+  ]);
+}
+
 function print() {
   void printElement(paper.value?.querySelector('.Doc') as HTMLElement | null);
 }
@@ -115,6 +129,7 @@ function email() {
     :primary-action="{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: print }"
     :secondary-actions="[
       { label: 'Email', icon: 'mdi:email-outline', onAction: email },
+      { label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv },
       { label: words.newDoc, icon: 'mdi:file-document-plus-outline', onAction: () => router.push(`${words.newPath}?contact=${contactId}`) },
     ]"
     :loading="!statement"

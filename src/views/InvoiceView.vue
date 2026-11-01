@@ -146,12 +146,17 @@ function print() {
   void printElement(paper.value?.querySelector('.Doc') as HTMLElement | null);
 }
 
+const overdue = computed(() => invoice.value?.docType === 'invoice' && invoice.value.status === 'overdue');
+
 function email() {
   const inv = invoice.value!;
   const word = doc.value.one.toLowerCase();
-  const subject = `${doc.value.one} ${inv.number} from ${inv.sender?.name ?? books.value.name}`;
-  const lead =
-    inv.docType === 'quote'
+  const subject = overdue.value
+    ? `Reminder: invoice ${inv.number} from ${inv.sender?.name ?? books.value.name} is overdue`
+    : `${doc.value.one} ${inv.number} from ${inv.sender?.name ?? books.value.name}`;
+  const lead = overdue.value
+    ? `Just a reminder that invoice ${inv.number} for ${docMoney(inv.balance)} was due on ${formatDay(inv.dueDate)}. If you've already paid, thank you, and please ignore this. If not, could you let us know when we can expect payment?`
+    : inv.docType === 'quote'
       ? `Please find quote ${inv.number} for ${docMoney(inv.total)}, valid until ${formatDay(inv.dueDate)}.`
       : inv.docType === 'credit'
         ? `Please find credit note ${inv.number} for ${docMoney(inv.total)}.`
@@ -344,7 +349,7 @@ const secondary = computed(() => {
   const acts = [];
   if (inv.status !== 'void') acts.push({ label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => router.push(`${doc.value.base}/${inv.id}/edit`) });
   if (doc.value.printable && primary.value?.label !== 'Print / Save PDF') acts.push({ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: print });
-  if (doc.value.printable) acts.push({ label: 'Email', icon: 'mdi:email-outline', onAction: email });
+  if (doc.value.printable) acts.push({ label: overdue.value ? 'Send reminder' : 'Email', icon: overdue.value ? 'mdi:email-alert-outline' : 'mdi:email-outline', onAction: email });
   if (inv.docType === 'credit' && canPay.value && credits.value.length) acts.push({ label: 'Refund', icon: 'mdi:cash-refund', onAction: openPayment });
   if (inv.docType === 'invoice' && inv.rawStatus === 'sent') acts.push({ label: 'Credit note', icon: 'mdi:file-undo-outline', onAction: creditNote });
   if ((inv.docType === 'invoice' || inv.docType === 'bill') && !inv.scheduleId) {

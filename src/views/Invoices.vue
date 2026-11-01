@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Badge, Card, CardSection, DataTable, Page, SegmentedControl, TextField, type DataTableColumnType } from '@octans/ui';
 import { api, type InvoiceList, type InvoiceRow, type InvoiceStatus } from '../lib/api';
+import { csvMoney, saveCsv } from '../lib/csv';
 import { formatShortDay } from '../lib/dates';
 import { dataVersion } from '../lib/entryEditor';
 import { DOCS } from '../lib/documents';
@@ -88,6 +89,25 @@ watch(search, () => {
 });
 watch([filter, dataVersion], load);
 onMounted(load);
+
+/** The list as filtered, with the same columns. */
+function exportCsv() {
+  const t = doc.value.type;
+  type Col = { label: string; get: (r: InvoiceRow) => string | null };
+  const cols: Col[] = [
+    { label: 'Number', get: (r) => r.number },
+    ...(t === 'bill' ? [{ label: 'Supplier reference', get: (r: InvoiceRow) => r.reference }] : []),
+    { label: doc.value.contactLabel, get: (r) => r.contactName },
+    { label: t === 'bill' ? 'Dated' : 'Issued', get: (r) => r.issueDate },
+    ...(t === 'credit' ? [] : [{ label: t === 'quote' ? 'Expires' : 'Due', get: (r: InvoiceRow) => r.dueDate }]),
+    { label: 'Net', get: (r) => csvMoney(r.net) },
+    { label: 'Tax', get: (r) => csvMoney(r.tax) },
+    { label: 'Total', get: (r) => csvMoney(r.total) },
+    ...(t === 'quote' ? [] : [{ label: t === 'credit' ? 'Left' : 'Balance', get: (r: InvoiceRow) => csvMoney(r.balance) }]),
+    { label: 'Status', get: (r) => statusInfo(t, r.status).label },
+  ];
+  void saveCsv(doc.value.many, [cols.map((c) => c.label), ...list.value.rows.map((r) => cols.map((c) => c.get(r)))]);
+}
 </script>
 
 <template>
@@ -95,7 +115,10 @@ onMounted(load);
     :title="doc.many"
     size="wide"
     :primary-action="{ label: `New ${doc.word}`, icon: 'mdi:plus', onAction: () => router.push(`${doc.base}/new`) }"
-    :secondary-actions="doc.printable ? [{ label: 'Templates', icon: 'mdi:palette-outline', onAction: () => router.push('/invoices/templates') }] : []"
+    :secondary-actions="[
+      { label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv },
+      ...(doc.printable ? [{ label: 'Templates', icon: 'mdi:palette-outline', onAction: () => router.push('/invoices/templates') }] : []),
+    ]"
   >
     <div v-if="doc.type === 'quote'" class="Tiles">
       <Card>

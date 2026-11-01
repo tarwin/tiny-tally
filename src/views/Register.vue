@@ -6,6 +6,7 @@ import EntryTable from '../components/EntryTable.vue';
 import { api, type Account, type EntryList } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { dataVersion, newEntry } from '../lib/entryEditor';
+import { allEntries, entryCsvRows, saveCsv } from '../lib/csv';
 import { formatMoney } from '../lib/money';
 import { PERIOD_OPTIONS, periodRange, type PeriodKey } from '../lib/periods';
 import { session } from '../lib/session';
@@ -75,6 +76,12 @@ watch([period, limit, id], () => {
 watch([offset, dataVersion], () => void load());
 onMounted(load);
 
+async function exportCsv() {
+  const range = periodRange(period.value, session.books!.fiscalYearStart);
+  const rows = await allEntries({ accountId: id.value, ...range, q: search.value || undefined });
+  await saveCsv(`${account.value?.name ?? 'Account'}${range.from ? ` ${range.from} to ${range.to}` : ''}`, entryCsvRows(rows, true));
+}
+
 const pagination = computed(() => ({
   offset: offset.value,
   updateOffset: (v: number) => (offset.value = v),
@@ -96,6 +103,7 @@ const pagination = computed(() => ({
       { label: 'New income', icon: 'mdi:arrow-down-bold-circle-outline', onAction: () => newEntry('income', id) },
       { label: isCard ? 'Pay off card' : 'New transfer', icon: 'mdi:swap-horizontal', onAction: () => (isCard ? newEntry('transfer', null, id) : newEntry('transfer', id)) },
       { label: 'Reconcile', icon: 'mdi:checkbox-marked-circle-outline', onAction: () => router.push(`/accounts/${id}/reconcile`) },
+      { label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv },
     ]"
   >
     <div v-if="account?.archived" class="Archived"><Badge status="warning">Archived</Badge></div>

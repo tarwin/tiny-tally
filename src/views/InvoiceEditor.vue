@@ -21,6 +21,7 @@ import {
   type Contact,
   type Invoice,
   type InvoiceTemplate,
+  type Item,
   type TaxCode,
   type TradingName,
 } from '../lib/api';
@@ -29,7 +30,7 @@ import { DOCS } from '../lib/documents';
 import { dataChanged } from '../lib/entryEditor';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
-import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
+import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
 
 const route = useRoute();
 const router = useRouter();
@@ -62,6 +63,7 @@ const customers = ref<Contact[]>([]);
 const categories = ref<Category[]>([]);
 const templates = ref<InvoiceTemplate[]>([]);
 const tradingNames = ref<TradingName[]>([]);
+const items = ref<Item[]>([]);
 const suggested = ref('');
 
 let lineKey = 0;
@@ -247,6 +249,62 @@ function onCategory(line: LineForm, id: number | null) {
   if (taxOn.value && cat?.taxCode && taxOptions.value.some((t) => t.value === cat.taxCode)) line.taxCode = cat.taxCode;
 }
 
+// ---- saved products and services ---------------------------------------------
+
+const itemOptions = computed(() =>
+  items.value
+    .filter((i) => i.kind === doc.value.categoryKind && !i.archived)
+    .map((i) => ({ label: i.name, value: i.id, description: i.unitPrice ? money(i.unitPrice) : undefined })),
+);
+/** Bound to the picker, which empties again after each pick. */
+const pickedItem = ref<number | null>(null);
+
+/** The item as a line, its price moved across if it was saved the other side of tax. */
+function addItem(id: number | null) {
+  const item = items.value.find((i) => i.id === id);
+  pickedItem.value = null;
+  if (!item) return;
+  const categoryId = categories.value.some((c) => c.id === item.categoryId) ? item.categoryId : defaultCategory();
+  const taxCode = !taxOn.value ? null : taxOptions.value.some((t) => t.value === item.taxCode) ? item.taxCode : defaultTaxFor(categoryId);
+  let price = item.unitPrice;
+  if (taxOn.value && item.priceIncludesTax !== form.value.pricesIncludeTax) {
+    const rate = books.value.taxRatePpm;
+    price = item.priceIncludesTax ? price - taxFromInclusive(price, item.taxCode, rate) : price + taxOnExclusive(price, item.taxCode, rate);
+  }
+  const line: LineForm = {
+    key: ++lineKey,
+    description: item.description || item.name,
+    qty: '1',
+    price: price ? toInput(price, currency.value) : '',
+    categoryId,
+    taxCode,
+  };
+  // Fill the empty line left at the bottom rather than adding below it.
+  const last = form.value.lines[form.value.lines.length - 1];
+  if (last && !last.description.trim() && !last.price.trim()) form.value.lines.splice(form.value.lines.length - 1, 1, line);
+  else form.value.lines.push(line);
+}
+
+async function saveAsItem(line: LineForm, i: number) {
+  const text = line.description.trim();
+  const name = text.split('\n')[0].slice(0, 80);
+  try {
+    await api.saveItem({
+      kind: doc.value.categoryKind,
+      name,
+      description: text === name ? null : text,
+      unitPrice: computedLines.value[i]?.unitPrice ?? 0,
+      priceIncludesTax: form.value.pricesIncludeTax,
+      categoryId: line.categoryId,
+      taxCode: line.taxCode,
+    });
+    items.value = await api.listItems();
+    toast({ title: `Saved “${name}”`, content: 'Pick it from “Add saved item” next time.', tone: 'success' });
+  } catch (e) {
+    toast({ title: "Couldn't save the item", content: errorMessage(e), tone: 'error' });
+  }
+}
+
 async function addCustomer() {
   const name = newCustomer.value?.trim();
   if (!name) return;
@@ -309,12 +367,13 @@ async function save(status?: 'draft' | 'sent') {
 }
 
 onMounted(async () => {
-  [customers.value, categories.value, templates.value, tradingNames.value, suggested.value] = await Promise.all([
+  [customers.value, categories.value, templates.value, tradingNames.value, suggested.value, items.value] = await Promise.all([
     api.listContacts(),
     api.listCategories(),
     api.listTemplates(),
     api.listTradingNames(),
     api.suggestInvoiceNumber(doc.value.type),
+    api.listItems(),
   ]);
   form.value.templateId = templates.value.find((t) => t.isDefault)?.id ?? null;
   if (editingId.value) {
@@ -455,10 +514,31 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
                     @update:model-value="(v: number | null) => onCategory(line, v)"
                   />
                   <Select v-if="taxOn" v-model="line.taxCode" :options="taxOptions" size="small" />
+                  <Button
+                    v-if="line.description.trim()"
+                    type="plain"
+                    size="small"
+                    icon="mdi:bookmark-plus-outline"
+                    tooltip="Save this line to Products & services"
+                    @click="saveAsItem(line, i)"
+                  >Save as item</Button>
                 </div>
               </div>
             </div>
-            <Button type="plain" icon="mdi:plus" @click="addLine">Add line</Button>
+            <div class="AddRow">
+              <Button type="plain" icon="mdi:plus" @click="addLine">Add line</Button>
+              <Select
+                v-if="itemOptions.length"
+                :model-value="pickedItem"
+                :options="itemOptions"
+                searchable
+                show-description
+                size="small"
+                placeholder="Add saved item…"
+                class="AddRow__pick"
+                @update:model-value="addItem"
+              />
+            </div>
           </CardSection>
           <CardSection>
             <dl class="Totals">
@@ -592,8 +672,19 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
 
 .Line__meta {
   display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 220px);
+  grid-template-columns: minmax(0, 220px) minmax(0, 220px) auto;
   gap: 8px;
+  justify-items: start;
+}
+
+.AddRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.AddRow__pick {
+  width: 240px;
 }
 
 .num {

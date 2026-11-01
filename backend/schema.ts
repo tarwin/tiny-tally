@@ -537,4 +537,21 @@ export const migrations: string[] = [
   ALTER TABLE trading_names ADD COLUMN credit_prefix TEXT;
   ALTER TABLE trading_names ADD COLUMN credit_next INTEGER NOT NULL DEFAULT 1;
   `,
+  // v15: products and services. A saved line for invoices or bills: the
+  // text, price and category it brings. Lines copy what they use, so editing
+  // or deleting an item never changes a document.
+  `
+  CREATE TABLE items (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('income', 'expense')),
+    name TEXT NOT NULL,
+    description TEXT,
+    unit_price INTEGER NOT NULL DEFAULT 0,
+    price_includes_tax INTEGER NOT NULL DEFAULT 0,
+    category_id INTEGER REFERENCES categories(id),
+    tax_code TEXT,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  `,
 ];

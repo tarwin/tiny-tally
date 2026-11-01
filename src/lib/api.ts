@@ -374,6 +374,13 @@ export interface ProfitAndLoss {
   totals: { income: number; expense: number; net: number; compareIncome: number; compareExpense: number; compareNet: number };
 }
 
+export interface ByContact {
+  /** id 0 gathers transactions with no contact */
+  rows: { id: number; name: string; total: number; count: number; compare: number }[];
+  total: number;
+  compareTotal: number;
+}
+
 /** A transaction behind a tax return's figures. */
 export interface TaxReturnDetailRow {
   entryId: number | null;
@@ -650,6 +657,23 @@ export interface Change {
   host?: string | null;
 }
 
+export interface Item {
+  id: number;
+  kind: CategoryKind;
+  name: string;
+  /** The line's text on a document; null uses the name. */
+  description: string | null;
+  /** cents */
+  unitPrice: number;
+  priceIncludesTax: boolean;
+  categoryId: number | null;
+  categoryName: string | null;
+  taxCode: TaxCode | null;
+  archived: boolean;
+}
+
+export type ItemInput = Omit<Item, 'id' | 'categoryName' | 'archived'> & { id?: number };
+
 export interface Rule {
   id: number;
   pattern: string;
@@ -747,6 +771,10 @@ export const api = {
 
   profitAndLoss: (p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string }) =>
     call<ProfitAndLoss>('reports.profitAndLoss', p),
+  monthly: (p: { from: string; to: string; basis?: Basis }) =>
+    call<{ month: string; income: number; expense: number }[]>('reports.monthly', p),
+  byContact: (p: { from: string; to: string; basis: Basis; kind: CategoryKind; compareFrom?: string; compareTo?: string }) =>
+    call<ByContact>('reports.byContact', p),
   taxReturnReport: (p: { from: string; to: string; basis: Basis }) => call<TaxReturnReport>('reports.taxReturn', p),
   salesTaxReport: (p: { from: string; to: string; basis: Basis }) => call<SalesTaxReport>('reports.salesTax', p),
   scheduleCReport: (p: { from: string; to: string; basis: Basis }) => call<ScheduleCReport>('reports.scheduleC', p),
@@ -768,6 +796,11 @@ export const api = {
   deleteSchedule: (id: number) => call<true>('schedules.delete', { id }),
   skipSchedule: (id: number) => call<Schedule>('schedules.skip', { id }),
   runSchedules: (today: string) => call<ScheduleRun>('schedules.run', { today }),
+
+  listItems: () => call<Item[]>('items.list'),
+  saveItem: (i: ItemInput) => call<number>('items.save', i),
+  archiveItem: (id: number, archived: boolean) => call<true>('items.archive', { id, archived }),
+  deleteItem: (id: number) => call<true>('items.delete', { id }),
 
   listRules: () => call<Rule[]>('rules.list'),
   saveRule: (r: { id?: number; pattern: string; kind?: CategoryKind | null; categoryId: number; contactId?: number | null }) =>

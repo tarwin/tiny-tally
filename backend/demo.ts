@@ -14,6 +14,7 @@ import {
 } from './invoices';
 import { finishReconcile, startReconcile, tick } from './reconcile';
 import { basReport, saveTaxReturn } from './reports';
+import { saveItem } from './items';
 import { saveRule } from './rules';
 import { saveSchedule } from './schedules';
 import { updateSettings } from './settings';
@@ -86,6 +87,17 @@ export function seedDemo(today: string) {
     printing: cat('Printing & Production'), professional: cat('Professional Fees'),
     basPayment: cat('GST / BAS Payment'), gstRefund: cat('GST Refund'), drawings: cat('Owner Drawings'),
   };
+
+  // ---- products and services ----------------------------------------------------
+  const item = (kind: 'income' | 'expense', name: string, unitPrice: number, categoryId: number, description?: string) =>
+    saveItem({ kind, name, description, unitPrice, priceIncludesTax: kind === 'expense', categoryId, taxCode: 'GST' });
+  item('income', 'Design work (per hour)', 15000, C.design, 'Design and artwork, per hour');
+  item('income', 'Logo & brand identity', 320000, C.design, 'Logo design and brand identity: concepts, two rounds of changes, final files');
+  item('income', 'Social media design (monthly)', 90000, C.design, 'Monthly social media design');
+  item('income', 'Website design (per page)', 85000, C.design);
+  item('income', 'Rush fee', 25000, C.design, 'Rush fee for a turnaround under 48 hours');
+  item('expense', 'Business cards (250)', 9900, C.printing);
+  item('expense', 'Illustration (per hour)', 11000, C.contractors);
 
   // ---- contacts ----------------------------------------------------------------
   const customer = (name: string, email: string, address: string) =>
