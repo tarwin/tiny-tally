@@ -11,7 +11,7 @@
 // invoice (credit_allocations, no money moves) or refunded (a payment out).
 import { all, getBooks, one, run } from './db';
 import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from './settings';
-import { isTaxCode, lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
+import { lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
 import { countryProfile } from '../src/shared/countries';
 import { normaliseLayout } from '../src/shared/templateLayout';
 import { defaultTradingNameId, resolveTradingName, senderFor, snapshotOf } from './tradingNames';
