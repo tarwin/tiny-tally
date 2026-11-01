@@ -81,6 +81,7 @@ import {
   sha256,
   startHistory,
 } from './changelog';
+import { COUNTRIES, isCountry, type Country } from '../src/shared/countries';
 import type { ImportPlan } from '../src/shared/import';
 import { isTaxCode, type TaxCode } from '../src/shared/tax';
 
@@ -293,22 +294,23 @@ export const api: Record<string, TinyApiHandler> = {
     };
   },
 
-  'books.create': async ({ name, currency, fiscalYearStart, dir, taxEnabled, abn }: {
+  'books.create': async ({ name, country, fiscalYearStart, dir, taxEnabled, taxId }: {
     name: string;
-    currency: string;
+    country: Country;
     fiscalYearStart: string;
     /** null = store internally */
     dir: string | null;
     taxEnabled?: boolean;
-    abn?: string;
+    taxId?: string;
   }, _app, { window: win }) => {
     name = String(name ?? '').trim();
     if (!name) throw new Error('Give your books a name.');
+    if (!isCountry(country)) throw new Error('Choose the country your business is in.');
     const folder = dir ?? (await internalDir());
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createBooks(win, path, dir === null, { name, currency, fiscalYearStart: isYearStart(String(fiscalYearStart)) ? fiscalYearStart : '01-01', taxEnabled });
+    await createBooks(win, path, dir === null, { name, country, fiscalYearStart: isYearStart(String(fiscalYearStart)) ? fiscalYearStart : COUNTRIES[country].fiscalYearStart, taxEnabled });
     inWindow(win, () => {
-      if (abn) updateSettings({ abn });
+      if (taxId) updateSettings({ taxId });
       startHistory('books.create', JSON.stringify({ name }));
     });
     return afterOpen(win);
@@ -320,7 +322,7 @@ export const api: Record<string, TinyApiHandler> = {
     let name = DEMO_NAME;
     for (let n = 2; await fileExists(folder + '/' + fileNameFor(name)); n++) name = `${DEMO_NAME} ${n}`;
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createBooks(win, path, dir === null, { name, currency: 'AUD', fiscalYearStart: '07-01', taxEnabled: true });
+    await createBooks(win, path, dir === null, { name, country: 'AU', fiscalYearStart: '07-01', taxEnabled: true });
     inWindow(win, () => {
       seedDemo(today);
       startHistory('books.createDemo', JSON.stringify({ name }));

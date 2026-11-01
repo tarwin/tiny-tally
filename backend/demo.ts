@@ -54,7 +54,7 @@ export function seedDemo(today: string) {
   const start = ymd(startYear, 7, 1);
 
   updateSettings({
-    abn: '51 824 753 556', // the ATO's published example ABN (passes the checksum)
+    taxId: '51 824 753 556', // the ATO's published example ABN (passes the checksum)
     businessAddress: 'Level 2, 18 Example Lane\nSurry Hills NSW 2010',
     businessEmail: 'hello@harbourpine.example',
     businessPhone: '02 9000 0000',

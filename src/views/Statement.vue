@@ -14,6 +14,7 @@ import { docPath } from '../lib/documents';
 import { formatMoney } from '../lib/money';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
+import { countryProfile } from '../shared/countries';
 
 const route = useRoute();
 const router = useRouter();
@@ -128,7 +129,7 @@ function email() {
             <div>
               <img v-if="template?.logo" :src="template.logo" alt="" class="Doc__logo" />
               <div class="Doc__from">{{ books.name }}</div>
-              <div v-if="books.abn && books.taxEnabled">ABN {{ books.abn }}</div>
+              <div v-if="books.taxId">{{ countryProfile(books.country).taxId.label }} {{ books.taxId }}</div>
               <div v-if="books.businessAddress" class="Doc__pre">{{ books.businessAddress }}</div>
               <div class="Doc__muted">{{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}</div>
             </div>

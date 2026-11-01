@@ -1,4 +1,5 @@
 // Typed front door to the backend (backend/main.ts). Keep names in sync.
+import type { Country } from '../shared/countries';
 import type { TaxCode } from '../shared/tax';
 import type { TemplateLayout } from '../shared/templateLayout';
 
@@ -11,12 +12,16 @@ export type DocType = 'invoice' | 'bill' | 'quote' | 'credit';
 
 export interface BooksSettings {
   name: string;
+  /** Set when the books are made; can't change. */
+  country: Country;
+  /** From the country; can't change. */
   currency: string;
   /** 'MM-DD', day 1–28. */
   fiscalYearStart: string;
   taxEnabled: boolean;
   taxRateBp: number;
-  abn: string;
+  /** ABN, NZ GST number or EIN, per the country. */
+  taxId: string;
   taxBasis: 'cash' | 'accrual';
   basFrequency: 'monthly' | 'quarterly' | 'annual';
   pricesIncludeTax: boolean;
@@ -593,7 +598,7 @@ export const api = {
     call<Record<string, { categoryId: number; kind: 'income' | 'expense' }>>('import.suggest', { names }),
   commitImport: (plan: ImportPlan) => call<ImportResult>('import.commit', plan),
   start: () => call<StartState>('app.start'),
-  createBooks: (p: { name: string; currency: string; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; abn?: string }) =>
+  createBooks: (p: { name: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxId?: string }) =>
     call<Books>('books.create', p),
   createDemo: (dir: string | null, today: string) => call<Books>('books.createDemo', { dir, today }),
   openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),

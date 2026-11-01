@@ -78,7 +78,7 @@ export const migrations: string[] = [
     style TEXT NOT NULL DEFAULT 'classic' CHECK (style IN ('classic', 'modern', 'minimal')),
     accent TEXT NOT NULL DEFAULT '#2f6fde',
     logo TEXT,
-    title TEXT NOT NULL DEFAULT 'Tax Invoice',
+    title TEXT NOT NULL DEFAULT 'Invoice',
     payment_details TEXT,
     footer TEXT,
     show_tax_column INTEGER NOT NULL DEFAULT 1,
@@ -197,15 +197,6 @@ export const migrations: string[] = [
   `
   ALTER TABLE categories ADD COLUMN class TEXT NOT NULL DEFAULT 'pnl'
     CHECK (class IN ('pnl', 'tax', 'owner', 'loan', 'asset'));
-
-  INSERT OR IGNORE INTO categories (name, kind, class, tax_code, sort) VALUES
-    ('GST Refund', 'income', 'tax', 'NTR', 90),
-    ('Owner Contribution', 'income', 'owner', 'NTR', 91),
-    ('Loan Received', 'income', 'loan', 'NTR', 92),
-    ('GST / BAS Payment', 'expense', 'tax', 'NTR', 90),
-    ('Income Tax Payment', 'expense', 'tax', 'NTR', 91),
-    ('Owner Drawings', 'expense', 'owner', 'NTR', 92),
-    ('Loan Repayment', 'expense', 'loan', 'NTR', 93);
 
   ALTER TABLE invoices ADD COLUMN doc_type TEXT NOT NULL DEFAULT 'invoice'
     CHECK (doc_type IN ('invoice', 'bill', 'quote', 'credit'));

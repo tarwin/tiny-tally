@@ -1,14 +1,19 @@
 // Books settings live as key/value rows in `meta`.
+import { isCountry, type Country } from '../src/shared/countries';
 import { getBooks, one } from './db';
 
 export interface BooksSettings {
   name: string;
+  /** Set when the books are made; can't change. */
+  country: Country;
+  /** From the country; can't change. */
   currency: string;
   /** 'MM-DD', day 1–28. */
   fiscalYearStart: string;
   taxEnabled: boolean;
   taxRateBp: number;
-  abn: string;
+  /** ABN, NZ GST number or EIN, per the country. */
+  taxId: string;
   taxBasis: 'cash' | 'accrual';
   basFrequency: 'monthly' | 'quarterly' | 'annual';
   pricesIncludeTax: boolean;
@@ -55,6 +60,13 @@ const oneOf = <T extends string>(values: T[], d: T): Omit<Field, 'key'> => ({
   },
 });
 
+/** Settings set when the books are made. Writing the same value back is fine. */
+const fixed = (key: string) => (v: any) => {
+  const now = one<{ value: string }>(getBooks().db, 'SELECT value FROM meta WHERE key = ?', key)?.value;
+  if (v !== now) throw new Error(`The ${key} can't be changed once the books are made.`);
+  return now ?? null;
+};
+
 /** 'MM-DD' with the day 1–28, so every year has that date. */
 export function isYearStart(v: string) {
   const m = /^(\d{2})-(\d{2})$/.exec(v);
@@ -63,7 +75,8 @@ export function isYearStart(v: string) {
 
 const FIELDS: Record<keyof BooksSettings, Field> = {
   name: { key: 'books_name', ...str('Books') },
-  currency: { key: 'currency', ...str('USD') },
+  country: { key: 'country', parse: (v) => (isCountry(v) ? v : 'AU'), write: fixed('country') },
+  currency: { key: 'currency', parse: (v) => v ?? 'AUD', write: fixed('currency') },
   fiscalYearStart: {
     key: 'fiscal_year_start',
     parse: (v) => (v && isYearStart(v) ? v : '01-01'),
@@ -74,7 +87,7 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
   },
   taxEnabled: { key: 'tax_enabled', ...bool(false) },
   taxRateBp: { key: 'tax_rate_bp', ...int(1000, 0, 5000) },
-  abn: { key: 'abn', ...str() },
+  taxId: { key: 'tax_id', ...str() },
   taxBasis: { key: 'tax_basis', ...oneOf(['cash', 'accrual'], 'cash') },
   basFrequency: { key: 'bas_frequency', ...oneOf(['monthly', 'quarterly', 'annual'], 'quarterly') },
   pricesIncludeTax: { key: 'prices_include_tax', ...bool(true) },

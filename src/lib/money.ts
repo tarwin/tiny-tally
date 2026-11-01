@@ -1,11 +1,6 @@
 // Money is stored as integer minor units (cents). Formatting happens here,
 // in the page — the txiki backend has no Intl.
 
-export const CURRENCIES = [
-  'AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP', 'HKD', 'IDR', 'INR', 'JPY',
-  'MYR', 'NZD', 'PHP', 'SGD', 'THB', 'USD', 'VND', 'ZAR',
-];
-
 const formatters = new Map<string, Intl.NumberFormat>();
 
 function formatter(currency: string) {

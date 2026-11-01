@@ -137,7 +137,7 @@ onMounted(fromQuery);
 
 // ---- parsing ---------------------------------------------------------------------
 
-const fallbackOrder: DateOrder = booksDateOrder(books.value.currency);
+const fallbackOrder: DateOrder = booksDateOrder(books.value.country);
 const iifDateOrder = ref<DateOrder>('mdy');
 const csvRows = ref<string[][]>([]);
 const csvMode = ref<'bank' | 'customer' | 'vendor'>('bank');

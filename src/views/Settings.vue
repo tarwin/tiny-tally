@@ -20,14 +20,14 @@ import { api, errorMessage, type Books } from '../lib/api';
 import { appSettingsPanel } from '../lib/appSettings';
 import { backupBooks, closeBooks } from '../lib/books';
 import { formatDay } from '../lib/dates';
-import { CURRENCIES } from '../lib/money';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
+import { countryProfile } from '../shared/countries';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 type Form = Omit<
   Books,
-  'path' | 'internal' | 'taxRateBp' | 'lockDate' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
+  'path' | 'internal' | 'country' | 'currency' | 'taxRateBp' | 'lockDate' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
 > & {
   invoiceNext: string;
   paymentTermsDays: string;
@@ -43,10 +43,9 @@ const nameError = ref<string | null>(null);
 function fromBooks(c: Books): Form {
   return {
     name: c.name,
-    currency: c.currency,
     fiscalYearStart: c.fiscalYearStart,
     taxEnabled: c.taxEnabled,
-    abn: c.abn,
+    taxId: c.taxId,
     taxBasis: c.taxBasis,
     basFrequency: c.basFrequency,
     pricesIncludeTax: c.pricesIncludeTax,
@@ -77,7 +76,6 @@ const fyDay = computed({
 
 const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fromBooks(books.value)));
 
-const currencyOptions = CURRENCIES.map((c) => ({ label: c, value: c }));
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
 const frequencyOptions = [
   { label: 'Quarterly', value: 'quarterly', description: 'Most small businesses. Uses Simpler BAS (G1, 1A, 1B).' },
@@ -85,16 +83,8 @@ const frequencyOptions = [
   { label: 'Annually', value: 'annual', description: 'For voluntary registrations under $75,000.' },
 ];
 
-/** ABNs are 11 digits with a weighted checksum; catch typos early. */
-function abnError(abn: string) {
-  const digits = abn.replace(/\s/g, '');
-  if (!digits) return null;
-  if (!/^\d{11}$/.test(digits)) return 'An ABN is 11 digits.';
-  const w = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
-  const sum = [...digits].reduce((t, d, i) => t + (Number(d) - (i === 0 ? 1 : 0)) * w[i], 0);
-  return sum % 89 === 0 ? null : "That ABN doesn't look right. Check for a typo.";
-}
-const abnProblem = computed(() => (form.value.taxEnabled ? abnError(form.value.abn) : null));
+const profile = computed(() => countryProfile(books.value.country));
+const taxIdProblem = computed(() => profile.value.taxId.check(form.value.taxId));
 
 async function chooseLogo() {
   const path = await tiny.dialog.openFile({ types: ['png', 'jpg', 'jpeg', 'svg', 'webp'] });
@@ -160,17 +150,22 @@ async function setLock(date: string | null) {
         <CardSection>
           <FormLayout>
             <TextField v-model="form.name" label="Name" required :error="nameError" />
+            <div>
+              <div class="Label">Country</div>
+              <p class="Flush">{{ profile.name }} · {{ books.currency }}</p>
+              <p class="subdued Help">Set when the books were made. It decides the currency and tax rules.</p>
+            </div>
             <FormLayoutGroup>
-              <Select
-                v-model="form.currency"
-                label="Currency"
-                :options="currencyOptions"
-                searchable
-                help-text="Changing this relabels amounts. It doesn't convert them."
-              />
               <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
               <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />
             </FormLayoutGroup>
+            <TextField
+              v-model="form.taxId"
+              :label="profile.taxId.label"
+              :placeholder="profile.taxId.placeholder"
+              :error="taxIdProblem ?? undefined"
+              help-text="Shown on your invoices."
+            />
             <TextField v-model="form.businessAddress" label="Business address" multiline="3" help-text="Shown on your invoices." />
             <FormLayoutGroup>
               <TextField v-model="form.businessEmail" label="Email" type="email" />
@@ -219,12 +214,11 @@ async function setLock(date: string | null) {
         </CardSection>
       </Card>
 
-      <Card title="GST & BAS">
+      <Card v-if="profile.tax" title="GST & BAS">
         <CardSection>
           <FormLayout>
             <ToggleSwitch v-model="form.taxEnabled" label="Registered for GST" />
             <template v-if="form.taxEnabled">
-              <TextField v-model="form.abn" label="ABN" placeholder="51 824 753 556" :error="abnProblem ?? undefined" help-text="Required on tax invoices." />
               <div>
                 <div class="Label">Accounting basis for GST</div>
                 <SegmentedControl
@@ -343,6 +337,10 @@ async function setLock(date: string | null) {
 .Help {
   font-size: 12px;
   margin: 6px 0 0;
+}
+
+.Flush {
+  margin: 0;
 }
 
 .Swatches {

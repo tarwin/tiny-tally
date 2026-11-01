@@ -17,8 +17,8 @@ import {
 import { api, errorMessage } from '../lib/api';
 import { openBooksAt, pickAndOpenBooks, refreshSession } from '../lib/books';
 import { today } from '../lib/dates';
-import { CURRENCIES } from '../lib/money';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
+import { COUNTRIES, COUNTRY_OPTIONS, type Country } from '../shared/countries';
 import { MONTHS, session } from '../lib/session';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import { appSettingsPanel } from '../lib/appSettings';
@@ -34,17 +34,19 @@ const splash = splashSvg
 const props = defineProps<{ notice?: string | null; noticePath?: string | null }>();
 
 const name = ref('');
-const currency = ref(guessCurrency());
-const fiscalYearStart = ref(currency.value === 'AUD' ? '07-01' : '01-01');
+// No default country: the webview's locale is often en-US even in
+// Australia, and the country decides the tax rules.
+const country = ref<Country | null>(null);
+const countryError = ref<string | null>(null);
+const profile = computed(() => (country.value ? COUNTRIES[country.value] : null));
+const fiscalYearStart = ref('01-01');
 const taxEnabled = ref(true);
-const abn = ref('');
-const isAud = computed(() => currency.value === 'AUD');
+const taxId = ref('');
 const demoing = ref(false);
 
-// Australian financial years start in July.
-watch(currency, (c, prev) => {
-  if (c === 'AUD' && fiscalYearStart.value === '01-01') fiscalYearStart.value = '07-01';
-  else if (prev === 'AUD' && fiscalYearStart.value === '07-01') fiscalYearStart.value = '01-01';
+watch(country, (c) => {
+  if (c) fiscalYearStart.value = COUNTRIES[c].fiscalYearStart;
+  countryError.value = null;
 });
 const fyMonth = computed({
   get: () => splitYearStart(fiscalYearStart.value).month,
@@ -72,7 +74,6 @@ const storageOptions = [
   },
 ];
 
-const currencyOptions = CURRENCIES.map((c) => ({ label: c, value: c }));
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
 
 const fileName = computed(() => {
@@ -84,20 +85,6 @@ const destination = computed(() =>
   storage.value === 'internal' ? 'Tiny Tally data folder' : folder.value ? `${folder.value}/${fileName.value}` : null,
 );
 
-function guessCurrency() {
-  try {
-    const region = new Intl.Locale(navigator.language).maximize().region;
-    const byRegion: Record<string, string> = {
-      AU: 'AUD', CA: 'CAD', CH: 'CHF', CN: 'CNY', GB: 'GBP', HK: 'HKD', ID: 'IDR', IN: 'INR',
-      JP: 'JPY', MY: 'MYR', NZ: 'NZD', PH: 'PHP', SG: 'SGD', TH: 'THB', US: 'USD', VN: 'VND',
-      ZA: 'ZAR', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR', IE: 'EUR',
-    };
-    return (region && byRegion[region]) || 'USD';
-  } catch {
-    return 'USD';
-  }
-}
-
 async function chooseFolder() {
   const picked = await tiny.dialog.pickFolder();
   if (picked) {
@@ -108,7 +95,8 @@ async function chooseFolder() {
 
 async function create() {
   nameError.value = name.value.trim() ? null : 'Give your books a name.';
-  if (nameError.value) return;
+  countryError.value = country.value ? null : 'Choose the country your business is in.';
+  if (nameError.value || !country.value) return;
   if (storage.value === 'folder' && !folder.value) {
     await chooseFolder();
     if (!folder.value) return;
@@ -117,9 +105,10 @@ async function create() {
   try {
     await api.createBooks({
       name: name.value.trim(),
-      currency: currency.value,
+      country: country.value,
       fiscalYearStart: fiscalYearStart.value,
-      ...(isAud.value ? { taxEnabled: taxEnabled.value, abn: taxEnabled.value ? abn.value.trim() : '' } : { taxEnabled: false }),
+      taxEnabled: !!profile.value?.tax && taxEnabled.value,
+      taxId: taxId.value.trim(),
       dir: storage.value === 'internal' ? null : folder.value,
     });
     await refreshSession();
@@ -200,14 +189,28 @@ function shortPath(path: string) {
               :error="nameError"
               @keydown.enter="create"
             />
-            <FormLayoutGroup>
-              <Select v-model="currency" label="Currency" :options="currencyOptions" searchable />
-              <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
-              <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />
-            </FormLayoutGroup>
-            <template v-if="isAud">
-              <ToggleSwitch v-model="taxEnabled" label="Registered for GST" help-text="Tracks GST on sales and purchases and prepares your BAS." />
-              <TextField v-if="taxEnabled" v-model="abn" label="ABN (optional)" placeholder="51 824 753 556" help-text="Shown on tax invoices. You can add it later in Settings." />
+            <Select
+              v-model="country"
+              label="Country"
+              :options="COUNTRY_OPTIONS"
+              placeholder="Choose…"
+              required
+              :error="countryError ?? undefined"
+              :help-text="profile ? `Amounts are in ${profile.currency}. This can't be changed later.` : 'Sets the currency and tax rules.'"
+            />
+            <template v-if="profile">
+              <FormLayoutGroup>
+                <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
+                <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />
+              </FormLayoutGroup>
+              <ToggleSwitch v-if="profile.tax" v-model="taxEnabled" label="Registered for GST" help-text="Tracks GST on sales and purchases and prepares your BAS." />
+              <TextField
+                v-model="taxId"
+                :label="`${profile.taxId.label} (optional)`"
+                :placeholder="profile.taxId.placeholder"
+                :error="profile.taxId.check(taxId) ?? undefined"
+                help-text="Shown on your invoices. You can add it later in Settings."
+              />
             </template>
             <ChoiceList v-model="storage" label="Where should your books live?" :options="storageOptions" />
             <div v-if="storage === 'folder'" class="Folder">

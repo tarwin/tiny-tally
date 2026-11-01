@@ -119,7 +119,7 @@ async function matchFile() {
   if (!path) return;
   matching.value = true;
   try {
-    const file = await readStatement(path, currency.value);
+    const file = await readStatement(path, session.books!.country);
     const { matched, unmatched } = matchStatement(file.lines, s.rows, s.open.statementDate);
     await setTicked(matched.map((m) => m.row), true);
     fileResult.value = { name: file.name, ticked: matched.length, near: matched.filter((m) => !m.exact).length, unmatched };

@@ -18,7 +18,7 @@ export interface StatementLine {
 /** Banks often post a day or two after the transaction date. */
 const NEAR_DAYS = 3;
 
-export async function readStatement(path: string, currency: string): Promise<{ name: string; lines: StatementLine[] }> {
+export async function readStatement(path: string, country: string): Promise<{ name: string; lines: StatementLine[] }> {
   const file = await api.readImportFile(path);
   let batch;
   if (!file.base64 && looksLikeOfx(file.text)) batch = parseOfx(file.text);
@@ -28,7 +28,7 @@ export async function readStatement(path: string, currency: string): Promise<{ n
     const head = rows[0] ?? [];
     const key = head.some((c) => /[a-z]/i.test(c)) ? `csv-mapping:${hashRef(...head.map((c) => c.trim().toLowerCase()))}` : null;
     const saved = key ? await api.getPref<{ bank: BankMapping | null }>(key).catch(() => null) : null;
-    const mapping = saved?.bank ?? guessBankMapping(rows, detectDateOrder(rows.slice(0, 200).flat(), booksDateOrder(currency)));
+    const mapping = saved?.bank ?? guessBankMapping(rows, detectDateOrder(rows.slice(0, 200).flat(), booksDateOrder(country)));
     batch = csvToBatch(rows, mapping, 'statement', file.name);
   }
   const lines = batch.entries.map((e) => ({ date: e.date, signed: e.kind === 'income' ? e.amount : -e.amount, memo: e.memo ?? '' }));

@@ -20,6 +20,7 @@ import PaperPreview from '../components/PaperPreview.vue';
 import { api, errorMessage, type InvoiceTemplate, type TemplateInput, type TemplateStyle } from '../lib/api';
 import { addDays, today } from '../lib/dates';
 import { session } from '../lib/session';
+import { countryProfile } from '../shared/countries';
 import { lineTotals, sumTotals } from '../shared/tax';
 import {
   LABELS,
@@ -41,6 +42,7 @@ const form = ref<TemplateInput>(blank());
 const dirty = ref(false);
 
 const books = computed(() => session.books!);
+const profile = computed(() => countryProfile(books.value.country));
 
 const ACCENTS = ['#2f6fde', '#0f766e', '#7c3aed', '#be123c', '#c2410c', '#1d1f24'];
 
@@ -56,7 +58,7 @@ function blank(): TemplateInput {
     style: 'classic',
     accent: '#2f6fde',
     logo: null,
-    title: 'Tax Invoice',
+    title: countryProfile(books.value.country).invoiceTitle(true),
     paymentDetails: '',
     footer: '',
     showTaxColumn: true,
@@ -335,13 +337,13 @@ onMounted(() => load());
                   <Checkbox
                     v-for="k in showKeys"
                     :key="k"
-                    :model-value="k === 'abn' && books.taxEnabled ? true : form.layout.show[k]"
-                    :disabled="k === 'abn' && books.taxEnabled"
-                    :label="SHOW[k]"
+                    :model-value="k === 'taxId' && books.taxEnabled ? true : form.layout.show[k]"
+                    :disabled="k === 'taxId' && books.taxEnabled"
+                    :label="k === 'taxId' ? profile.taxId.label : SHOW[k]"
                     @update:model-value="(v: boolean) => setShow(k, v)"
                   />
                 </div>
-                <p v-if="books.taxEnabled" class="subdued Small Flush">Tax invoices must show your ABN, so it can't be hidden.</p>
+                <p v-if="books.taxEnabled" class="subdued Small Flush">Tax invoices must show your {{ profile.taxId.label }}, so it can't be hidden.</p>
               </div>
               <div>
                 <div class="Label">Labels <span class="subdued Small">· leave blank for the standard wording</span></div>
@@ -412,8 +414,8 @@ onMounted(() => load());
         <PaperPreview zoomable>
           <InvoiceDocument :invoice="sample" :books="books" :template="form" />
         </PaperPreview>
-        <p v-if="!books.abn || !books.businessAddress" class="subdued Preview__hint">
-          Add your ABN and address in <a href="#/settings">Settings</a> so they appear on invoices.
+        <p v-if="!books.taxId || !books.businessAddress" class="subdued Preview__hint">
+          Add your {{ profile.taxId.label }} and address in <a href="#/settings">Settings</a> so they appear on invoices.
         </p>
       </div>
     </div>

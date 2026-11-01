@@ -300,7 +300,7 @@ const simpler = computed(() => books.value.basFrequency !== 'monthly');
               <p>
                 {{ period ? `${period.label} · ${formatDay(period.from)} – ${formatDay(period.to)}` : '' }}
                 · {{ basis === 'cash' ? 'Cash' : 'Accrual' }} basis
-                <template v-if="books.abn"> · ABN {{ books.abn }}</template>
+                <template v-if="books.taxId"> · ABN {{ books.taxId }}</template>
               </p>
             </div>
 

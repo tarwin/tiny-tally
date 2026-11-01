@@ -12,6 +12,7 @@
 import { all, getBooks, one, run } from './db';
 import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from './settings';
 import { isTaxCode, lineTotals, sumTotals, type TaxCode } from '../src/shared/tax';
+import { countryProfile } from '../src/shared/countries';
 import { normaliseLayout } from '../src/shared/templateLayout';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -643,7 +644,7 @@ export function saveTemplate(t: TemplateInput) {
   if (t.logo && (!t.logo.startsWith('data:image/') || t.logo.length > 1_500_000)) {
     throw new Error('The logo must be an image under about 1 MB.');
   }
-  const fields = [name, t.style, t.accent, t.logo ?? null, clean(t.title) ?? 'Tax Invoice', clean(t.paymentDetails),
+  const fields = [name, t.style, t.accent, t.logo ?? null, clean(t.title) ?? countryProfile(getSettings().country).invoiceTitle(true), clean(t.paymentDetails),
     clean(t.footer), t.showTaxColumn ? 1 : 0, JSON.stringify(normaliseLayout(t.layout))];
   if (t.id) {
     run(db, `UPDATE invoice_templates SET name = ?, style = ?, accent = ?, logo = ?, title = ?, payment_details = ?,

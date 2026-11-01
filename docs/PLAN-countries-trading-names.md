@@ -106,8 +106,9 @@ interface CountryProfile {
 }
 ```
 
-The books store `country` in `meta`. It can't change once the books have
-any entries.
+The books store `country` in `meta`. Country and currency are fixed when
+the books are made (Settings shows them read-only). The profile lives in
+`src/shared/countries.ts`; NZ and US have `tax: null` until steps 5 and 6.
 
 ### Replacing the AUD checks
 
@@ -130,8 +131,8 @@ instead:
 
 ### Setup
 
-The first field is the country, guessed from the locale the way
-`guessCurrency()` guesses currency now. Picking it fills in the currency,
+The first field is the country, with no default: the webview's locale is
+often en-US even in Australia, and the country decides the tax rules. Picking it fills in the currency,
 year start, tax toggle wording ("Registered for GST" or "Collect sales
 tax") and the tax ID field. Currency is read-only and shows the country's
 currency.

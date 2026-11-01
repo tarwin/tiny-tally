@@ -6,6 +6,7 @@ import { computed } from 'vue';
 import type { Books, DocType, InvoiceLine, InvoiceStatus, InvoiceTemplate } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
+import { countryProfile } from '../shared/countries';
 import { TAX_CODE_MAP } from '../shared/tax';
 import { LABELS, fillPlaceholders, normaliseLayout, type LabelKey, type TemplateSection } from '../shared/templateLayout';
 
@@ -45,7 +46,7 @@ const t = computed(
       style: 'classic' as const,
       accent: '#2f6fde',
       logo: null,
-      title: 'Tax Invoice',
+      title: countryProfile(props.books.country).invoiceTitle(true),
       paymentDetails: null,
       footer: null,
       showTaxColumn: true,
@@ -62,7 +63,8 @@ const title = computed(() => {
   return taxOn.value ? t.value.title || 'Tax Invoice' : t.value.title === 'Tax Invoice' ? 'Invoice' : t.value.title;
 });
 const layout = computed(() => normaliseLayout(props.template?.layout));
-const show = computed(() => ({ ...layout.value.show, abn: layout.value.show.abn || taxOn.value }));
+const show = computed(() => ({ ...layout.value.show, taxId: layout.value.show.taxId || taxOn.value }));
+const taxIdLabel = computed(() => countryProfile(props.books.country).taxId.label);
 const showTax = computed(() => taxOn.value && t.value.showTaxColumn);
 const money = (v: number) => formatMoney(v, currency.value);
 
@@ -144,7 +146,7 @@ const stamp = computed(() => {
         <div class="Doc__from">
           <img v-if="t.logo" :src="t.logo" alt="" class="Doc__logo" />
           <div class="Doc__from">{{ books.name }}</div>
-          <div v-if="books.abn && taxOn && show.abn" class="Doc__abn">ABN {{ books.abn }}</div>
+          <div v-if="books.taxId && show.taxId" class="Doc__taxId">{{ taxIdLabel }} {{ books.taxId }}</div>
           <div v-if="books.businessAddress && show.fromAddress" class="Doc__pre">{{ books.businessAddress }}</div>
           <div v-if="(books.businessEmail || books.businessPhone) && show.fromContact" class="Doc__muted">
             {{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}
@@ -289,7 +291,7 @@ const stamp = computed(() => {
   font-weight: 700;
 }
 
-.Doc__abn {
+.Doc__taxId {
   font-weight: 600;
   margin: 1mm 0;
 }

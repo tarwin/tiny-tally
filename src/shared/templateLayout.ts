@@ -49,11 +49,11 @@ export const LABELS = {
 } as const;
 export type LabelKey = keyof typeof LABELS;
 
-/** Details that can be left off. ABN can't be hidden on a tax invoice. */
+/** Details that can be left off. The tax ID can't be hidden on a tax invoice. */
 export const SHOW = {
   fromAddress: 'Your address',
   fromContact: 'Your email and phone',
-  abn: 'ABN',
+  taxId: 'Tax ID',
   customerAddress: "Customer's address",
   customerEmail: "Customer's email",
   dueDate: 'Due date',
