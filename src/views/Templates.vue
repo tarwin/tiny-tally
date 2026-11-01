@@ -17,7 +17,7 @@ import {
 } from '@octans/ui';
 import InvoiceDocument, { type InvoiceDocData } from '../components/InvoiceDocument.vue';
 import PaperPreview from '../components/PaperPreview.vue';
-import { api, errorMessage, type InvoiceTemplate, type TemplateInput, type TemplateStyle } from '../lib/api';
+import { api, errorMessage, type InvoiceTemplate, type Sender, type TemplateInput, type TemplateStyle } from '../lib/api';
 import { addDays, today } from '../lib/dates';
 import { session } from '../lib/session';
 import { countryProfile } from '../shared/countries';
@@ -59,7 +59,6 @@ function blank(): TemplateInput {
     accent: '#2f6fde',
     logo: null,
     title: countryProfile(books.value.country).invoiceTitle(true),
-    paymentDetails: '',
     footer: '',
     showTaxColumn: true,
     layout: defaultLayout(),
@@ -76,7 +75,6 @@ function select(t: InvoiceTemplate | null) {
         accent: t.accent,
         logo: t.logo,
         title: t.title,
-        paymentDetails: t.paymentDetails ?? '',
         footer: t.footer ?? '',
         showTaxColumn: t.showTaxColumn,
         layout: normaliseLayout(JSON.parse(JSON.stringify(t.layout))),
@@ -85,8 +83,14 @@ function select(t: InvoiceTemplate | null) {
   dirty.value = false;
 }
 
+/** The preview is from the default trading name. */
+const sender = ref<Sender | null>(null);
+
 async function load(keep?: number | null) {
-  templates.value = await api.listTemplates();
+  const [list, names] = await Promise.all([api.listTemplates(), api.listTradingNames()]);
+  templates.value = list;
+  const t0 = names.find((n) => n.isDefault) ?? names[0];
+  sender.value = t0 ? { tradingNameId: t0.id, name: t0.name, address: t0.address, email: t0.email, phone: t0.phone, paymentDetails: t0.paymentDetails, logo: t0.logo } : null;
   const t = templates.value.find((x) => x.id === (keep ?? selectedId.value)) ?? templates.value[0] ?? null;
   select(t);
 }
@@ -294,7 +298,7 @@ onMounted(() => load());
                 </div>
               </div>
               <div>
-                <div class="Label">Logo</div>
+                <div class="Label">Logo <span class="subdued Small">· leave empty to use the trading name's</span></div>
                 <div class="Logo">
                   <img v-if="form.logo" :src="form.logo" alt="" />
                   <Button icon="mdi:image-outline" @click="chooseLogo">{{ form.logo ? 'Change…' : 'Choose image…' }}</Button>
@@ -305,13 +309,6 @@ onMounted(() => load());
                 v-model="form.title"
                 label="Document title"
                 :help-text="books.taxEnabled ? 'GST-registered businesses must use “Tax Invoice” for taxable sales.' : ''"
-                @update:model-value="touch"
-              />
-              <TextField
-                v-model="form.paymentDetails"
-                label="Payment details"
-                multiline="3"
-                placeholder="Bank name, BSB and account number, PayID…"
                 @update:model-value="touch"
               />
               <TextField v-model="form.footer" label="Footer" multiline="2" placeholder="Thank-you note, terms, website…" @update:model-value="touch" />
@@ -412,10 +409,11 @@ onMounted(() => load());
       <div class="Preview">
         <div class="Preview__label subdued">Preview with sample data</div>
         <PaperPreview zoomable>
-          <InvoiceDocument :invoice="sample" :books="books" :template="form" />
+          <InvoiceDocument :invoice="sample" :books="books" :sender="sender" :template="form" />
         </PaperPreview>
-        <p v-if="!books.taxId || !books.businessAddress" class="subdued Preview__hint">
-          Add your {{ profile.taxId.label }} and address in <a href="#/settings">Settings</a> so they appear on invoices.
+        <p v-if="!books.taxId || !sender?.address || !sender?.paymentDetails" class="subdued Preview__hint">
+          Add your {{ profile.taxId.label }}, and your trading name's address and payment details, in
+          <a href="#/settings">Settings</a> so they appear on invoices.
         </p>
       </div>
     </div>

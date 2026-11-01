@@ -17,6 +17,7 @@ import { basReport, saveBasReturn } from './reports';
 import { saveRule } from './rules';
 import { saveSchedule } from './schedules';
 import { updateSettings } from './settings';
+import { defaultTradingNameId, saveTradingName } from './tradingNames';
 
 export const DEMO_NAME = 'Harbour & Pine Studio (Demo)';
 
@@ -55,9 +56,6 @@ export function seedDemo(today: string) {
 
   updateSettings({
     taxId: '51 824 753 556', // the ATO's published example ABN (passes the checksum)
-    businessAddress: 'Level 2, 18 Example Lane\nSurry Hills NSW 2010',
-    businessEmail: 'hello@harbourpine.example',
-    businessPhone: '02 9000 0000',
     invoicePrefix: 'HP-',
     invoiceNext: 1001,
     paymentTermsDays: 14,
@@ -114,11 +112,28 @@ export function seedDemo(today: string) {
     style: 'modern',
     accent: '#0f766e',
     title: 'Tax Invoice',
-    paymentDetails: 'Pay by bank transfer\nHarbour & Pine Studio · BSB 000-000 · Account 12345678\nUse the invoice number as the reference.',
     footer: 'Thanks for working with us!',
     showTaxColumn: true,
   });
   setDefaultTemplate(tpl);
+
+  // ---- trading names ---------------------------------------------------------------
+  // The studio is the default. Map work for the NZ customer goes out as a side line.
+  saveTradingName({
+    id: defaultTradingNameId(),
+    name: 'Harbour & Pine Studio',
+    address: 'Level 2, 18 Example Lane\nSurry Hills NSW 2010',
+    email: 'hello@harbourpine.example',
+    phone: '02 9000 0000',
+    paymentDetails: 'Pay by bank transfer\nHarbour & Pine Studio · BSB 000-000 · Account 12345678\nUse the invoice number as the reference.',
+  });
+  const maps = saveTradingName({
+    name: 'Pine Trail Maps',
+    address: 'Level 2, 18 Example Lane\nSurry Hills NSW 2010',
+    email: 'maps@harbourpine.example',
+    paymentDetails: 'Pay by bank transfer\nPine Trail Maps · BSB 000-000 · Account 87654321\nUse the invoice number as the reference.',
+  });
+  run(db, 'UPDATE contacts SET trading_name_id = ? WHERE id = ?', maps, customers.kiwi);
 
   const spend = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; taxCode?: any } = {}) => {
     if (date > today) return;

@@ -24,6 +24,7 @@ import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
 import { countryProfile } from '../shared/countries';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
+import TradingNames from '../components/TradingNames.vue';
 
 type Form = Omit<
   Books,
@@ -55,9 +56,6 @@ function fromBooks(c: Books): Form {
     billPrefix: c.billPrefix,
     invoiceNext: String(c.invoiceNext),
     paymentTermsDays: String(c.paymentTermsDays),
-    businessAddress: c.businessAddress,
-    businessEmail: c.businessEmail,
-    businessPhone: c.businessPhone,
     color: c.color,
     logo: c.logo,
   };
@@ -101,7 +99,7 @@ function reveal() {
 }
 
 async function save() {
-  nameError.value = form.value.name.trim() ? null : 'Give your books a name.';
+  nameError.value = form.value.name.trim() ? null : 'Enter your name.';
   if (nameError.value) return;
   saving.value = true;
   try {
@@ -149,7 +147,7 @@ async function setLock(date: string | null) {
       <Card title="Books">
         <CardSection>
           <FormLayout>
-            <TextField v-model="form.name" label="Name" required :error="nameError" />
+            <TextField v-model="form.name" label="Your name" required :error="nameError" help-text="Your legal name. Documents show one of your trading names." />
             <div>
               <div class="Label">Country</div>
               <p class="Flush">{{ profile.name }} · {{ books.currency }}</p>
@@ -166,11 +164,6 @@ async function setLock(date: string | null) {
               :error="taxIdProblem ?? undefined"
               help-text="Shown on your invoices."
             />
-            <TextField v-model="form.businessAddress" label="Business address" multiline="3" help-text="Shown on your invoices." />
-            <FormLayoutGroup>
-              <TextField v-model="form.businessEmail" label="Email" type="email" />
-              <TextField v-model="form.businessPhone" label="Phone" />
-            </FormLayoutGroup>
             <div>
               <div class="Label">Logo</div>
               <div class="Logo">
@@ -181,7 +174,7 @@ async function setLock(date: string | null) {
                 <Button icon="mdi:image-outline" @click="chooseLogo">{{ form.logo ? 'Change…' : 'Choose image…' }}</Button>
                 <Button v-if="form.logo" type="plain" @click="form.logo = ''">Remove</Button>
               </div>
-              <p class="subdued Help">Shown top left instead of the Tiny Tally logo. Square images work best. Invoice logos are set on each template.</p>
+              <p class="subdued Help">Shown top left instead of the Tiny Tally logo. Square images work best. Logos on documents come from the trading name or template.</p>
             </div>
             <div>
               <div class="Label">Colour</div>
@@ -213,6 +206,8 @@ async function setLock(date: string | null) {
           </FormLayout>
         </CardSection>
       </Card>
+
+      <TradingNames />
 
       <Card v-if="profile.tax" title="GST & BAS">
         <CardSection>

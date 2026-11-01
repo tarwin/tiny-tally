@@ -14,6 +14,7 @@ import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from 
 import { isTaxCode, lineTotals, sumTotals, type TaxCode } from '../src/shared/tax';
 import { countryProfile } from '../src/shared/countries';
 import { normaliseLayout } from '../src/shared/templateLayout';
+import { defaultTradingNameId, resolveTradingName, senderFor, snapshotOf } from './tradingNames';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -50,6 +51,8 @@ export interface InvoiceInput {
   reference?: string | null;
   notes?: string | null;
   templateId?: number | null;
+  /** Who it's from. Omit for the customer's (or the default) trading name. Bills ignore it. */
+  tradingNameId?: number | null;
   pricesIncludeTax: boolean;
   lines: InvoiceLineInput[];
   /** Save as draft or straight to sent. Omit to keep the current status. */
@@ -89,7 +92,7 @@ const STATUS_SQL = `
 const LIST_COLUMNS = `
   i.id, i.doc_type AS docType, i.number, i.contact_id AS contactId, ct.name AS contactName, ct.email AS contactEmail,
   i.issue_date AS issueDate, i.due_date AS dueDate, i.status AS rawStatus, i.reference, i.source_id AS sourceId,
-  i.net, i.tax, i.total, ${PAID_SQL} AS paid, ${ALLOC_SQL} AS credited, i.total - ${SETTLED_SQL} AS balance,
+  i.trading_name_id AS tradingNameId, i.net, i.tax, i.total, ${PAID_SQL} AS paid, ${ALLOC_SQL} AS credited, i.total - ${SETTLED_SQL} AS balance,
   ${STATUS_SQL} AS status`;
 
 function clean(v: unknown) {
@@ -140,7 +143,7 @@ export function listInvoices(q: { docType?: DocType; status?: InvoiceStatus | 'u
 export function getInvoice(id: number) {
   const { db } = getBooks();
   const inv = one<any>(db,
-    `SELECT ${LIST_COLUMNS}, i.notes, i.template_id AS templateId, i.prices_include_tax AS pricesIncludeTax,
+    `SELECT ${LIST_COLUMNS}, i.notes, i.template_id AS templateId, i.prices_include_tax AS pricesIncludeTax, i.from_snapshot AS fromSnapshot,
             i.sent_at AS sentAt, i.schedule_id AS scheduleId, ct.address AS contactAddress, ct.phone AS contactPhone,
             src.number AS sourceNumber, src.doc_type AS sourceType
      FROM invoices i JOIN contacts ct ON ct.id = i.contact_id
@@ -148,6 +151,8 @@ export function getInvoice(id: number) {
      WHERE i.id = ?`, id);
   if (!inv) throw new Error('That document no longer exists.');
   inv.pricesIncludeTax = !!inv.pricesIncludeTax;
+  inv.sender = inv.docType === 'bill' ? null : senderFor(inv.tradingNameId, inv.fromSnapshot);
+  delete inv.fromSnapshot;
   inv.lines = all(db,
     `SELECT l.id, l.description, l.qty_milli AS qtyMilli, l.unit_price AS unitPrice, l.category_id AS categoryId,
             c.name AS categoryName, l.tax_code AS taxCode, l.net, l.tax
@@ -271,6 +276,11 @@ export function saveInvoice(input: InvoiceInput) {
   const sourceId = typeof input.sourceId === 'number' && one(db, 'SELECT id FROM invoices WHERE id = ?', input.sourceId)
     ? input.sourceId
     : null;
+  const tradingNameId = type === 'bill' ? null : resolveTradingName(input.tradingNameId, input.contactId, existing?.trading_name_id);
+  // Sent documents keep who they were from; a draft shows the details as they are now.
+  const snapshot = type === 'bill' || status !== 'sent'
+    ? null
+    : existing?.from_snapshot && existing.trading_name_id === tradingNameId ? existing.from_snapshot : snapshotOf(tradingNameId!);
 
   let id: number;
   db.transaction(() => {
@@ -278,12 +288,12 @@ export function saveInvoice(input: InvoiceInput) {
       id = existing.id;
       run(db,
         `UPDATE invoices SET number = ?, contact_id = ?, issue_date = ?, due_date = ?, status = ?, reference = ?, notes = ?,
-           template_id = ?, prices_include_tax = ?, net = ?, tax = ?, total = ?,
+           template_id = ?, trading_name_id = ?, from_snapshot = ?, prices_include_tax = ?, net = ?, tax = ?, total = ?,
            sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
            updated_at = datetime('now')
          WHERE id = ?`,
         number ?? existing.number, input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
-        clean(input.notes), templateId, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status, id);
+        clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status, id);
       run(db, 'DELETE FROM invoice_lines WHERE invoice_id = ?', id);
       // Payments' GST share follows the new total.
       run(db, 'UPDATE entries SET tax_amount = CAST(ROUND(1.0 * amount * ? / ?) AS INTEGER) WHERE invoice_id = ?',
@@ -291,10 +301,10 @@ export function saveInvoice(input: InvoiceInput) {
     } else {
       id = one<{ id: number }>(db,
         `INSERT INTO invoices (doc_type, number, contact_id, issue_date, due_date, status, reference, notes, template_id,
-           prices_include_tax, net, tax, total, sent_at, source_id, schedule_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'sent' THEN datetime('now') END, ?, ?) RETURNING id`,
+           trading_name_id, from_snapshot, prices_include_tax, net, tax, total, sent_at, source_id, schedule_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'sent' THEN datetime('now') END, ?, ?) RETURNING id`,
         type, number ?? nextNumber(type), input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
-        clean(input.notes), templateId, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status,
+        clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status,
         sourceId, typeof input.scheduleId === 'number' ? input.scheduleId : null)!.id;
     }
     const ins = db.prepare(
@@ -317,10 +327,24 @@ export function setInvoiceStatus(id: number, status: 'draft' | 'sent' | 'void') 
   }
   if (status !== 'sent' && alloc > 0) throw new Error('Remove the credit applied to it first.');
   if (inv.doc_type !== 'quote' && (inv.status === 'sent' || status === 'sent')) assertUnlocked(inv.issue_date);
-  run(db,
-    `UPDATE invoices SET status = ?, sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
-       updated_at = datetime('now') WHERE id = ?`, status, status, id);
+  db.transaction(() => {
+    run(db,
+      `UPDATE invoices SET status = ?, sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
+         updated_at = datetime('now') WHERE id = ?`, status, status, id);
+    keepSender(id, status);
+  })();
   return true;
+}
+
+/** Saves who a document is from when it's sent; a draft goes back to the live details. Void keeps it. */
+function keepSender(id: number, status: 'draft' | 'sent' | 'void') {
+  const { db } = getBooks();
+  const inv = one<any>(db, 'SELECT doc_type, trading_name_id, from_snapshot FROM invoices WHERE id = ?', id);
+  if (!inv || inv.doc_type === 'bill') return;
+  if (status === 'draft') run(db, 'UPDATE invoices SET from_snapshot = NULL WHERE id = ?', id);
+  else if (status === 'sent' && !inv.from_snapshot) {
+    run(db, 'UPDATE invoices SET from_snapshot = ? WHERE id = ?', snapshotOf(inv.trading_name_id ?? defaultTradingNameId()), id);
+  }
 }
 
 export function deleteInvoice(id: number) {
@@ -355,6 +379,7 @@ function copyDocument(id: number, today: string, as?: DocType, link = false) {
     reference: type === inv.docType ? inv.reference : inv.reference ?? inv.number,
     notes: inv.notes,
     templateId: inv.templateId,
+    tradingNameId: inv.tradingNameId,
     pricesIncludeTax: inv.pricesIncludeTax,
     lines: inv.lines,
     status: 'draft',
@@ -407,6 +432,7 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
   db.transaction(() => {
     if (inv.status === 'draft') {
       run(db, "UPDATE invoices SET status = 'sent', sent_at = COALESCE(sent_at, datetime('now')) WHERE id = ?", inv.id);
+      keepSender(inv.id, 'sent');
     }
     id = one<{ id: number }>(db,
       `INSERT INTO entries (date, kind, amount, account_id, contact_id, memo, invoice_id, tax_amount)
@@ -459,7 +485,7 @@ export function removeAllocation(id: number) {
 }
 
 /** Who owes you (invoices) or who you owe (bills), bucketed by days overdue, as at a date. */
-export function agedBalances(asOf: string, type: 'invoice' | 'bill' = 'invoice') {
+export function agedBalances(asOf: string, type: 'invoice' | 'bill' = 'invoice', tradingNameId: number | null = null) {
   const { db } = getBooks();
   if (!DATE.test(asOf)) throw new Error('Pick a date.');
   const t = type === 'bill' ? 'bill' : 'invoice';
@@ -474,7 +500,8 @@ export function agedBalances(asOf: string, type: 'invoice' | 'bill' = 'invoice')
             CAST(julianday(?1) - julianday(i.due_date) AS INTEGER) AS daysOverdue
      FROM invoices i JOIN contacts ct ON ct.id = i.contact_id
      WHERE i.status = 'sent' AND i.issue_date <= ?1 AND i.doc_type IN (?2, CASE WHEN ?2 = 'invoice' THEN 'credit' END)
-     ORDER BY ct.name COLLATE NOCASE, i.due_date`, asOf, t).filter((r) => r.balance !== 0);
+       AND (?3 IS NULL OR i.trading_name_id = ?3)
+     ORDER BY ct.name COLLATE NOCASE, i.due_date`, asOf, t, tradingNameId).filter((r) => r.balance !== 0);
   const bucket = (d: number) => (d <= 0 ? 'current' : d <= 30 ? 'd30' : d <= 60 ? 'd60' : d <= 90 ? 'd90' : 'older');
   const byContact = new Map<number, any>();
   for (const r of rows) {
@@ -497,21 +524,31 @@ export function agedReceivables(asOf: string) {
 }
 
 /**
- * A customer statement: what they owed at `from`, every invoice, credit and
- * payment in the period, and what they owe at `to`.
- */
-/**
  * A contact's account for a period: opening balance, every document and
  * payment, the closing balance and its aging. Customers see invoices, credit
  * notes, payments and refunds (+ they owe more). Suppliers see bills and our
  * payments (+ we owe more), for checking against the statement they send.
+ *
+ * A customer's statement is from one trading name and covers only its
+ * documents. `tradingNames` lists every one the customer has documents under.
  */
-export function customerStatement(p: { contactId: number; from: string; to: string; side?: 'customer' | 'supplier' }) {
+export function customerStatement(p: { contactId: number; from: string; to: string; side?: 'customer' | 'supplier'; tradingNameId?: number | null }) {
   const { db } = getBooks();
   if (!DATE.test(p.from) || !DATE.test(p.to)) throw new Error('Pick a date range.');
   const contact = one<any>(db, 'SELECT id, kind, name, email, address FROM contacts WHERE id = ?', p.contactId);
   if (!contact) throw new Error('Choose a contact.');
   const side = p.side ?? (contact.kind === 'vendor' ? 'supplier' : 'customer');
+  const tradingNames = side === 'supplier' ? [] : all<{ id: number; name: string }>(db,
+    `SELECT t.id, t.name FROM trading_names t
+     WHERE t.id IN (SELECT trading_name_id FROM invoices WHERE contact_id = ? AND doc_type IN ('invoice', 'credit') AND status = 'sent')
+     ORDER BY t.is_default DESC, t.sort, t.name COLLATE NOCASE`, p.contactId);
+  // The one asked for if they have documents under it, else their usual one, else the first they have.
+  let tradingNameId: number | null = null;
+  if (side === 'customer') {
+    const has = (id: unknown) => tradingNames.some((t) => t.id === id);
+    const usual = resolveTradingName(null, p.contactId, null);
+    tradingNameId = has(p.tradingNameId) ? p.tradingNameId! : has(usual) || !tradingNames.length ? usual : tradingNames[0].id;
+  }
   // Every movement on the account, signed (+ owes more, − owes less).
   const moves = side === 'supplier'
     ? all<any>(db,
@@ -528,26 +565,29 @@ export function customerStatement(p: { contactId: number; from: string; to: stri
       `SELECT * FROM (
          SELECT i.issue_date AS date, 'invoice' AS type, i.id AS docId, i.number AS ref, NULL AS theirRef,
                 i.due_date AS dueDate, i.total AS amount
-         FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'invoice' AND i.status = 'sent'
+         FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'invoice' AND i.status = 'sent' AND i.trading_name_id = ?2
          UNION ALL
          SELECT i.issue_date, 'credit', i.id, i.number, NULL, NULL, -i.total
-         FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'credit' AND i.status = 'sent'
+         FROM invoices i WHERE i.contact_id = ?1 AND i.doc_type = 'credit' AND i.status = 'sent' AND i.trading_name_id = ?2
          UNION ALL
          SELECT e.date, CASE WHEN i.doc_type = 'credit' THEN 'refund' ELSE 'payment' END, i.id, i.number, NULL, NULL,
                 CASE WHEN i.doc_type = 'credit' THEN e.amount ELSE -e.amount END
          FROM entries e JOIN invoices i ON i.id = e.invoice_id
-         WHERE i.contact_id = ?1 AND i.doc_type IN ('invoice', 'credit')
-       ) ORDER BY date, CASE type WHEN 'invoice' THEN 0 ELSE 1 END, ref`, p.contactId);
+         WHERE i.contact_id = ?1 AND i.doc_type IN ('invoice', 'credit') AND i.trading_name_id = ?2
+       ) ORDER BY date, CASE type WHEN 'invoice' THEN 0 ELSE 1 END, ref`, p.contactId, tradingNameId);
   const opening = moves.filter((m) => m.date < p.from).reduce((s, m) => s + m.amount, 0);
   let balance = opening;
   const lines = moves
     .filter((m) => m.date >= p.from && m.date <= p.to)
     .map((m) => ({ ...m, balance: (balance += m.amount) }));
-  const aged = agedBalances(p.to, side === 'supplier' ? 'bill' : 'invoice').find((c) => c.contactId === p.contactId) ?? {
+  const aged = agedBalances(p.to, side === 'supplier' ? 'bill' : 'invoice', tradingNameId).find((c) => c.contactId === p.contactId) ?? {
     current: 0, d30: 0, d60: 0, d90: 0, older: 0, total: 0, invoices: [],
   };
   return {
     side,
+    sender: senderFor(tradingNameId ?? defaultTradingNameId(), null),
+    tradingNameId,
+    tradingNames,
     contact: { id: contact.id, name: contact.name, email: contact.email, address: contact.address },
     from: p.from,
     to: p.to,
@@ -580,6 +620,7 @@ export function remittance(entryId: number) {
      WHERE i.doc_type = 'bill' AND i.contact_id = ? AND p.date = ? AND p.account_id = ?
      ORDER BY i.issue_date, i.id, p.id`, e.contact_id, e.date, e.account_id);
   return {
+    sender: senderFor(defaultTradingNameId(), null),
     date: e.date as string,
     accountName: account?.name ?? '',
     contact,
@@ -612,7 +653,6 @@ export interface TemplateInput {
   accent: string;
   logo?: string | null;
   title: string;
-  paymentDetails?: string | null;
   footer?: string | null;
   showTaxColumn: boolean;
   layout?: unknown;
@@ -620,7 +660,7 @@ export interface TemplateInput {
 
 export function listTemplates() {
   return all(getBooks().db,
-    `SELECT t.id, t.name, t.style, t.accent, t.logo, t.title, t.payment_details AS paymentDetails, t.footer,
+    `SELECT t.id, t.name, t.style, t.accent, t.logo, t.title, t.footer,
             t.show_tax_column AS showTaxColumn, t.is_default AS isDefault, t.layout,
             (SELECT COUNT(*) FROM invoices i WHERE i.template_id = t.id) AS uses
      FROM invoice_templates t ORDER BY t.is_default DESC, t.name COLLATE NOCASE`,
@@ -644,17 +684,17 @@ export function saveTemplate(t: TemplateInput) {
   if (t.logo && (!t.logo.startsWith('data:image/') || t.logo.length > 1_500_000)) {
     throw new Error('The logo must be an image under about 1 MB.');
   }
-  const fields = [name, t.style, t.accent, t.logo ?? null, clean(t.title) ?? countryProfile(getSettings().country).invoiceTitle(true), clean(t.paymentDetails),
+  const fields = [name, t.style, t.accent, t.logo ?? null, clean(t.title) ?? countryProfile(getSettings().country).invoiceTitle(true),
     clean(t.footer), t.showTaxColumn ? 1 : 0, JSON.stringify(normaliseLayout(t.layout))];
   if (t.id) {
-    run(db, `UPDATE invoice_templates SET name = ?, style = ?, accent = ?, logo = ?, title = ?, payment_details = ?,
+    run(db, `UPDATE invoice_templates SET name = ?, style = ?, accent = ?, logo = ?, title = ?,
                footer = ?, show_tax_column = ?, layout = ? WHERE id = ?`, ...fields, t.id);
     return t.id;
   }
   const isFirst = !one(db, 'SELECT id FROM invoice_templates');
   return one<{ id: number }>(db,
-    `INSERT INTO invoice_templates (name, style, accent, logo, title, payment_details, footer, show_tax_column, layout, is_default)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, ...fields, isFirst ? 1 : 0)!.id;
+    `INSERT INTO invoice_templates (name, style, accent, logo, title, footer, show_tax_column, layout, is_default)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, ...fields, isFirst ? 1 : 0)!.id;
 }
 
 export function setDefaultTemplate(id: number) {
@@ -673,6 +713,7 @@ export function deleteTemplate(id: number) {
   if (t.is_default) throw new Error('Make another template the default first.');
   db.transaction(() => {
     run(db, 'UPDATE invoices SET template_id = NULL WHERE template_id = ?', id);
+    run(db, 'UPDATE trading_names SET template_id = NULL WHERE template_id = ?', id);
     run(db, 'DELETE FROM invoice_templates WHERE id = ?', id);
   })();
   return true;

@@ -34,6 +34,8 @@ const splash = splashSvg
 const props = defineProps<{ notice?: string | null; noticePath?: string | null }>();
 
 const name = ref('');
+/** The first trading name; blank means trading under your own name. */
+const tradingName = ref('');
 // No default country: the webview's locale is often en-US even in
 // Australia, and the country decides the tax rules.
 const country = ref<Country | null>(null);
@@ -77,7 +79,7 @@ const storageOptions = [
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
 
 const fileName = computed(() => {
-  const safe = name.value.replace(/[^\p{L}\p{N} _.-]+/gu, '').trim().replace(/\s+/g, ' ');
+  const safe = (tradingName.value.trim() || name.value).replace(/[^\p{L}\p{N} _.-]+/gu, '').trim().replace(/\s+/g, ' ');
   return (safe || 'Books') + '.tally';
 });
 
@@ -94,7 +96,7 @@ async function chooseFolder() {
 }
 
 async function create() {
-  nameError.value = name.value.trim() ? null : 'Give your books a name.';
+  nameError.value = name.value.trim() ? null : 'Enter your name.';
   countryError.value = country.value ? null : 'Choose the country your business is in.';
   if (nameError.value || !country.value) return;
   if (storage.value === 'folder' && !folder.value) {
@@ -105,6 +107,7 @@ async function create() {
   try {
     await api.createBooks({
       name: name.value.trim(),
+      tradingName: tradingName.value.trim() || undefined,
       country: country.value,
       fiscalYearStart: fiscalYearStart.value,
       taxEnabled: !!profile.value?.tax && taxEnabled.value,
@@ -181,14 +184,23 @@ function shortPath(path: string) {
       <Card title="Start new books">
         <CardSection>
           <FormLayout>
-            <TextField
-              v-model="name"
-              label="Name"
-              placeholder="e.g. Acme Design Studio"
-              required
-              :error="nameError"
-              @keydown.enter="create"
-            />
+            <FormLayoutGroup>
+              <TextField
+                v-model="name"
+                label="Your name"
+                placeholder="e.g. Sam Rivera"
+                required
+                :error="nameError"
+                @keydown.enter="create"
+              />
+              <TextField
+                v-model="tradingName"
+                label="Trading as (optional)"
+                placeholder="e.g. Acme Design Studio"
+                help-text="The name on your invoices. You can add more later."
+                @keydown.enter="create"
+              />
+            </FormLayoutGroup>
             <Select
               v-model="country"
               label="Country"

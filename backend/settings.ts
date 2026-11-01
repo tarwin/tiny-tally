@@ -3,6 +3,7 @@ import { isCountry, type Country } from '../src/shared/countries';
 import { getBooks, one } from './db';
 
 export interface BooksSettings {
+  /** The owner's legal name. Documents show a trading name instead. */
   name: string;
   /** Set when the books are made; can't change. */
   country: Country;
@@ -26,9 +27,6 @@ export interface BooksSettings {
   creditPrefix: string;
   creditNext: number;
   paymentTermsDays: number;
-  businessAddress: string;
-  businessEmail: string;
-  businessPhone: string;
   /** '#rrggbb' or '' — the stripe beside the menu that tells open books apart. */
   color: string;
   /** data: URL, or '' — shown top left instead of the app's logo. */
@@ -100,9 +98,6 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
   creditPrefix: { key: 'credit_prefix', ...str('CN-') },
   creditNext: { key: 'credit_next', ...int(1, 1, 999999999) },
   paymentTermsDays: { key: 'payment_terms_days', ...int(14, 0, 365) },
-  businessAddress: { key: 'business_address', ...str() },
-  businessEmail: { key: 'business_email', ...str() },
-  businessPhone: { key: 'business_phone', ...str() },
   logo: {
     key: 'books_logo',
     parse: (v) => v ?? '',
@@ -149,7 +144,7 @@ export function updateSettings(patch: Partial<BooksSettings>) {
     if (!f) continue;
     writes.push([f.key, f.write(value)]);
   }
-  if (patch.name !== undefined && !String(patch.name).trim()) throw new Error('Give your books a name.');
+  if (patch.name !== undefined && !String(patch.name).trim()) throw new Error('Enter your name.');
   db.transaction(() => {
     const set = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
     const del = db.prepare('DELETE FROM meta WHERE key = ?');

@@ -64,6 +64,14 @@ import {
 } from './reports';
 import { getSettings, isYearStart, updateSettings, type BooksSettings } from './settings';
 import { DEMO_NAME, seedDemo } from './demo';
+import {
+  archiveTradingName,
+  deleteTradingName,
+  listTradingNames,
+  saveTradingName,
+  setDefaultTradingName,
+  type TradingNameInput,
+} from './tradingNames';
 import { commitImport, readImportFile, suggestCategories } from './importer';
 import { cancelReconcile, finishReconcile, reconcileState, reconciledDates, startReconcile, tick, undoReconcile } from './reconcile';
 import { deleteSchedule, getSchedule, listSchedules, runSchedules, saveSchedule, skipNext, type ScheduleInput } from './schedules';
@@ -294,8 +302,9 @@ export const api: Record<string, TinyApiHandler> = {
     };
   },
 
-  'books.create': async ({ name, country, fiscalYearStart, dir, taxEnabled, taxId }: {
+  'books.create': async ({ name, tradingName, country, fiscalYearStart, dir, taxEnabled, taxId }: {
     name: string;
+    tradingName?: string;
     country: Country;
     fiscalYearStart: string;
     /** null = store internally */
@@ -304,11 +313,11 @@ export const api: Record<string, TinyApiHandler> = {
     taxId?: string;
   }, _app, { window: win }) => {
     name = String(name ?? '').trim();
-    if (!name) throw new Error('Give your books a name.');
+    if (!name) throw new Error('Enter your name.');
     if (!isCountry(country)) throw new Error('Choose the country your business is in.');
     const folder = dir ?? (await internalDir());
-    const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createBooks(win, path, dir === null, { name, country, fiscalYearStart: isYearStart(String(fiscalYearStart)) ? fiscalYearStart : COUNTRIES[country].fiscalYearStart, taxEnabled });
+    const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(String(tradingName ?? '').trim() || name);
+    await createBooks(win, path, dir === null, { name, tradingName, country, fiscalYearStart: isYearStart(String(fiscalYearStart)) ? fiscalYearStart : COUNTRIES[country].fiscalYearStart, taxEnabled });
     inWindow(win, () => {
       if (taxId) updateSettings({ taxId });
       startHistory('books.create', JSON.stringify({ name }));
@@ -558,6 +567,11 @@ Object.assign(api, {
   'invoices.recordPayment': async (p: Parameters<typeof recordPayment>[0]) => recordPayment(p),
   'invoices.deletePayment': async ({ entryId }: { entryId: number }) => deletePayment(entryId),
 
+  'tradingNames.list': async () => listTradingNames(),
+  'tradingNames.save': async (t: TradingNameInput) => saveTradingName(t),
+  'tradingNames.setDefault': async ({ id }: { id: number }) => setDefaultTradingName(id),
+  'tradingNames.archive': async ({ id, archived }: { id: number; archived: boolean }) => archiveTradingName(id, archived),
+  'tradingNames.delete': async ({ id }: { id: number }) => deleteTradingName(id),
   'templates.list': async () => listTemplates(),
   'templates.save': async (t: TemplateInput) => saveTemplate(t),
   'templates.setDefault': async ({ id }: { id: number }) => setDefaultTemplate(id),

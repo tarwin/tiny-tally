@@ -36,6 +36,7 @@ async function load() {
 }
 watch(entryId, load);
 onMounted(load);
+const sender = computed(() => advice.value?.sender);
 
 const billRef = (i: Remittance['items'][number]) => i.reference || i.number;
 
@@ -56,7 +57,7 @@ function email() {
     books.value.name,
   ].join('\n');
   void tiny.app.shell.open(
-    `mailto:${encodeURIComponent(r.contact.email ?? '')}?subject=${encodeURIComponent(`Remittance advice from ${books.value.name}`)}&body=${encodeURIComponent(body)}`,
+    `mailto:${encodeURIComponent(r.contact.email ?? '')}?subject=${encodeURIComponent(`Remittance advice from ${sender.value?.name ?? books.value.name}`)}&body=${encodeURIComponent(body)}`,
   );
   toast({ title: 'Email drafted', content: 'Print to PDF and attach the advice if they need it on letterhead.' });
 }
@@ -80,11 +81,11 @@ function email() {
         <article class="Doc" :style="{ '--accent': template?.accent ?? '#2f6fde' }">
           <header class="Doc__head">
             <div>
-              <img v-if="template?.logo" :src="template.logo" alt="" class="Doc__logo" />
-              <div class="Doc__fromName">{{ books.name }}</div>
+              <img v-if="template?.logo || sender?.logo" :src="template?.logo || sender?.logo || ''" alt="" class="Doc__logo" />
+              <div class="Doc__fromName">{{ sender?.name ?? books.name }}</div>
               <div v-if="books.taxId">{{ countryProfile(books.country).taxId.label }} {{ books.taxId }}</div>
-              <div v-if="books.businessAddress" class="Doc__pre">{{ books.businessAddress }}</div>
-              <div class="Doc__muted">{{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}</div>
+              <div v-if="sender?.address" class="Doc__pre">{{ sender.address }}</div>
+              <div class="Doc__muted">{{ [sender?.email, sender?.phone].filter(Boolean).join(' · ') }}</div>
             </div>
             <div class="Doc__titleBlock">
               <h1 class="Doc__title">Remittance advice</h1>

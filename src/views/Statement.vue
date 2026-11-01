@@ -6,7 +6,7 @@
 // bills and what we've paid, to check against the statement they send.
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Card, CardSection, DatePicker, FormLayoutGroup, Page, toast } from '@octans/ui';
+import { Card, CardSection, DatePicker, FormLayoutGroup, Page, Select, toast } from '@octans/ui';
 import PaperPreview from '../components/PaperPreview.vue';
 import { api, errorMessage, type InvoiceTemplate, type Statement, type StatementLine } from '../lib/api';
 import { addDays, formatDay, today } from '../lib/dates';
@@ -25,6 +25,8 @@ const money = (v: number) => formatMoney(v, books.value.currency);
 const from = ref(addDays(today(), -90));
 const to = ref(today());
 const statement = ref<Statement | null>(null);
+/** Which trading name the statement is from; null lets the backend pick the customer's usual one. */
+const tradingNameId = ref<number | null>(null);
 const template = ref<InvoiceTemplate | null>(null);
 const paper = ref<HTMLElement | null>(null);
 
@@ -40,16 +42,19 @@ const BUCKETS = [
 async function load() {
   try {
     const [s, templates] = await Promise.all([
-      api.statement({ contactId: contactId.value, from: from.value, to: to.value }),
+      api.statement({ contactId: contactId.value, from: from.value, to: to.value, tradingNameId: tradingNameId.value }),
       api.listTemplates(),
     ]);
     statement.value = s;
+    tradingNameId.value = s.tradingNameId;
     template.value = templates.find((t) => t.isDefault) ?? templates[0] ?? null;
   } catch (e) {
     toast({ title: errorMessage(e), tone: 'error' });
   }
 }
-watch([contactId, from, to], load);
+watch(contactId, () => (tradingNameId.value = null));
+watch([contactId, from, to, tradingNameId], load);
+const sender = computed(() => statement.value?.sender);
 onMounted(load);
 
 const supplier = computed(() => statement.value?.side === 'supplier');
@@ -81,17 +86,17 @@ function email() {
       books.value.name,
     ].join('\n');
     void tiny.app.shell.open(
-      `mailto:${encodeURIComponent(s.contact.email ?? '')}?subject=${encodeURIComponent(`Account statement from ${books.value.name}`)}&body=${encodeURIComponent(body)}`,
+      `mailto:${encodeURIComponent(s.contact.email ?? '')}?subject=${encodeURIComponent(`Account statement from ${sender.value?.name ?? books.value.name}`)}&body=${encodeURIComponent(body)}`,
     );
     toast({ title: 'Email drafted', content: 'Print to PDF and attach the statement before sending.' });
     return;
   }
-  const subject = `Statement from ${books.value.name}`;
+  const subject = `Statement from ${sender.value?.name ?? books.value.name}`;
   const body = [
     `Hi ${s.contact.name},`,
     '',
     `Here is your statement for ${formatDay(s.from)} to ${formatDay(s.to)}. The balance owing is ${money(s.closing)}.`,
-    template.value?.paymentDetails ? `\n${template.value.paymentDetails}` : '',
+    sender.value?.paymentDetails ? `\n${sender.value.paymentDetails}` : '',
     '',
     'Thanks,',
     books.value.name,
@@ -118,6 +123,13 @@ function email() {
         <FormLayoutGroup>
           <DatePicker v-model="from" type="date" model-format="YYYY-MM-DD" label="From" />
           <DatePicker v-model="to" type="date" model-format="YYYY-MM-DD" label="To" />
+          <Select
+            v-if="statement && statement.tradingNames.length > 1"
+            v-model="tradingNameId"
+            label="From"
+            :options="statement.tradingNames.map((t) => ({ label: t.name, value: t.id }))"
+            help-text="Each trading name has its own statement."
+          />
         </FormLayoutGroup>
       </CardSection>
     </Card>
@@ -127,11 +139,11 @@ function email() {
         <article class="Doc" :style="{ '--accent': template?.accent ?? '#2f6fde' }">
           <header class="Doc__head">
             <div>
-              <img v-if="template?.logo" :src="template.logo" alt="" class="Doc__logo" />
-              <div class="Doc__fromName">{{ books.name }}</div>
+              <img v-if="template?.logo || sender?.logo" :src="template?.logo || sender?.logo || ''" alt="" class="Doc__logo" />
+              <div class="Doc__fromName">{{ sender?.name ?? books.name }}</div>
               <div v-if="books.taxId">{{ countryProfile(books.country).taxId.label }} {{ books.taxId }}</div>
-              <div v-if="books.businessAddress" class="Doc__pre">{{ books.businessAddress }}</div>
-              <div class="Doc__muted">{{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}</div>
+              <div v-if="sender?.address" class="Doc__pre">{{ sender.address }}</div>
+              <div class="Doc__muted">{{ [sender?.email, sender?.phone].filter(Boolean).join(' · ') }}</div>
             </div>
             <div class="Doc__titleBlock">
               <h1 class="Doc__title">{{ words.title }}</h1>
@@ -188,9 +200,9 @@ function email() {
             </div>
           </section>
 
-          <footer v-if="template?.paymentDetails && !supplier" class="Doc__foot">
+          <footer v-if="sender?.paymentDetails && !supplier" class="Doc__foot">
             <div class="Doc__label">Payment</div>
-            <div class="Doc__pre">{{ template.paymentDetails }}</div>
+            <div class="Doc__pre">{{ sender.paymentDetails }}</div>
           </footer>
         </article>
       </PaperPreview>

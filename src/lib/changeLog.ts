@@ -30,6 +30,10 @@ const ACTIONS: Record<string, string> = {
   'templates.save': 'Saved an invoice template',
   'templates.setDefault': 'Changed the default template',
   'templates.delete': 'Deleted an invoice template',
+  'tradingNames.save': 'Saved a trading name',
+  'tradingNames.setDefault': 'Changed the default trading name',
+  'tradingNames.archive': 'Archived or restored a trading name',
+  'tradingNames.delete': 'Deleted a trading name',
   'reconcile.start': 'Started a reconciliation',
   'reconcile.tick': 'Ticked reconciliation lines',
   'reconcile.finish': 'Finished a reconciliation',
@@ -77,6 +81,7 @@ export const TABLES: Record<string, string> = {
   journals: 'Journal entry',
   journal_lines: 'Journal line',
   bas_returns: 'BAS',
+  trading_names: 'Trading name',
   meta: 'Setting',
 };
 
@@ -95,6 +100,7 @@ const FIELD_NAMES: Record<string, string> = {
   statement_balance: 'statement balance', next_date: 'next date', end_date: 'end date', is_active: 'active',
   auto_approve: 'approve automatically', prices_include_tax: 'prices include GST', payment_details: 'payment details',
   show_tax_column: 'GST column', import_ref: 'import id', schedule_id: 'schedule', journal_id: 'journal',
+  trading_name_id: 'trading name', from_snapshot: 'sender details', is_default: 'default', template_id: 'template',
   period_start: 'from', period_end: 'to', lodged_at: 'lodged', sent_at: 'sent', completed_at: 'completed',
 };
 

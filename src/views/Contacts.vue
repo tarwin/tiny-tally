@@ -9,12 +9,13 @@ import {
   ModalSection,
   Page,
   SegmentedControl,
+  Select,
   TextField,
   ToggleSwitch,
   toast,
   type DataTableColumnType,
 } from '@octans/ui';
-import { api, errorMessage, type Contact, type ContactKind } from '../lib/api';
+import { api, errorMessage, type Contact, type ContactKind, type TradingName } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { dataVersion } from '../lib/entryEditor';
 import { formatMoney } from '../lib/money';
@@ -56,10 +57,18 @@ const columns = computed<DataTableColumnType[]>(() => [
   { key: 'lastDate', label: 'Last activity', width: 140, formatFunc: (v) => (v ? formatDay(v) : '') },
 ]);
 
+const tradingNames = ref<TradingName[]>([]);
+/** Only worth asking when there's a choice. */
+const defaultTradingName = computed(() => tradingNames.value.find((t) => t.isDefault)?.name ?? '');
+const tradingNameOptions = computed(() => [
+  { label: `Default (${defaultTradingName.value})`, value: null },
+  ...tradingNames.value.filter((t) => !t.isArchived || t.id === form.value.tradingNameId).map((t) => ({ label: t.name, value: t.id })),
+]);
+
 async function load() {
   loading.value = true;
   try {
-    contacts.value = await api.listContacts();
+    [contacts.value, tradingNames.value] = await Promise.all([api.listContacts(), api.listTradingNames()]);
   } finally {
     loading.value = false;
   }
@@ -75,6 +84,7 @@ const blank = () => ({
   phone: '',
   address: '',
   notes: '',
+  tradingNameId: null as number | null,
 });
 const form = ref(blank());
 const nameError = ref<string | null>(null);
@@ -82,7 +92,7 @@ const nameError = ref<string | null>(null);
 function openEditor(c?: Contact) {
   nameError.value = null;
   form.value = c
-    ? { id: c.id, kind: c.kind, name: c.name, email: c.email ?? '', phone: c.phone ?? '', address: c.address ?? '', notes: c.notes ?? '' }
+    ? { id: c.id, kind: c.kind, name: c.name, email: c.email ?? '', phone: c.phone ?? '', address: c.address ?? '', notes: c.notes ?? '', tradingNameId: c.tradingNameId }
     : blank();
   editing.value = true;
 }
@@ -164,6 +174,14 @@ onMounted(load);
             <TextField v-model="form.phone" label="Phone" type="tel" />
           </FormLayoutGroup>
           <TextField v-model="form.address" label="Address" multiline="3" />
+          <Select
+            v-if="form.kind === 'customer' && tradingNameOptions.length > 2"
+            v-model="form.tradingNameId"
+            label="Invoice as"
+            :options="tradingNameOptions"
+            :placeholder="`Default (${defaultTradingName})`"
+            help-text="New invoices and quotes for them start from this trading name."
+          />
           <TextField v-model="form.notes" label="Notes" multiline="2" />
         </FormLayout>
       </ModalSection>

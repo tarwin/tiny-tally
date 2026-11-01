@@ -142,7 +142,7 @@ function print() {
 function email() {
   const inv = invoice.value!;
   const word = doc.value.one.toLowerCase();
-  const subject = `${doc.value.one} ${inv.number} from ${books.value.name}`;
+  const subject = `${doc.value.one} ${inv.number} from ${inv.sender?.name ?? books.value.name}`;
   const lead =
     inv.docType === 'quote'
       ? `Please find quote ${inv.number} for ${money(inv.total)}, valid until ${formatDay(inv.dueDate)}.`
@@ -153,7 +153,7 @@ function email() {
     `Hi ${inv.contactName},`,
     '',
     lead,
-    inv.docType === 'invoice' && template.value?.paymentDetails ? `\n${template.value.paymentDetails}` : '',
+    inv.docType === 'invoice' && inv.sender?.paymentDetails ? `\n${inv.sender.paymentDetails}` : '',
     '',
     'Thanks,',
     books.value.name,
@@ -310,6 +310,7 @@ const schedulePayload = computed(() => {
     reference: inv.docType === 'bill' ? null : inv.reference,
     notes: inv.notes,
     templateId: inv.templateId,
+    tradingNameId: inv.tradingNameId,
     pricesIncludeTax: inv.pricesIncludeTax,
     lines: inv.lines.map((l) => ({ description: l.description, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, categoryId: l.categoryId, taxCode: l.taxCode })),
   };
@@ -390,7 +391,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
       <div class="Grid">
         <div v-if="doc.printable" ref="paper" class="Paper">
           <PaperPreview>
-            <InvoiceDocument :invoice="invoice" :books="books" :template="template" />
+            <InvoiceDocument :invoice="invoice" :books="books" :sender="invoice.sender" :template="template" />
           </PaperPreview>
         </div>
         <Card v-else title="Lines">

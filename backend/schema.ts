@@ -428,4 +428,48 @@ export const migrations: string[] = [
   );
   INSERT INTO change_context (id, batch_id) VALUES (1, NULL);
   `,
+  // v9: trading names. One person, several business names: each invoice,
+  // quote and credit note says which one it's from (bills don't). A sent
+  // document keeps a copy of the sender's details in from_snapshot, so later
+  // edits to a trading name don't rewrite it. Business contact details and
+  // payment details moved here from settings and templates.
+  `
+  CREATE TABLE trading_names (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    logo TEXT,
+    address TEXT,
+    email TEXT,
+    phone TEXT,
+    payment_details TEXT,
+    template_id INTEGER REFERENCES invoice_templates(id),
+    is_default INTEGER NOT NULL DEFAULT 0,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  ALTER TABLE invoices ADD COLUMN trading_name_id INTEGER REFERENCES trading_names(id);
+  ALTER TABLE invoices ADD COLUMN from_snapshot TEXT;
+  CREATE INDEX invoices_trading_name ON invoices (trading_name_id);
+  ALTER TABLE contacts ADD COLUMN trading_name_id INTEGER REFERENCES trading_names(id);
+
+  -- Books made before this: one trading name from the old business details.
+  INSERT INTO trading_names (name, address, email, phone, payment_details, is_default)
+    SELECT (SELECT value FROM meta WHERE key = 'books_name'),
+           (SELECT value FROM meta WHERE key = 'business_address'),
+           (SELECT value FROM meta WHERE key = 'business_email'),
+           (SELECT value FROM meta WHERE key = 'business_phone'),
+           (SELECT payment_details FROM invoice_templates
+            ORDER BY COALESCE(payment_details, '') = '', is_default DESC, id LIMIT 1),
+           1
+    WHERE EXISTS (SELECT 1 FROM meta WHERE key = 'books_name');
+  UPDATE invoices SET trading_name_id = (SELECT id FROM trading_names WHERE is_default = 1)
+    WHERE doc_type <> 'bill';
+  DELETE FROM meta WHERE key IN ('business_address', 'business_email', 'business_phone');
+  -- The change log's triggers name every column; they're rebuilt after migrating.
+  DROP TRIGGER IF EXISTS log_invoice_templates_insert;
+  DROP TRIGGER IF EXISTS log_invoice_templates_update;
+  DROP TRIGGER IF EXISTS log_invoice_templates_delete;
+  ALTER TABLE invoice_templates DROP COLUMN payment_details;
+  `,
 ];

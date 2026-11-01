@@ -236,6 +236,18 @@ The change log triggers are built from live column lists
 automatically. Check this by hand: edit a trading name and look at
 Activity.
 
+### As built
+
+- `pay_into_account_id` was left out: the payment details text carries the
+  bank details. Add it if payments should default to that account.
+- Bills have no trading name (`trading_name_id` is null on them).
+- The snapshot leaves out the logo (a data URL per invoice is too big), so
+  old documents show the trading name's current logo.
+- The "Legal name t/as Trading name" line isn't built yet. Every template
+  show option defaults to on, so it needs a default-off option first.
+- Existing files are migrated: one trading name from the old business
+  details and the template that had payment details.
+
 ### Trading names and templates
 
 `invoice_templates` already has `logo` and `payment_details`. Who someone

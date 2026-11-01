@@ -12,11 +12,12 @@ import { all, currentHost, getBooks, one, run } from './db';
 const LOGGED = [
   'accounts', 'categories', 'contacts', 'entries', 'invoices', 'invoice_lines', 'credit_allocations',
   'invoice_templates', 'reconciliations', 'schedules', 'rules', 'journals', 'journal_lines', 'bas_returns',
+  'trading_names',
 ];
 /** Bookkeeping columns that change on every save and mean nothing on their own. */
 const IGNORED = new Set(['updated_at']);
 /** Columns too big to copy into every log row (images as data: URLs). */
-const BULKY: Record<string, string[]> = { invoice_templates: ['logo'] };
+const BULKY: Record<string, string[]> = { invoice_templates: ['logo'], trading_names: ['logo'] };
 
 const BATCH = '(SELECT batch_id FROM change_context WHERE id = 1)';
 

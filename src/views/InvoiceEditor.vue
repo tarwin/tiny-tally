@@ -22,6 +22,7 @@ import {
   type Invoice,
   type InvoiceTemplate,
   type TaxCode,
+  type TradingName,
 } from '../lib/api';
 import { addDays, today } from '../lib/dates';
 import { DOCS } from '../lib/documents';
@@ -57,6 +58,7 @@ const saving = ref(false);
 const customers = ref<Contact[]>([]);
 const categories = ref<Category[]>([]);
 const templates = ref<InvoiceTemplate[]>([]);
+const tradingNames = ref<TradingName[]>([]);
 const suggested = ref('');
 
 let lineKey = 0;
@@ -80,6 +82,8 @@ const form = ref({
   terms: startTerms(),
   dueDate: addDays(today(), startTerms() as number),
   templateId: null as number | null,
+  /** Who it's from. Bills don't have one. */
+  tradingNameId: null as number | null,
   // Supplier bills almost always show GST-inclusive totals.
   pricesIncludeTax: isBill.value ? true : books.value.pricesIncludeTax,
   notes: '',
@@ -156,6 +160,42 @@ const templateOptions = computed(() =>
   templates.value.map((t) => ({ label: t.isDefault ? `${t.name} (default)` : t.name, value: t.id })),
 );
 
+// ---- who it's from ----------------------------------------------------------------
+
+const tradingNameOptions = computed(() =>
+  tradingNames.value
+    .filter((t) => !t.isArchived || t.id === form.value.tradingNameId)
+    .map((t) => ({ label: t.isDefault ? `${t.name} (default)` : t.name, value: t.id })),
+);
+/** Picked by hand, so changing the customer leaves it alone. */
+const fromTouched = ref(false);
+
+/** The customer's trading name, else the default. */
+function tradingNameFor(contactId: number | null) {
+  const theirs = customers.value.find((c) => c.id === contactId)?.tradingNameId;
+  const usable = tradingNames.value.filter((t) => !t.isArchived);
+  return (usable.find((t) => t.id === theirs) ?? usable.find((t) => t.isDefault) ?? usable[0])?.id ?? null;
+}
+
+/** A trading name can bring its own template. */
+function useTradingName(id: number | null) {
+  form.value.tradingNameId = id;
+  const own = tradingNames.value.find((t) => t.id === id)?.templateId;
+  if (own && templates.value.some((t) => t.id === own)) form.value.templateId = own;
+}
+
+function pickTradingName(id: number | null) {
+  fromTouched.value = true;
+  useTradingName(id);
+}
+
+watch(
+  () => form.value.contactId,
+  (id) => {
+    if (!loading.value && !existing.value && !isBill.value && !fromTouched.value) useTradingName(tradingNameFor(id));
+  },
+);
+
 function parseQty(s: string) {
   const n = Number(String(s).replace(/,/g, ''));
   return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) : null;
@@ -222,6 +262,7 @@ async function save(status?: 'draft' | 'sent') {
       reference: form.value.reference,
       notes: form.value.notes,
       templateId: form.value.templateId,
+      tradingNameId: isBill.value ? null : form.value.tradingNameId,
       pricesIncludeTax: form.value.pricesIncludeTax,
       status,
       lines: form.value.lines.map((l, i) => ({
@@ -247,10 +288,11 @@ async function save(status?: 'draft' | 'sent') {
 }
 
 onMounted(async () => {
-  [customers.value, categories.value, templates.value, suggested.value] = await Promise.all([
+  [customers.value, categories.value, templates.value, tradingNames.value, suggested.value] = await Promise.all([
     api.listContacts(),
     api.listCategories(),
     api.listTemplates(),
+    api.listTradingNames(),
     api.suggestInvoiceNumber(doc.value.type),
   ]);
   form.value.templateId = templates.value.find((t) => t.isDefault)?.id ?? null;
@@ -265,6 +307,7 @@ onMounted(async () => {
       terms: termOptions.value.some((o) => o.value === days) ? days : 'custom',
       dueDate: inv.dueDate,
       templateId: inv.templateId ?? form.value.templateId,
+      tradingNameId: inv.tradingNameId,
       pricesIncludeTax: inv.pricesIncludeTax,
       notes: inv.notes ?? '',
       lines: inv.lines.map((l) => ({
@@ -279,6 +322,7 @@ onMounted(async () => {
   } else {
     const contact = Number(route.query.contact);
     if (contact) form.value.contactId = contact;
+    if (!isBill.value) useTradingName(tradingNameFor(form.value.contactId));
     form.value.lines = [blankLine()];
   }
   form.value.terms = existing.value ? form.value.terms : startTerms();
@@ -418,6 +462,13 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
         <Card>
           <CardSection v-if="doc.printable">
             <FormLayout>
+              <Select
+                v-if="tradingNameOptions.length > 1"
+                :model-value="form.tradingNameId"
+                label="From"
+                :options="tradingNameOptions"
+                @update:model-value="pickTradingName"
+              />
               <Select v-model="form.templateId" label="Template" :options="templateOptions" />
               <Button type="plain" icon="mdi:palette-outline" @click="router.push('/invoices/templates')">Edit templates</Button>
             </FormLayout>

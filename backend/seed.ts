@@ -2,7 +2,10 @@ import type { Database } from 'tjs:sqlite';
 import { COUNTRIES, type Country, type SeedCategory } from '../src/shared/countries';
 
 export interface BooksSetup {
+  /** The owner's legal name. */
   name: string;
+  /** The first trading name; defaults to `name`. */
+  tradingName?: string;
   country: Country;
   /** 'MM-DD', the day the financial year starts. */
   fiscalYearStart: string;
@@ -38,5 +41,6 @@ export function seedBooks(db: Database, setup: BooksSetup) {
   cat.finalize();
 
   const today = new Date().toISOString().slice(0, 10);
+  db.prepare('INSERT INTO trading_names (name, is_default) VALUES (?, 1)').run(setup.tradingName?.trim() || setup.name);
   db.prepare("INSERT INTO accounts (name, kind, opening_date, sort) VALUES ('Business Account', 'bank', ?, 0)").run(today);
 }

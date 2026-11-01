@@ -11,6 +11,7 @@ export type CategoryClass = 'pnl' | 'tax' | 'owner' | 'loan' | 'asset';
 export type DocType = 'invoice' | 'bill' | 'quote' | 'credit';
 
 export interface BooksSettings {
+  /** The owner's legal name. Documents show a trading name instead. */
   name: string;
   /** Set when the books are made; can't change. */
   country: Country;
@@ -34,9 +35,6 @@ export interface BooksSettings {
   creditPrefix: string;
   creditNext: number;
   paymentTermsDays: number;
-  businessAddress: string;
-  businessEmail: string;
-  businessPhone: string;
   color: string;
   logo: string;
   lockDate: string | null;
@@ -193,10 +191,40 @@ export interface Contact {
   received: number;
   paid: number;
   lastDate: string | null;
+  /** Customers: the trading name to invoice them as (null = the default). */
+  tradingNameId: number | null;
 }
 
 export type ContactInput = Pick<Contact, 'kind' | 'name'> &
-  Partial<Pick<Contact, 'email' | 'phone' | 'address' | 'notes'>> & { id?: number };
+  Partial<Pick<Contact, 'email' | 'phone' | 'address' | 'notes' | 'tradingNameId'>> & { id?: number };
+
+export interface TradingName {
+  id: number;
+  name: string;
+  logo: string | null;
+  address: string | null;
+  email: string | null;
+  phone: string | null;
+  paymentDetails: string | null;
+  templateId: number | null;
+  isDefault: boolean;
+  isArchived: boolean;
+  /** documents from it */
+  uses: number;
+}
+
+export type TradingNameInput = Omit<TradingName, 'id' | 'isDefault' | 'isArchived' | 'uses'> & { id?: number };
+
+/** Who a document is from, as printed on it (a snapshot once sent). */
+export interface Sender {
+  tradingNameId: number;
+  name: string;
+  address: string | null;
+  email: string | null;
+  phone: string | null;
+  paymentDetails: string | null;
+  logo: string | null;
+}
 
 export type InvoiceStatus =
   | 'draft' | 'awaiting' | 'partial' | 'overdue' | 'paid' | 'void'
@@ -215,6 +243,8 @@ export interface InvoiceRow {
   status: InvoiceStatus;
   reference: string | null;
   sourceId: number | null;
+  /** null on bills */
+  tradingNameId: number | null;
   net: number;
   tax: number;
   total: number;
@@ -259,6 +289,8 @@ export interface Invoice extends InvoiceRow {
   sourceNumber: string | null;
   sourceType: DocType | null;
   scheduleId: number | null;
+  /** null on bills */
+  sender: Sender | null;
 }
 
 export interface InvoiceInput {
@@ -272,6 +304,7 @@ export interface InvoiceInput {
   reference?: string | null;
   notes?: string | null;
   templateId?: number | null;
+  tradingNameId?: number | null;
   pricesIncludeTax: boolean;
   lines: InvoiceLine[];
   status?: 'draft' | 'sent';
@@ -291,7 +324,6 @@ export interface InvoiceTemplate {
   accent: string;
   logo: string | null;
   title: string;
-  paymentDetails: string | null;
   footer: string | null;
   showTaxColumn: boolean;
   layout: TemplateLayout;
@@ -388,6 +420,11 @@ export interface StatementLine {
 
 export interface Statement {
   side: 'customer' | 'supplier';
+  /** The trading name it's from (customers); a supplier statement still has one for the header. */
+  sender: Sender | null;
+  tradingNameId: number | null;
+  /** Every trading name the customer has documents under. */
+  tradingNames: { id: number; name: string }[];
   contact: { id: number; name: string; email: string | null; address: string | null };
   from: string;
   to: string;
@@ -399,6 +436,7 @@ export interface Statement {
 }
 
 export interface Remittance {
+  sender: Sender | null;
   date: string;
   accountName: string;
   contact: { id: number; name: string; email: string | null; address: string | null };
@@ -598,7 +636,7 @@ export const api = {
     call<Record<string, { categoryId: number; kind: 'income' | 'expense' }>>('import.suggest', { names }),
   commitImport: (plan: ImportPlan) => call<ImportResult>('import.commit', plan),
   start: () => call<StartState>('app.start'),
-  createBooks: (p: { name: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxId?: string }) =>
+  createBooks: (p: { name: string; tradingName?: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxId?: string }) =>
     call<Books>('books.create', p),
   createDemo: (dir: string | null, today: string) => call<Books>('books.createDemo', { dir, today }),
   openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),
@@ -647,6 +685,11 @@ export const api = {
     call<number>('invoices.recordPayment', p),
   deletePayment: (entryId: number) => call<true>('invoices.deletePayment', { entryId }),
 
+  listTradingNames: () => call<TradingName[]>('tradingNames.list'),
+  saveTradingName: (t: TradingNameInput) => call<number>('tradingNames.save', t),
+  setDefaultTradingName: (id: number) => call<true>('tradingNames.setDefault', { id }),
+  archiveTradingName: (id: number, archived: boolean) => call<true>('tradingNames.archive', { id, archived }),
+  deleteTradingName: (id: number) => call<true>('tradingNames.delete', { id }),
   listTemplates: () => call<InvoiceTemplate[]>('templates.list'),
   saveTemplate: (t: TemplateInput) => call<number>('templates.save', t),
   setDefaultTemplate: (id: number) => call<true>('templates.setDefault', { id }),
@@ -658,7 +701,7 @@ export const api = {
   basReport: (p: { from: string; to: string; basis: Basis }) => call<BasReport>('reports.bas', p),
   agedReceivables: (asOf: string) => call<AgedContact[]>('reports.agedReceivables', { asOf }),
   agedPayables: (asOf: string) => call<AgedContact[]>('reports.agedPayables', { asOf }),
-  statement: (p: { contactId: number; from: string; to: string }) => call<Statement>('reports.statement', p),
+  statement: (p: { contactId: number; from: string; to: string; tradingNameId?: number | null }) => call<Statement>('reports.statement', p),
   remittance: (entryId: number) => call<Remittance>('bills.remittance', { entryId }),
 
   reconcileState: (accountId: number) => call<ReconcileState>('reconcile.state', { accountId }),

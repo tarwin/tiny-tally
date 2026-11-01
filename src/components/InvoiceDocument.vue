@@ -3,7 +3,7 @@
 // near-black ink) on purpose instead of theme tokens: it must look the same
 // in dark mode and when printed.
 import { computed } from 'vue';
-import type { Books, DocType, InvoiceLine, InvoiceStatus, InvoiceTemplate } from '../lib/api';
+import type { Books, DocType, InvoiceLine, InvoiceStatus, InvoiceTemplate, Sender } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { countryProfile } from '../shared/countries';
@@ -35,7 +35,9 @@ export interface InvoiceDocData {
 const props = defineProps<{
   invoice: InvoiceDocData;
   books: Books;
-  template: Pick<InvoiceTemplate, 'style' | 'accent' | 'logo' | 'title' | 'paymentDetails' | 'footer' | 'showTaxColumn'> & {
+  /** The trading name it's from. */
+  sender: Sender | null;
+  template: Pick<InvoiceTemplate, 'style' | 'accent' | 'logo' | 'title' | 'footer' | 'showTaxColumn'> & {
     layout?: InvoiceTemplate['layout'];
   } | null;
 }>();
@@ -47,7 +49,6 @@ const t = computed(
       accent: '#2f6fde',
       logo: null,
       title: countryProfile(props.books.country).invoiceTitle(true),
-      paymentDetails: null,
       footer: null,
       showTaxColumn: true,
     },
@@ -66,6 +67,9 @@ const layout = computed(() => normaliseLayout(props.template?.layout));
 const show = computed(() => ({ ...layout.value.show, taxId: layout.value.show.taxId || taxOn.value }));
 const taxIdLabel = computed(() => countryProfile(props.books.country).taxId.label);
 const showTax = computed(() => taxOn.value && t.value.showTaxColumn);
+const from = computed(() => props.sender ?? { name: props.books.name, address: null, email: null, phone: null, paymentDetails: null, logo: null });
+// A template's own logo wins; otherwise the trading name's.
+const logo = computed(() => t.value.logo || from.value.logo);
 const money = (v: number) => formatMoney(v, currency.value);
 
 /** Wording that only makes sense on invoices keeps its quote/credit-note form there. */
@@ -93,7 +97,7 @@ const fill = (text: string | null | undefined) =>
     due_date: formatDay(props.invoice.dueDate),
     total: money(props.invoice.total),
     amount_due: money(amountDue.value),
-    business: props.books.name,
+    business: from.value.name,
   }).trim();
 
 /** Whether a section has anything to show on this document. */
@@ -104,7 +108,7 @@ function hasContent(key: TemplateSection['key']) {
     case 'notes':
       return !!props.invoice.notes;
     case 'payment':
-      return type.value === 'invoice' && !!fill(t.value.paymentDetails);
+      return type.value === 'invoice' && !!fill(from.value.paymentDetails);
     case 'footer':
       return !!fill(t.value.footer);
     default:
@@ -144,12 +148,12 @@ const stamp = computed(() => {
     <template v-for="s in body" :key="s.key">
       <header v-if="s.key === 'header'" class="Doc__head" :class="sectionClass(s)">
         <div class="Doc__from">
-          <img v-if="t.logo" :src="t.logo" alt="" class="Doc__logo" />
-          <div class="Doc__fromName">{{ books.name }}</div>
+          <img v-if="logo" :src="logo" alt="" class="Doc__logo" />
+          <div class="Doc__fromName">{{ from.name }}</div>
           <div v-if="books.taxId && show.taxId" class="Doc__taxId">{{ taxIdLabel }} {{ books.taxId }}</div>
-          <div v-if="books.businessAddress && show.fromAddress" class="Doc__pre">{{ books.businessAddress }}</div>
-          <div v-if="(books.businessEmail || books.businessPhone) && show.fromContact" class="Doc__muted">
-            {{ [books.businessEmail, books.businessPhone].filter(Boolean).join(' · ') }}
+          <div v-if="from.address && show.fromAddress" class="Doc__pre">{{ from.address }}</div>
+          <div v-if="(from.email || from.phone) && show.fromContact" class="Doc__muted">
+            {{ [from.email, from.phone].filter(Boolean).join(' · ') }}
           </div>
         </div>
         <div class="Doc__titleBlock">
@@ -225,7 +229,7 @@ const stamp = computed(() => {
 
       <section v-else-if="s.key === 'payment'" class="Doc__pay" :class="sectionClass(s)">
         <div class="Doc__label">{{ label('payment') }}</div>
-        <div class="Doc__pre">{{ fill(t.paymentDetails) }}</div>
+        <div class="Doc__pre">{{ fill(from.paymentDetails) }}</div>
       </section>
 
       <section v-else-if="s.key === 'footer'" class="Doc__footer Doc__pre" :class="sectionClass(s)">{{ fill(t.footer) }}</section>
@@ -235,7 +239,7 @@ const stamp = computed(() => {
       <template v-for="s in foot" :key="s.key">
         <div v-if="s.key === 'payment'" class="Doc__pay" :class="sectionClass(s)">
           <div class="Doc__label">{{ label('payment') }}</div>
-          <div class="Doc__pre">{{ fill(t.paymentDetails) }}</div>
+          <div class="Doc__pre">{{ fill(from.paymentDetails) }}</div>
         </div>
         <div v-else-if="s.key === 'footer'" class="Doc__footer Doc__pre" :class="sectionClass(s)">{{ fill(t.footer) }}</div>
         <div v-else-if="s.key === 'intro'" class="Doc__intro Doc__pre" :class="sectionClass(s)">{{ fill(layout.intro) }}</div>

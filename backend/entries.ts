@@ -280,11 +280,14 @@ export interface ContactInput {
   phone?: string | null;
   address?: string | null;
   notes?: string | null;
+  /** Customers: the trading name to invoice them as (null = the default). */
+  tradingNameId?: number | null;
 }
 
 export function listContacts() {
   return all(getBooks().db,
     `SELECT ct.id, ct.kind, ct.name, ct.email, ct.phone, ct.address, ct.notes, ct.is_archived AS archived,
+       ct.trading_name_id AS tradingNameId,
        COUNT(e.id) AS uses,
        COALESCE(SUM(CASE WHEN e.kind = 'income' THEN e.amount END), 0) AS received,
        COALESCE(SUM(CASE WHEN e.kind = 'expense' THEN e.amount END), 0) AS paid,
@@ -302,14 +305,16 @@ export function saveContact(input: ContactInput) {
   const name = clean(input.name);
   if (!name) throw new Error('Give the contact a name.');
   if (input.kind !== 'customer' && input.kind !== 'vendor') throw new Error('Choose customer or vendor.');
-  const fields = [input.kind, name, clean(input.email), clean(input.phone), clean(input.address), clean(input.notes)];
+  const tradingNameId = input.kind === 'customer' && typeof input.tradingNameId === 'number'
+    && one(db, 'SELECT id FROM trading_names WHERE id = ?', input.tradingNameId) ? input.tradingNameId : null;
+  const fields = [input.kind, name, clean(input.email), clean(input.phone), clean(input.address), clean(input.notes), tradingNameId];
   if (input.id) {
-    run(db, 'UPDATE contacts SET kind = ?, name = ?, email = ?, phone = ?, address = ?, notes = ? WHERE id = ?',
+    run(db, 'UPDATE contacts SET kind = ?, name = ?, email = ?, phone = ?, address = ?, notes = ?, trading_name_id = ? WHERE id = ?',
       ...fields, input.id);
     return input.id;
   }
   return one<{ id: number }>(db,
-    'INSERT INTO contacts (kind, name, email, phone, address, notes) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+    'INSERT INTO contacts (kind, name, email, phone, address, notes, trading_name_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
     ...fields)!.id;
 }
 
