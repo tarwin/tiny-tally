@@ -3,12 +3,13 @@
 //
 // Every country's codes live here; the books' country picks its set
 // (countries.ts). Australia uses the usual bookkeeping set, each mapped onto
-// BAS labels (see basLabelsFor). The US has sales tax on sales only. Amounts
+// BAS labels (see basLabelsFor). New Zealand's map onto GST return boxes
+// (nzBoxesFor). The US has sales tax on sales only. Amounts
 // are integer cents; entry amounts are always tax-inclusive (what actually
 // left or hit the bank).
 import type { CountryTax } from './countries';
 
-export type TaxCode = 'GST' | 'FRE' | 'EXP' | 'CAP' | 'INP' | 'NTR' | 'TAX' | 'NON';
+export type TaxCode = 'GST' | 'FRE' | 'EXP' | 'CAP' | 'INP' | 'NTR' | 'TAX' | 'NON' | 'ZER' | 'EXE';
 
 export interface TaxCodeInfo {
   code: TaxCode;
@@ -22,12 +23,15 @@ export interface TaxCodeInfo {
 }
 
 export const TAX_CODES: TaxCodeInfo[] = [
-  { code: 'GST', label: 'GST', taxable: true, sales: true, purchases: true, help: 'Includes 10% GST' },
+  { code: 'GST', label: 'GST', taxable: true, sales: true, purchases: true, help: 'Includes GST at the standard rate' },
   { code: 'FRE', label: 'GST free', taxable: false, sales: true, purchases: true, help: 'e.g. basic food, some health and education, bank fees on purchases' },
   { code: 'EXP', label: 'Export (GST free)', taxable: false, sales: true, purchases: false, help: 'Sales of goods or services exported overseas (G2)' },
   { code: 'CAP', label: 'Capital purchase', taxable: true, sales: false, purchases: true, help: 'Equipment and other assets, with GST (G10)' },
   { code: 'INP', label: 'Input taxed', taxable: false, sales: true, purchases: true, help: 'Financial supplies, residential rent, interest' },
   { code: 'NTR', label: 'Not reportable', taxable: false, sales: true, purchases: true, help: 'Left off the tax return entirely: wages, owner drawings, loans, tax payments' },
+  // New Zealand: GST, zero-rated, exempt and not reportable.
+  { code: 'ZER', label: 'Zero-rated', taxable: false, sales: true, purchases: true, help: 'GST at 0%: exports and other zero-rated supplies (Box 6)' },
+  { code: 'EXE', label: 'Exempt', taxable: false, sales: true, purchases: true, help: 'Financial services, interest, residential rent: left off the GST return' },
   // US sales tax: charged on sales only; tax paid on purchases is part of the cost.
   { code: 'TAX', label: 'Taxable', taxable: true, sales: true, purchases: false, help: 'Sales tax charged at your rate' },
   { code: 'NON', label: 'Not taxable', taxable: false, sales: true, purchases: false, help: 'Exempt or out of state: no sales tax charged' },
@@ -98,6 +102,16 @@ export function basLabelsFor(kind: 'income' | 'expense', code: TaxCode | null) {
   }
   if (code === 'CAP') return { g: ['G10'], tax: '1B' as const };
   return { g: ['G11'], tax: TAX_CODE_MAP[code].taxable ? ('1B' as const) : null };
+}
+
+/**
+ * Which NZ GST return boxes a row lands in (GST101A). Box 5 is all sales
+ * including GST and zero-rated sales; Box 6 the zero-rated part. Box 11 is
+ * purchases with GST to claim. Exempt and not-reportable rows stay off.
+ */
+export function nzBoxesFor(kind: 'income' | 'expense', code: TaxCode | null): ('5' | '6' | '11')[] {
+  if (kind === 'income') return code === 'GST' ? ['5'] : code === 'ZER' ? ['5', '6'] : [];
+  return code === 'GST' ? ['11'] : [];
 }
 
 // ---- per country --------------------------------------------------------------

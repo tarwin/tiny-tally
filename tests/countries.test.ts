@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { COUNTRIES, countryProfile } from '../src/shared/countries.ts';
 import { SCHEDULE_C_MAP, isScheduleCLine } from '../src/shared/scheduleC.ts';
-import { taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../src/shared/tax.ts';
+import { nzBoxesFor, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../src/shared/tax.ts';
+import { RETURN_FORMS, adjustmentGst, adjustmentTotals } from '../src/shared/taxReturns.ts';
 
 test('ABN checksum', () => {
   const { check } = COUNTRIES.AU.taxId;
@@ -71,4 +72,49 @@ test('every US P&L category is on a Schedule C line of its own kind', () => {
   }
   assert.equal(COUNTRIES.US.categories.expense.find((c) => c.name === 'Meals & Entertainment')?.reportLine, '24b');
   assert.equal(SCHEDULE_C_MAP['24b'].deductiblePct, 50);
+});
+
+test('NZ GST return boxes (GST101A, IR375)', () => {
+  assert.deepEqual(nzBoxesFor('income', 'GST'), ['5']);
+  assert.deepEqual(nzBoxesFor('income', 'ZER'), ['5', '6']);
+  assert.deepEqual(nzBoxesFor('income', 'EXE'), []);
+  assert.deepEqual(nzBoxesFor('expense', 'GST'), ['11']);
+  assert.deepEqual(nzBoxesFor('expense', 'EXE'), []);
+  // $115 GST sales, $200 exports, $23 of purchases, $1 adjustment, $2 credit adjustment.
+  const form = RETURN_FORMS['nz-gst'];
+  const box = (code: string) => form.rows({ '5': 31500, '6': 20000, '11': 2300 }, { box9: 100, box13: 200 }, 'two-monthly').find((r) => r.code === code)!.value;
+  assert.equal(box('7'), 11500);
+  assert.equal(box('8'), 1500);
+  assert.equal(box('10'), 1600);
+  assert.equal(box('12'), 300);
+  assert.equal(box('14'), 500);
+  assert.equal(box('15'), 1100);
+  assert.equal(form.net({ '5': 0, '6': 0, '11': 2300 }, {}), -300);
+});
+
+test('BAS keeps whole dollars and the Simpler BAS labels', () => {
+  const form = RETURN_FORMS.bas;
+  const f = { G1: 1100099, G2: 0, G3: 0, G4: 0, G10: 0, G11: 0, '1A': 100099, '1B': 50050 };
+  assert.equal(form.net(f, { t7: 12599 }), 100000 - 50000 + 12500);
+  assert.deepEqual(form.rows(f, {}, 'quarterly').map((r) => r.code).slice(0, 3), ['G1', '1A', '1B']);
+  assert.ok(form.rows(f, {}, 'monthly').some((r) => r.code === 'G11'));
+});
+
+test('NZ GST adjustments (IR372)', () => {
+  // $460 of phone (category 7) this period, $2,300 of entertainment (category 9) this year.
+  const ctx = { period: { 7: 46000 }, yearToDate: { 7: 92000, 9: 230000 } };
+  assert.equal(adjustmentGst({ type: 'private-use', description: '', categoryId: 7, percent: 30 }, ctx), 1800);
+  // Entertainment is always half, over the year to date.
+  assert.equal(adjustmentGst({ type: 'entertainment', description: '', categoryId: 9, percent: 80 }, ctx), 15000);
+  assert.equal(adjustmentGst({ type: 'bad-debt', description: '', amount: 11500 }, ctx), 1500);
+  assert.equal(adjustmentGst({ type: 'customs', description: '', amount: 4321 }, ctx), 4321);
+  assert.deepEqual(
+    adjustmentTotals([
+      { type: 'private-use', description: '', categoryId: 7, percent: 30 },
+      { type: 'customs', description: '', amount: 4321 },
+      { type: 'bad-debt', description: '', amount: 11500 },
+    ], ctx),
+    { box9: 1800, box13: 5821 },
+  );
+  assert.ok(RETURN_FORMS['nz-gst'].adjustments!.every((a) => a.box === '9' || a.box === '13'));
 });

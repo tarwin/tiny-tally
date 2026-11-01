@@ -1,5 +1,6 @@
 // Typed front door to the backend (backend/main.ts). Keep names in sync.
-import type { Country } from '../shared/countries';
+import type { Country, TaxFrequency } from '../shared/countries';
+import type { Adjustment, AdjustmentContext, ReturnFigures, ReturnInputs, ReturnKind } from '../shared/taxReturns';
 import type { TaxCode } from '../shared/tax';
 import type { TemplateLayout } from '../shared/templateLayout';
 
@@ -24,7 +25,8 @@ export interface BooksSettings {
   /** ABN, NZ GST number or EIN, per the country. */
   taxId: string;
   taxBasis: 'cash' | 'accrual';
-  basFrequency: 'monthly' | 'quarterly' | 'annual';
+  /** How often tax returns are filed. */
+  taxPeriod: TaxFrequency;
   pricesIncludeTax: boolean;
   invoicePrefix: string;
   invoiceNext: number;
@@ -351,18 +353,8 @@ export interface ProfitAndLoss {
   totals: { income: number; expense: number; net: number; compareIncome: number; compareExpense: number; compareNet: number };
 }
 
-export interface BasFigures {
-  G1: number;
-  G2: number;
-  G3: number;
-  G4: number;
-  G10: number;
-  G11: number;
-  '1A': number;
-  '1B': number;
-}
-
-export interface BasDetailRow {
+/** A transaction behind a tax return's figures. */
+export interface TaxReturnDetailRow {
   entryId: number | null;
   invoiceId: number | null;
   date: string;
@@ -376,15 +368,18 @@ export interface BasDetailRow {
   labels: string[];
 }
 
-export interface BasReport {
-  figures: BasFigures;
-  detail: BasDetailRow[];
+export interface TaxReturnReport {
+  kind: ReturnKind;
+  figures: ReturnFigures;
+  detail: TaxReturnDetailRow[];
   untagged: number;
+  /** NZ: what percent adjustments are worked out from. */
+  context: AdjustmentContext | null;
 }
 
 export interface SalesTaxReport {
   totals: { taxableSales: number; nonTaxableSales: number; totalSales: number; taxCollected: number };
-  detail: Omit<BasDetailRow, 'kind' | 'labels'>[];
+  detail: Omit<TaxReturnDetailRow, 'kind' | 'labels'>[];
   untagged: number;
 }
 
@@ -405,15 +400,16 @@ export interface ScheduleCReport {
   totals: { grossIncome: number; totalExpenses: number; netProfit: number };
 }
 
-export interface BasReturn {
+export interface TaxReturn {
   id: number;
   periodStart: string;
   periodEnd: string;
   basis: Basis;
-  figures: BasFigures;
-  w1: number;
-  w2: number;
-  t7: number;
+  figures: ReturnFigures;
+  /** The boxes typed in by hand. */
+  inputs: ReturnInputs;
+  /** NZ: the adjustments behind Boxes 9 and 13, with the GST each came to. */
+  adjustments: Adjustment[];
   status: 'draft' | 'lodged';
   lodgedAt: string | null;
 }
@@ -723,7 +719,7 @@ export const api = {
 
   profitAndLoss: (p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string }) =>
     call<ProfitAndLoss>('reports.profitAndLoss', p),
-  basReport: (p: { from: string; to: string; basis: Basis }) => call<BasReport>('reports.bas', p),
+  taxReturnReport: (p: { from: string; to: string; basis: Basis }) => call<TaxReturnReport>('reports.taxReturn', p),
   salesTaxReport: (p: { from: string; to: string; basis: Basis }) => call<SalesTaxReport>('reports.salesTax', p),
   scheduleCReport: (p: { from: string; to: string; basis: Basis }) => call<ScheduleCReport>('reports.scheduleC', p),
   agedReceivables: (asOf: string) => call<AgedContact[]>('reports.agedReceivables', { asOf }),
@@ -769,11 +765,11 @@ export const api = {
 
   getPref: <T>(key: string) => call<T | null>('prefs.get', { key }),
   setPref: (key: string, value: unknown) => call<true>('prefs.set', { key, value }),
-  listBasReturns: () => call<BasReturn[]>('bas.list'),
-  saveBasReturn: (p: { periodStart: string; periodEnd: string; basis: Basis; w1: number; w2: number; t7: number; lodge?: boolean }) =>
-    call<Books>('bas.save', p),
-  reopenBasReturn: (id: number) => call<Books>('bas.reopen', { id }),
-  deleteBasReturn: (id: number) => call<true>('bas.delete', { id }),
+  listTaxReturns: () => call<TaxReturn[]>('taxReturns.list'),
+  saveTaxReturn: (p: { periodStart: string; periodEnd: string; basis: Basis; inputs: ReturnInputs; adjustments?: Adjustment[]; lodge?: boolean }) =>
+    call<Books>('taxReturns.save', p),
+  reopenTaxReturn: (id: number) => call<Books>('taxReturns.reopen', { id }),
+  deleteTaxReturn: (id: number) => call<true>('taxReturns.delete', { id }),
 
   writeText: (path: string, text: string) => call<string>('file.writeText', { path, text }),
 };

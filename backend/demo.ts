@@ -13,7 +13,7 @@ import {
   setInvoiceStatus,
 } from './invoices';
 import { finishReconcile, startReconcile, tick } from './reconcile';
-import { basReport, saveBasReturn } from './reports';
+import { basReport, saveTaxReturn } from './reports';
 import { saveRule } from './rules';
 import { saveSchedule } from './schedules';
 import { updateSettings } from './settings';
@@ -61,7 +61,7 @@ export function seedDemo(today: string) {
     paymentTermsDays: 14,
     pricesIncludeTax: false,
     taxBasis: 'cash',
-    basFrequency: 'quarterly',
+    taxPeriod: 'quarterly',
   });
 
   // ---- accounts --------------------------------------------------------------
@@ -420,7 +420,7 @@ export function seedDemo(today: string) {
   finishReconcile(rec);
 
   for (const [qs, qe] of quarters) {
-    saveBasReturn({ periodStart: qs, periodEnd: qe, basis: 'cash', w1: 0, w2: 0, t7: 125000, lodge: qe <= lodgeUntil });
+    saveTaxReturn({ periodStart: qs, periodEnd: qe, basis: 'cash', inputs: { t7: 125000 }, lodge: qe <= lodgeUntil });
   }
 
   return all(db, 'SELECT COUNT(*) AS n FROM entries')[0];

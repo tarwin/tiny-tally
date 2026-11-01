@@ -1,4 +1,5 @@
 // Date ranges, built in the user's local calendar as YYYY-MM-DD.
+import type { TaxFrequency } from '../shared/countries';
 const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 export { iso as toIso };
@@ -98,12 +99,14 @@ function yearLabel(fyStart: Date, ys: YearStart) {
   return ys === '01-01' ? String(fyStart.getFullYear()) : `FY${String(fyStart.getFullYear() + 1).slice(2)}`;
 }
 
+const MONTHS_IN: Record<TaxFrequency, number> = { monthly: 1, 'two-monthly': 2, quarterly: 3, 'six-monthly': 6, annual: 12 };
+
 /**
  * Tax periods, newest first, aligned to the financial year. Quarters are
  * numbered within the financial year (Q1 = first three months).
  */
-export function taxPeriods(frequency: 'monthly' | 'quarterly' | 'annual', ys: YearStart, count = 12, now = new Date()): TaxPeriod[] {
-  const months = frequency === 'monthly' ? 1 : frequency === 'quarterly' ? 3 : 12;
+export function taxPeriods(frequency: TaxFrequency, ys: YearStart, count = 12, now = new Date()): TaxPeriod[] {
+  const months = MONTHS_IN[frequency];
   const today = startOfDay(now);
   // Find the period containing today, then walk back.
   const fyStart = yearStartFor(today, ys);
@@ -115,7 +118,7 @@ export function taxPeriods(frequency: 'monthly' | 'quarterly' | 'annual', ys: Ye
     const end = addDays(addMonths(start, months), -1);
     const fy = yearStartFor(start, ys);
     let label: string;
-    if (months === 1) label = span(start, end);
+    if (months === 1 || months === 2 || months === 6) label = span(start, end);
     else if (months === 3) {
       const q = Math.round(((start.getFullYear() - fy.getFullYear()) * 12 + start.getMonth() - fy.getMonth()) / 3) + 1;
       label = `Q${q} ${yearLabel(fy, ys)} (${span(start, end)})`;

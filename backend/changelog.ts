@@ -11,7 +11,7 @@ import { all, currentHost, getBooks, one, run } from './db';
 /** Tables whose rows are logged. meta (settings) is handled separately. */
 const LOGGED = [
   'accounts', 'categories', 'contacts', 'entries', 'invoices', 'invoice_lines', 'credit_allocations',
-  'invoice_templates', 'reconciliations', 'schedules', 'rules', 'journals', 'journal_lines', 'bas_returns',
+  'invoice_templates', 'reconciliations', 'schedules', 'rules', 'journals', 'journal_lines', 'tax_returns',
   'trading_names',
 ];
 /** Bookkeeping columns that change on every save and mean nothing on their own. */

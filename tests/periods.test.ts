@@ -100,3 +100,24 @@ test('previousPeriod', () => {
   // Not whole months: same number of days.
   assert.deepEqual(previousPeriod('2026-03-10', '2026-03-16'), { from: '2026-03-03', to: '2026-03-09' });
 });
+
+test('NZ 2-monthly periods line up with a 1 April year', () => {
+  assert.deepEqual(
+    taxPeriods('two-monthly', '04-01', 3, day('2026-11-01')).map((x) => [x.label, x.from, x.to, x.current]),
+    [
+      ['Oct–Nov 2026', '2026-10-01', '2026-11-30', true],
+      ['Aug–Sep 2026', '2026-08-01', '2026-09-30', false],
+      ['Jun–Jul 2026', '2026-06-01', '2026-07-31', false],
+    ],
+  );
+});
+
+test('NZ 6-monthly periods cross the calendar year', () => {
+  assert.deepEqual(
+    taxPeriods('six-monthly', '04-01', 2, day('2027-01-15')).map((x) => [x.label, x.from, x.to]),
+    [
+      ['Oct 2026–Mar 2027', '2026-10-01', '2027-03-31'],
+      ['Apr–Sep 2026', '2026-04-01', '2026-09-30'],
+    ],
+  );
+});

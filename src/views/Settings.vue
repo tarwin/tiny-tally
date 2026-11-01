@@ -51,7 +51,7 @@ function fromBooks(c: Books): Form {
     taxEnabled: c.taxEnabled,
     taxId: c.taxId,
     taxBasis: c.taxBasis,
-    basFrequency: c.basFrequency,
+    taxPeriod: c.taxPeriod,
     pricesIncludeTax: c.pricesIncludeTax,
     invoicePrefix: c.invoicePrefix,
     quotePrefix: c.quotePrefix,
@@ -79,23 +79,17 @@ const fyDay = computed({
 const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fromBooks(books.value)));
 
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
-const basFrequencyOptions = [
-  { label: 'Quarterly', value: 'quarterly', description: 'Most small businesses. Uses Simpler BAS (G1, 1A, 1B).' },
-  { label: 'Monthly', value: 'monthly', description: 'Required if GST turnover is $20 million or more; shows the full set of labels.' },
-  { label: 'Annually', value: 'annual', description: 'For voluntary registrations under $75,000.' },
-];
-
 const profile = computed(() => countryProfile(books.value.country));
-const frequencyOptions = computed(() =>
-  profile.value.tax?.report === 'bas'
-    ? basFrequencyOptions
-    : [
-        { label: 'Monthly', value: 'monthly' },
-        { label: 'Quarterly', value: 'quarterly' },
-        { label: 'Annually', value: 'annual' },
-      ],
-);
+const frequencyOptions = computed(() => profile.value.tax?.frequencies ?? []);
 const rateError = ref<string | null>(null);
+/** NZ 2- and 6-monthly periods follow the balance date, which sets odd or even months. */
+const periodHint = computed(() => {
+  if (profile.value.tax?.report !== 'nz-gst' || !['two-monthly', 'six-monthly'].includes(form.value.taxPeriod)) return '';
+  const months = form.value.taxPeriod === 'two-monthly' ? 2 : 6;
+  const start = splitYearStart(form.value.fiscalYearStart).month;
+  const ends = Array.from({ length: 12 / months }, (_, i) => MONTHS[(start - 2 + months * (i + 1) + 12) % 12].slice(0, 3));
+  return `Periods end in ${ends.join(', ')}, lined up with your balance date. Change the financial year start to move them.`;
+});
 const taxIdProblem = computed(() => profile.value.taxId.check(form.value.taxId));
 
 async function chooseLogo() {
@@ -227,7 +221,7 @@ async function setLock(date: string | null) {
 
       <TradingNames />
 
-      <Card v-if="profile.tax" :title="profile.tax.report === 'bas' ? 'GST & BAS' : profile.tax.name">
+      <Card v-if="profile.tax" :title="profile.tax.report === 'bas' ? 'GST & BAS' : profile.tax.report === 'nz-gst' ? 'GST' : profile.tax.name">
         <CardSection>
           <FormLayout>
             <ToggleSwitch v-model="form.taxEnabled" :label="profile.tax.registered.label" />
@@ -252,10 +246,11 @@ async function setLock(date: string | null) {
                 </p>
               </div>
               <Select
-                v-model="form.basFrequency"
+                v-model="form.taxPeriod"
                 :label="profile.tax.report === 'bas' ? 'BAS reporting' : 'Filing frequency'"
                 :options="frequencyOptions"
-                :show-description="profile.tax.report === 'bas'"
+                :show-description="frequencyOptions.some((o) => o.description)"
+                :help-text="periodHint"
               />
               <ToggleSwitch v-model="form.pricesIncludeTax" :label="`Invoice prices include ${profile.tax.short} by default`" />
             </template>
@@ -292,9 +287,9 @@ async function setLock(date: string | null) {
           <p class="Hint Top">
             <template v-if="books.lockDate">
               Transactions and invoices on or before <strong>{{ formatDay(books.lockDate) }}</strong> can't be changed.
-              Lodging a BAS moves this forward automatically.
+              Lodging a tax return moves this forward automatically.
             </template>
-            <template v-else>Nothing is locked. Lodging a BAS locks its period, or you can set a date yourself.</template>
+            <template v-else>Nothing is locked. Lodging a tax return locks its period, or you can set a date yourself.</template>
           </p>
           <div class="Buttons Bottom">
             <DatePicker v-model="newLock" type="date" model-format="YYYY-MM-DD" placeholder="Lock up to…" />

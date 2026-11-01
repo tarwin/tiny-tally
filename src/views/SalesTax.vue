@@ -19,7 +19,7 @@ const router = useRouter();
 const books = computed(() => session.books!);
 const money = (v: number) => formatMoney(v, books.value.currency);
 
-const periods = computed(() => taxPeriods(books.value.basFrequency, books.value.fiscalYearStart, 12));
+const periods = computed(() => taxPeriods(books.value.taxPeriod, books.value.fiscalYearStart, 12));
 const periodKey = ref('');
 const period = computed(() => periods.value.find((p) => p.from === periodKey.value) ?? periods.value[0]);
 const periodOptions = computed(() =>

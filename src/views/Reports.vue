@@ -2,18 +2,22 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { Card, CardSection, Icon, Page } from '@octans/ui';
-import { api, type BasFigures } from '../lib/api';
+import { api } from '../lib/api';
 import { formatMoney } from '../lib/money';
 import { taxPeriods } from '../lib/periods';
 import { booksTax, session } from '../lib/session';
+import { RETURN_FORMS, isReturnKind } from '../shared/taxReturns';
 
 const router = useRouter();
 const books = computed(() => session.books!);
 const money = (v: number) => formatMoney(v, books.value.currency);
 
-const period = computed(() => taxPeriods(books.value.basFrequency, books.value.fiscalYearStart, 1)[0]);
-const gst = ref<BasFigures | null>(null);
+const period = computed(() => taxPeriods(books.value.taxPeriod, books.value.fiscalYearStart, 1)[0]);
 const tax = computed(() => booksTax());
+/** The BAS or NZ GST return, where these books prepare one. */
+const form = computed(() => (isReturnKind(tax.value?.report) ? RETURN_FORMS[tax.value.report] : null));
+/** Tax on sales and purchases so far this period. */
+const gst = ref<{ label: string; value: number }[] | null>(null);
 
 const reports = computed(() => [
   {
@@ -22,9 +26,17 @@ const reports = computed(() => [
     title: 'Profit & Loss',
     body: 'Income minus expenses for any period, by category. Compare with the period before.',
   },
+  ...(tax.value?.report === 'nz-gst'
+    ? [{
+        to: '/reports/tax-return',
+        icon: 'mdi:bank-outline',
+        title: 'GST return',
+        body: 'Your GST return figures (Boxes 5 to 15), ready to copy into myIR.',
+      }]
+    : []),
   ...(tax.value?.report === 'bas'
     ? [{
-        to: '/reports/bas',
+        to: '/reports/tax-return',
         icon: 'mdi:bank-outline',
         title: 'BAS & GST',
         body: 'Your Business Activity Statement figures (G1, 1A, 1B…), ready to copy into the ATO portal.',
@@ -85,8 +97,9 @@ const reports = computed(() => [
 ]);
 
 onMounted(async () => {
-  if (tax.value?.report !== 'bas') return;
-  gst.value = (await api.basReport({ from: period.value.from, to: period.value.to, basis: books.value.taxBasis })).figures;
+  if (!form.value) return;
+  const { figures } = await api.taxReturnReport({ from: period.value.from, to: period.value.to, basis: books.value.taxBasis });
+  gst.value = form.value.headline(figures);
 });
 </script>
 
@@ -95,11 +108,10 @@ onMounted(async () => {
     <Card v-if="gst" :title="`GST so far: ${period.label}`" class="Gst">
       <CardSection>
         <div class="Gst__row">
-          <div><div class="subdued">GST on sales (1A)</div><div class="Gst__v money">{{ money(gst['1A']) }}</div></div>
-          <div><div class="subdued">GST credits (1B)</div><div class="Gst__v money">{{ money(gst['1B']) }}</div></div>
+          <div v-for="g in gst" :key="g.label"><div class="subdued">{{ g.label }}</div><div class="Gst__v money">{{ money(g.value) }}</div></div>
           <div>
-            <div class="subdued">{{ gst['1A'] - gst['1B'] >= 0 ? 'Estimated to pay' : 'Estimated refund' }}</div>
-            <div class="Gst__v money">{{ money(Math.abs(gst['1A'] - gst['1B'])) }}</div>
+            <div class="subdued">{{ gst[0].value - gst[1].value >= 0 ? 'Estimated to pay' : 'Estimated refund' }}</div>
+            <div class="Gst__v money">{{ money(Math.abs(gst[0].value - gst[1].value)) }}</div>
           </div>
         </div>
       </CardSection>

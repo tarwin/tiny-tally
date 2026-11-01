@@ -26,7 +26,7 @@ export function seedBooks(db: Database, setup: BooksSetup) {
   meta.run('tax_enabled', profile.tax && (setup.taxEnabled ?? true) ? '1' : '0');
   if (profile.tax) meta.run('tax_rate_ppm', String(profile.tax.rateEditable ? (setup.taxRatePpm ?? profile.tax.defaultRatePpm) : profile.tax.defaultRatePpm));
   meta.run('tax_basis', 'cash');
-  meta.run('bas_frequency', 'quarterly');
+  meta.run('tax_period', profile.tax?.defaultFrequency ?? 'quarterly');
   meta.run('prices_include_tax', profile.tax && !profile.tax.pricesIncludeTax ? '0' : '1');
   meta.run('invoice_prefix', 'INV-');
   meta.run('invoice_next', '1');

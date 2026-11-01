@@ -3,12 +3,15 @@
 //
 // The country is picked when the books are made and can't change. It sets
 // the currency, the financial year, how ambiguous dates read on import, the
-// tax ID and the tax rules. Australia has GST and the BAS; the US has a
-// flat sales tax (or none). New Zealand GST comes later
-// (docs/PLAN-countries-trading-names.md).
+// tax ID and the tax rules. Australia has GST and the BAS, New Zealand GST
+// and the GST return, and the US a flat sales tax (or none).
 import type { TaxCode } from './tax';
 
 export type Country = 'AU' | 'NZ' | 'US';
+
+/** How often tax returns are filed. */
+export type TaxFrequency = 'monthly' | 'two-monthly' | 'quarterly' | 'six-monthly' | 'annual';
+export const TAX_FREQUENCIES: TaxFrequency[] = ['monthly', 'two-monthly', 'quarterly', 'six-monthly', 'annual'];
 
 export interface CountryTax {
   /** What the tax is called: 'GST', 'Sales tax'. */
@@ -33,7 +36,10 @@ export interface CountryTax {
   /** The ledger account the tax sits in. */
   account: string;
   /** The tax report the books prepare. */
-  report: 'bas' | 'us-sales-tax';
+  report: 'bas' | 'nz-gst' | 'us-sales-tax';
+  /** The filing frequencies on offer, and the usual one. */
+  frequencies: { value: TaxFrequency; label: string; description?: string }[];
+  defaultFrequency: TaxFrequency;
 }
 
 export interface CountryProfile {
@@ -176,6 +182,12 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       defaultCode: { sales: 'GST', purchases: 'GST' },
       account: 'GST',
       report: 'bas',
+      frequencies: [
+        { value: 'quarterly', label: 'Quarterly', description: 'Most small businesses. Uses Simpler BAS (G1, 1A, 1B).' },
+        { value: 'monthly', label: 'Monthly', description: 'Required if GST turnover is $20 million or more; shows the full set of labels.' },
+        { value: 'annual', label: 'Annually', description: 'For voluntary registrations under $75,000.' },
+      ],
+      defaultFrequency: 'quarterly',
     },
     invoiceTitle: (registered) => (registered ? 'Tax Invoice' : 'Invoice'),
     categories: categories({
@@ -192,9 +204,36 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
     fiscalYearStart: '04-01',
     dateOrder: 'dmy',
     taxId: { label: 'GST number', placeholder: '49-091-850', check: irdError },
-    tax: null,
+    tax: {
+      name: 'GST',
+      short: 'GST',
+      registered: { label: 'Registered for GST', help: 'Tracks GST on sales and purchases and prepares your GST return.' },
+      defaultRatePpm: 150_000,
+      rateEditable: false,
+      pricesIncludeTax: true,
+      spellOut: true,
+      adjustmentNote: false,
+      codes: ['GST', 'ZER', 'EXE', 'NTR'],
+      defaultCode: { sales: 'GST', purchases: 'GST' },
+      account: 'GST',
+      report: 'nz-gst',
+      // Periods line up with the balance date (IR375). IRD's default is 2-monthly.
+      frequencies: [
+        { value: 'two-monthly', label: '2-monthly', description: 'The usual choice, for sales under $24 million a year.' },
+        { value: 'monthly', label: 'Monthly', description: 'Required if sales are over $24 million a year; suits frequent refunds.' },
+        { value: 'six-monthly', label: '6-monthly', description: 'Only if sales are under $500,000 a year.' },
+      ],
+      defaultFrequency: 'two-monthly',
+    },
+    // Taxable supply information replaced the "tax invoice" rule in April
+    // 2023, but the title is still what people expect to see.
     invoiceTitle: (registered) => (registered ? 'Tax Invoice' : 'Invoice'),
-    categories: categories({ fallback: null, taxPayment: 'GST Payment', taxRefund: 'GST Refund' }),
+    categories: categories({
+      codes: { 'Interest Income': 'EXE', 'Bank Fees': 'EXE' },
+      fallback: { income: 'GST', expense: 'GST' },
+      taxPayment: 'GST Payment',
+      taxRefund: 'GST Refund',
+    }),
   },
   US: {
     code: 'US',
@@ -218,6 +257,12 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       defaultCode: { sales: 'TAX', purchases: 'NTR' },
       account: 'Sales tax payable',
       report: 'us-sales-tax',
+      frequencies: [
+        { value: 'monthly', label: 'Monthly' },
+        { value: 'quarterly', label: 'Quarterly' },
+        { value: 'annual', label: 'Annually' },
+      ],
+      defaultFrequency: 'quarterly',
     },
     invoiceTitle: () => 'Invoice',
     categories: categories({

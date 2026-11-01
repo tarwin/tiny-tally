@@ -58,11 +58,12 @@ import {
   basReport,
   salesTaxReport,
   scheduleCReport,
-  deleteBasReturn,
-  listBasReturns,
+  deleteTaxReturn,
+  listTaxReturns,
   profitAndLoss,
-  reopenBasReturn,
-  saveBasReturn,
+  reopenTaxReturn,
+  saveTaxReturn,
+  taxReturnReport,
 } from './reports';
 import { getSettings, isYearStart, updateSettings, type BooksSettings } from './settings';
 import { DEMO_NAME, seedDemo } from './demo';
@@ -596,16 +597,17 @@ Object.assign(api, {
   'reports.salesTax': async (p: Parameters<typeof salesTaxReport>[0]) => salesTaxReport(p),
   'reports.scheduleC': async (p: Parameters<typeof scheduleCReport>[0]) => scheduleCReport(p),
   'reports.agedReceivables': async ({ asOf }: { asOf: string }) => agedReceivables(asOf),
-  'bas.list': async () => listBasReturns(),
-  'bas.save': async (p: Parameters<typeof saveBasReturn>[0], _app, { window: win }) => {
-    saveBasReturn(p);
+  'reports.taxReturn': async (p: Parameters<typeof taxReturnReport>[0]) => taxReturnReport(p),
+  'taxReturns.list': async () => listTaxReturns(),
+  'taxReturns.save': async (p: Parameters<typeof saveTaxReturn>[0], _app, { window: win }) => {
+    saveTaxReturn(p);
     return booksInfo(win);
   },
-  'bas.reopen': async ({ id }: { id: number }, _app, { window: win }) => {
-    reopenBasReturn(id);
+  'taxReturns.reopen': async ({ id }: { id: number }, _app, { window: win }) => {
+    reopenTaxReturn(id);
     return booksInfo(win);
   },
-  'bas.delete': async ({ id }: { id: number }) => deleteBasReturn(id),
+  'taxReturns.delete': async ({ id }: { id: number }) => deleteTaxReturn(id),
 
   /** Write a text file the user chose with a save dialog (CSV exports). */
   'file.writeText': async ({ path, text }: { path: string; text: string }) => {

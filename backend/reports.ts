@@ -1,8 +1,22 @@
-// Profit & Loss, BAS / GST, US sales tax and Schedule C, and lodged BAS returns.
+// Profit & Loss, the BAS and NZ GST return, US sales tax and Schedule C,
+// and lodged tax returns.
 import { all, getBooks, one, run } from './db';
 import { summarise } from './entries';
 import { getSettings, updateSettings } from './settings';
-import { basLabelsFor, type TaxCode } from '../src/shared/tax';
+import { basLabelsFor, nzBoxesFor, type TaxCode } from '../src/shared/tax';
+import { countryProfile } from '../src/shared/countries';
+import {
+  RETURN_FORMS,
+  adjustmentGst,
+  adjustmentTotals,
+  isReturnKind,
+  type Adjustment,
+  type AdjustmentContext,
+  type AdjustmentDef,
+  type ReturnFigures,
+  type ReturnInputs,
+  type ReturnKind,
+} from '../src/shared/taxReturns';
 import { SCHEDULE_C_LINES, SCHEDULE_C_MAP } from '../src/shared/scheduleC';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -151,69 +165,171 @@ export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
   return { lines: ordered, unmapped, totals: { grossIncome, totalExpenses, netProfit: grossIncome - totalExpenses } };
 }
 
-// ---- lodged returns ---------------------------------------------------------
+// ---- NZ -----------------------------------------------------------------------
 
-export function listBasReturns() {
-  return all(getBooks().db,
-    `SELECT id, period_start AS periodStart, period_end AS periodEnd, basis, figures, w1, w2, t7, status,
-            lodged_at AS lodgedAt, created_at AS createdAt
-     FROM bas_returns ORDER BY period_start DESC`,
-  ).map((r: any) => ({ ...r, figures: JSON.parse(r.figures) }));
+/** GST return Boxes 5, 6 and 11 in cents, plus every row that fed them. */
+export function nzGstReport(p: { from: string; to: string; basis: Basis }) {
+  range(p.from, p.to);
+  const { db } = getBooks();
+  const view = p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
+  const rows = all<any>(db,
+    `SELECT l.entry_id AS entryId, l.invoice_id AS invoiceId, l.date, l.kind, l.gross, l.tax, l.tax_code AS taxCode,
+            l.memo, c.name AS categoryName, ct.name AS contactName
+     FROM ${view} l
+     LEFT JOIN categories c ON c.id = l.category_id
+     LEFT JOIN contacts ct ON ct.id = l.contact_id
+     WHERE l.date BETWEEN ? AND ?
+     ORDER BY l.date, l.entry_id`, p.from, p.to);
+  const figures: ReturnFigures = { '5': 0, '6': 0, '11': 0 };
+  const detail = [];
+  let untagged = 0;
+  for (const r of rows) {
+    if (!r.taxCode) {
+      untagged++;
+      continue;
+    }
+    const boxes = nzBoxesFor(r.kind, r.taxCode as TaxCode);
+    for (const b of boxes) figures[b] += r.gross;
+    if (boxes.length) detail.push({ ...r, labels: boxes });
+  }
+  // What private-use and entertainment adjustments are worked out from.
+  const context: AdjustmentContext = {
+    period: claimedByCategory(view, p.from, p.to),
+    yearToDate: claimedByCategory(view, yearStart(p.to), p.to),
+  };
+  return { figures, detail, untagged, context };
 }
 
-export function saveBasReturn(p: { periodStart: string; periodEnd: string; basis: Basis; w1: number; w2: number; t7: number; lodge?: boolean }) {
+/** GST-inclusive purchases in Box 11, per category. */
+function claimedByCategory(view: string, from: string, to: string) {
+  const out: Record<number, number> = {};
+  for (const r of all<any>(getBooks().db,
+    `SELECT category_id AS id, SUM(gross) AS gross FROM ${view}
+     WHERE kind = 'expense' AND tax_code = 'GST' AND category_id IS NOT NULL AND date BETWEEN ? AND ?
+     GROUP BY category_id`, from, to)) out[r.id] = r.gross;
+  return out;
+}
+
+/** The first day of the financial year that `date` falls in. */
+function yearStart(date: string) {
+  const start = `${date.slice(0, 4)}-${getSettings().fiscalYearStart}`;
+  return start <= date ? start : `${Number(date.slice(0, 4)) - 1}-${getSettings().fiscalYearStart}`;
+}
+
+// ---- tax returns --------------------------------------------------------------
+// The BAS (AU) and GST return (NZ) share one table and one lodge-and-lock flow.
+
+/** The return these books prepare, or an error where there isn't one. */
+function returnKind(): ReturnKind {
+  const report = countryProfile(getSettings().country).tax?.report;
+  if (!isReturnKind(report)) throw new Error("These books don't prepare a tax return.");
+  return report;
+}
+
+/** The figures for the books' own return. */
+export function taxReturnReport(p: { from: string; to: string; basis: Basis }) {
+  const kind = returnKind();
+  if (kind === 'bas') {
+    const r = basReport(p);
+    return { kind, figures: r.figures as unknown as ReturnFigures, detail: r.detail, untagged: r.untagged, context: null };
+  }
+  return { kind, ...nzGstReport(p) };
+}
+
+export function listTaxReturns() {
+  return all(getBooks().db,
+    `SELECT id, period_start AS periodStart, period_end AS periodEnd, basis, figures, inputs, adjustments, status,
+            lodged_at AS lodgedAt, created_at AS createdAt
+     FROM tax_returns ORDER BY period_start DESC`,
+  ).map((r: any) => ({ ...r, figures: JSON.parse(r.figures), inputs: JSON.parse(r.inputs), adjustments: JSON.parse(r.adjustments) }));
+}
+
+export function saveTaxReturn(p: {
+  periodStart: string;
+  periodEnd: string;
+  basis: Basis;
+  inputs?: ReturnInputs;
+  adjustments?: Adjustment[];
+  lodge?: boolean;
+}) {
   range(p.periodStart, p.periodEnd);
+  const form = RETURN_FORMS[returnKind()];
   const { db } = getBooks();
-  const existing = one<any>(db, 'SELECT * FROM bas_returns WHERE period_start = ? AND period_end = ?', p.periodStart, p.periodEnd);
-  if (existing?.status === 'lodged') throw new Error('This BAS is already lodged. Reopen it to make changes.');
+  const existing = one<any>(db, 'SELECT * FROM tax_returns WHERE period_start = ? AND period_end = ?', p.periodStart, p.periodEnd);
+  if (existing?.status === 'lodged') throw new Error(`This ${form.short} is already lodged. Reopen it to make changes.`);
   const overlap = one<any>(db,
-    `SELECT period_start, period_end FROM bas_returns
+    `SELECT period_start, period_end FROM tax_returns
      WHERE status = 'lodged' AND period_start <= ? AND period_end >= ? AND NOT (period_start = ? AND period_end = ?)`,
     p.periodEnd, p.periodStart, p.periodStart, p.periodEnd);
-  if (overlap) throw new Error(`This overlaps a lodged BAS (${overlap.period_start} to ${overlap.period_end}).`);
-  const nonNeg = (v: unknown, label: string) => {
-    const n = Math.round(Number(v) || 0);
+  if (overlap) throw new Error(`This overlaps a lodged ${form.short} (${overlap.period_start} to ${overlap.period_end}).`);
+  // Only the form's own boxes, never negative.
+  const inputs: ReturnInputs = {};
+  for (const { key, label } of form.inputs) {
+    const n = Math.round(Number(p.inputs?.[key]) || 0);
     if (n < 0) throw new Error(`${label} can't be negative.`);
-    return n;
-  };
-  const w1 = nonNeg(p.w1, 'W1'), w2 = nonNeg(p.w2, 'W2'), t7 = nonNeg(p.t7, 'T7');
-  const { figures } = basReport({ from: p.periodStart, to: p.periodEnd, basis: p.basis });
+    inputs[key] = n;
+  }
+  const { figures, context } = taxReturnReport({ from: p.periodStart, to: p.periodEnd, basis: p.basis });
+  // Adjustments are kept with the GST each came to, and total into Boxes 9 and 13.
+  const adjustments = form.adjustments ? cleanAdjustments(p.adjustments ?? [], form.adjustments).map((a) => ({ ...a, gst: adjustmentGst(a, context!) })) : [];
+  if (form.adjustments) Object.assign(inputs, adjustmentTotals(adjustments, context!));
   const status = p.lodge ? 'lodged' : 'draft';
   db.transaction(() => {
     if (existing) {
       run(db,
-        `UPDATE bas_returns SET basis = ?, figures = ?, w1 = ?, w2 = ?, t7 = ?, status = ?,
+        `UPDATE tax_returns SET basis = ?, figures = ?, inputs = ?, adjustments = ?, status = ?,
            lodged_at = CASE WHEN ? = 'lodged' THEN datetime('now') END WHERE id = ?`,
-        p.basis, JSON.stringify(figures), w1, w2, t7, status, status, existing.id);
+        p.basis, JSON.stringify(figures), JSON.stringify(inputs), JSON.stringify(adjustments), status, status, existing.id);
     } else {
       run(db,
-        `INSERT INTO bas_returns (period_start, period_end, basis, figures, w1, w2, t7, status, lodged_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'lodged' THEN datetime('now') END)`,
-        p.periodStart, p.periodEnd, p.basis, JSON.stringify(figures), w1, w2, t7, status, status);
+        `INSERT INTO tax_returns (period_start, period_end, basis, figures, inputs, adjustments, status, lodged_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'lodged' THEN datetime('now') END)`,
+        p.periodStart, p.periodEnd, p.basis, JSON.stringify(figures), JSON.stringify(inputs), JSON.stringify(adjustments), status, status);
     }
   })();
   if (p.lodge) refreshLockDate();
   return true;
 }
 
-export function reopenBasReturn(id: number) {
-  run(getBooks().db, "UPDATE bas_returns SET status = 'draft', lodged_at = NULL WHERE id = ?", id);
+/** Only the form's own adjustment types, with sane amounts and an existing category. */
+function cleanAdjustments(list: Adjustment[], defs: AdjustmentDef[]): Adjustment[] {
+  const { db } = getBooks();
+  return list.map((a, i) => {
+    const def = defs.find((d) => d.type === a?.type);
+    const n = i + 1;
+    if (!def) throw new Error(`Adjustment ${n}: choose what kind of adjustment it is.`);
+    const description = String(a.description ?? '').trim().slice(0, 200);
+    if (def.how === 'percent') {
+      const categoryId = Number(a.categoryId);
+      if (!one(db, 'SELECT id FROM categories WHERE id = ?', categoryId)) throw new Error(`Adjustment ${n}: choose a category.`);
+      const percent = def.fixedPercent ?? Math.round(Number(a.percent) * 100) / 100;
+      if (!(percent > 0 && percent <= 100)) throw new Error(`Adjustment ${n}: enter a percentage between 0 and 100.`);
+      return { type: def.type, description, categoryId, percent };
+    }
+    const amount = Math.round(Number(a.amount));
+    if (!(amount > 0)) throw new Error(`Adjustment ${n}: enter an amount.`);
+    return { type: def.type, description, amount };
+  });
+}
+
+export function reopenTaxReturn(id: number) {
+  run(getBooks().db, "UPDATE tax_returns SET status = 'draft', lodged_at = NULL WHERE id = ?", id);
   refreshLockDate();
   return true;
 }
 
-export function deleteBasReturn(id: number) {
+export function deleteTaxReturn(id: number) {
   const { db } = getBooks();
-  const r = one<any>(db, 'SELECT status FROM bas_returns WHERE id = ?', id);
-  if (r?.status === 'lodged') throw new Error('Reopen a lodged BAS before deleting it.');
-  run(db, 'DELETE FROM bas_returns WHERE id = ?', id);
+  const r = one<any>(db, 'SELECT status FROM tax_returns WHERE id = ?', id);
+  if (r?.status === 'lodged') throw new Error('Reopen a lodged return before deleting it.');
+  run(db, 'DELETE FROM tax_returns WHERE id = ?', id);
   return true;
 }
 
-/** The lock date follows the latest lodged BAS (or clears when none are lodged). */
+/** The lock date follows the latest lodged return (or clears when none are lodged). */
 function refreshLockDate() {
   const { db } = getBooks();
-  const latest = one<{ d: string | null }>(db, "SELECT MAX(period_end) AS d FROM bas_returns WHERE status = 'lodged'")!.d;
+  const latest = one<{ d: string | null }>(db, "SELECT MAX(period_end) AS d FROM tax_returns WHERE status = 'lodged'")!.d;
   updateSettings({ lockDate: latest });
   return getSettings().lockDate;
 }

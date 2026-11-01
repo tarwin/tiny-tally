@@ -51,6 +51,9 @@ const ACTIONS: Record<string, string> = {
   'bas.save': 'Saved a BAS',
   'bas.reopen': 'Reopened a BAS',
   'bas.delete': 'Deleted a BAS',
+  'taxReturns.save': 'Saved a tax return',
+  'taxReturns.reopen': 'Reopened a tax return',
+  'taxReturns.delete': 'Deleted a tax return',
 };
 
 export function batchLabel(b: Pick<ChangeBatch, 'action'>) {
@@ -81,6 +84,7 @@ export const TABLES: Record<string, string> = {
   journals: 'Journal entry',
   journal_lines: 'Journal line',
   bas_returns: 'BAS',
+  tax_returns: 'tax return',
   trading_names: 'Trading name',
   meta: 'Setting',
 };

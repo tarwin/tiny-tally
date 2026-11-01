@@ -1,5 +1,5 @@
 // Books settings live as key/value rows in `meta`.
-import { isCountry, type Country } from '../src/shared/countries';
+import { TAX_FREQUENCIES, isCountry, type Country, type TaxFrequency } from '../src/shared/countries';
 import { getBooks, one } from './db';
 
 export interface BooksSettings {
@@ -16,7 +16,8 @@ export interface BooksSettings {
   /** ABN, NZ GST number or EIN, per the country. */
   taxId: string;
   taxBasis: 'cash' | 'accrual';
-  basFrequency: 'monthly' | 'quarterly' | 'annual';
+  /** How often tax returns are filed. */
+  taxPeriod: TaxFrequency;
   pricesIncludeTax: boolean;
   invoicePrefix: string;
   invoiceNext: number;
@@ -31,7 +32,7 @@ export interface BooksSettings {
   color: string;
   /** data: URL, or '' — shown top left instead of the app's logo. */
   logo: string;
-  /** Entries dated on or before this can't change (set by lodging a BAS). */
+  /** Entries dated on or before this can't change (set by lodging a tax return). */
   lockDate: string | null;
 }
 
@@ -87,7 +88,7 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
   taxRatePpm: { key: 'tax_rate_ppm', ...int(100_000, 0, 500_000) },
   taxId: { key: 'tax_id', ...str() },
   taxBasis: { key: 'tax_basis', ...oneOf(['cash', 'accrual'], 'cash') },
-  basFrequency: { key: 'bas_frequency', ...oneOf(['monthly', 'quarterly', 'annual'], 'quarterly') },
+  taxPeriod: { key: 'tax_period', ...oneOf(TAX_FREQUENCIES, 'quarterly') },
   pricesIncludeTax: { key: 'prices_include_tax', ...bool(true) },
   invoicePrefix: { key: 'invoice_prefix', ...str('INV-') },
   invoiceNext: { key: 'invoice_next', ...int(1, 1, 999999999) },
@@ -161,7 +162,7 @@ export function assertUnlocked(...dates: (string | null | undefined)[]) {
   if (!lock) return;
   for (const d of dates) {
     if (d && d <= lock) {
-      throw new Error(`The books are locked up to ${lock} (a BAS was lodged). Unlock them in Settings to change this.`);
+      throw new Error(`The books are locked up to ${lock}, usually because a tax return was lodged. Unlock them in Settings to change this.`);
     }
   }
 }

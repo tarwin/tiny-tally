@@ -200,6 +200,27 @@ panel is the main refactor here. Rename `bas_returns` to `tax_returns` and
   shown under 27a with a note that depreciation and section 179 are worked
   out separately. Estimated quarterly tax is out of scope.
 
+### NZ as built
+
+- Checked against IRD's guide IR375 (March 2026) and the GST101A layout:
+  Box 5 is all sales including GST and zero-rated sales; Box 6 the
+  zero-rated part; Boxes 8 and 12 are 3/23 of Boxes 7 and 11; Box 11
+  excludes imported goods; exempt supplies are left off the return.
+  Boxes 9 and 13 (adjustments, GST paid to Customs) are typed in.
+- Only GST-coded purchases go in Box 11. Zero-rated, exempt and
+  not-reportable purchases have no GST to claim, so they stay out.
+- NZ amounts stay in dollars and cents; the BAS still drops cents.
+- `bas_returns` is now `tax_returns`, with the hand-typed boxes in a JSON
+  `inputs` column. `bas_frequency` is now `tax_period`, with 2-monthly and
+  6-monthly added. NZ books start on 2-monthly, IRD's default.
+- The box layouts live in `src/shared/taxReturns.ts` as data, and
+  `TaxReturn.vue` shows either form. There's no separate figures panel
+  component.
+- Odd or even 2-monthly periods aren't offered: periods always start with
+  the financial year.
+- "Tax invoice" isn't required since April 2023 (taxable supply
+  information), but it's kept as the default title.
+
 ### US as built
 
 - The tax rate is stored in parts per million (`tax_rate_ppm`), not basis

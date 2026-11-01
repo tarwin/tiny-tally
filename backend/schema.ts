@@ -480,4 +480,34 @@ export const migrations: string[] = [
     SELECT 'tax_rate_ppm', CAST(value AS INTEGER) * 100 FROM meta WHERE key = 'tax_rate_bp';
   DELETE FROM meta WHERE key = 'tax_rate_bp';
   `,
+  // v11: New Zealand. BAS returns become tax returns, shared by the BAS and
+  // the NZ GST return; the boxes typed in by hand (W1, W2, T7 or Boxes 9
+  // and 13) move into one JSON column. The BAS frequency becomes the tax
+  // period.
+  `
+  CREATE TABLE tax_returns (
+    id INTEGER PRIMARY KEY,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    basis TEXT NOT NULL CHECK (basis IN ('cash', 'accrual')),
+    figures TEXT NOT NULL,
+    inputs TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'lodged')),
+    lodged_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (period_start, period_end)
+  );
+  INSERT INTO tax_returns (id, period_start, period_end, basis, figures, inputs, status, lodged_at, created_at)
+    SELECT id, period_start, period_end, basis, figures, json_object('w1', w1, 'w2', w2, 't7', t7), status, lodged_at, created_at
+    FROM bas_returns;
+  DROP TRIGGER IF EXISTS log_bas_returns_insert;
+  DROP TRIGGER IF EXISTS log_bas_returns_update;
+  DROP TRIGGER IF EXISTS log_bas_returns_delete;
+  DROP TABLE bas_returns;
+  UPDATE meta SET key = 'tax_period' WHERE key = 'bas_frequency';
+  `,
+  // v12: NZ GST adjustments (IR372) behind Boxes 9 and 13, kept with the return.
+  `
+  ALTER TABLE tax_returns ADD COLUMN adjustments TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
