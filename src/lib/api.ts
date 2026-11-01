@@ -367,13 +367,31 @@ export interface PnlRow {
   name: string;
   total: number;
   compare: number;
+  /** When asked for: the budget for the period. */
+  budget?: number;
+}
+
+export interface Budget {
+  /** Twelve 'YYYY-MM' months. */
+  months: string[];
+  rows: { categoryId: number; amounts: number[] }[];
 }
 
 export interface ProfitAndLoss {
   other: OtherMovement[];
   income: PnlRow[];
   expense: PnlRow[];
-  totals: { income: number; expense: number; net: number; compareIncome: number; compareExpense: number; compareNet: number };
+  totals: {
+    income: number;
+    expense: number;
+    net: number;
+    compareIncome: number;
+    compareExpense: number;
+    compareNet: number;
+    budgetIncome?: number;
+    budgetExpense?: number;
+    budgetNet?: number;
+  };
 }
 
 export interface ByContact {
@@ -789,7 +807,7 @@ export const api = {
   deleteTemplate: (id: number) => call<true>('templates.delete', { id }),
   readLogo: (path: string) => call<string>('templates.readLogo', { path }),
 
-  profitAndLoss: (p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string }) =>
+  profitAndLoss: (p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string; budget?: boolean }) =>
     call<ProfitAndLoss>('reports.profitAndLoss', p),
   monthly: (p: { from: string; to: string; basis?: Basis }) =>
     call<{ month: string; income: number; expense: number }[]>('reports.monthly', p),
@@ -824,6 +842,9 @@ export const api = {
   openAttachment: (id: number) => call<string>('attachments.open', { id }),
   saveAttachmentCopy: (id: number, path: string) => call<string>('attachments.saveCopy', { id, path }),
   deleteAttachment: (id: number) => call<true>('attachments.delete', { id }),
+
+  getBudget: (firstMonth: string) => call<Budget>('budgets.get', { firstMonth }),
+  saveBudget: (cells: { categoryId: number; month: string; amount: number }[]) => call<true>('budgets.save', { cells }),
 
   listItems: () => call<Item[]>('items.list'),
   saveItem: (i: ItemInput) => call<number>('items.save', i),

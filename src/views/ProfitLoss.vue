@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import { Card, CardSection, DatePicker, Page, SegmentedControl, Select, ToggleSwitch } from '@octans/ui';
+import { useRoute, useRouter } from 'vue-router';
+import { Card, CardSection, DatePicker, Page, SegmentedControl, Select } from '@octans/ui';
 import { api, type Basis, type ProfitAndLoss } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay } from '../lib/dates';
@@ -10,6 +10,7 @@ import { PERIOD_OPTIONS, periodRange, previousPeriod, type PeriodKey } from '../
 import { printElement } from '../lib/print';
 import { booksTax, session } from '../lib/session';
 
+const route = useRoute();
 const router = useRouter();
 const books = computed(() => session.books!);
 const money = (v: number) => formatMoney(v, books.value.currency);
@@ -17,7 +18,14 @@ const money = (v: number) => formatMoney(v, books.value.currency);
 const period = ref<PeriodKey | 'custom'>('thisYear');
 const custom = ref(periodRange('thisYear', books.value.fiscalYearStart) as { from: string; to: string });
 const basis = ref<Basis>(books.value.taxBasis);
-const compare = ref(false);
+/** What the extra columns compare this period with. */
+const compare = ref<'none' | 'previous' | 'budget'>(route.query.compare === 'budget' ? 'budget' : 'none');
+const comparing = computed(() => compare.value !== 'none');
+const compareOptions = [
+  { label: 'Nothing', value: 'none' },
+  { label: 'Previous period', value: 'previous' },
+  { label: 'Budget', value: 'budget' },
+];
 const report = ref<ProfitAndLoss | null>(null);
 const loading = ref(false);
 const sheet = ref<HTMLElement | null>(null);
@@ -35,7 +43,8 @@ async function load() {
     report.value = await api.profitAndLoss({
       ...range.value,
       basis: basis.value,
-      ...(compare.value ? { compareFrom: prev.value.from, compareTo: prev.value.to } : {}),
+      ...(compare.value === 'previous' ? { compareFrom: prev.value.from, compareTo: prev.value.to } : {}),
+      ...(compare.value === 'budget' ? { budget: true } : {}),
     });
   } finally {
     loading.value = false;
@@ -55,6 +64,27 @@ function change(now: number, before: number) {
   return `${pct > 0 ? '+' : ''}${pct}%`;
 }
 
+/** The figure in the comparison column for a row. */
+const otherOf = (r: { compare?: number; budget?: number }) => (compare.value === 'budget' ? r.budget ?? 0 : r.compare ?? 0);
+
+/** Against a budget, the difference in money; against last period, the change in percent. */
+function diff(now: number, other: number) {
+  if (compare.value !== 'budget') return change(now, other);
+  if (now === other) return '';
+  return `${now > other ? '+' : '−'}${money(Math.abs(now - other))}`;
+}
+
+const otherTotals = computed(() => {
+  const t = report.value!.totals;
+  return compare.value === 'budget'
+    ? { income: t.budgetIncome ?? 0, expense: t.budgetExpense ?? 0, net: t.budgetNet ?? 0 }
+    : { income: t.compareIncome, expense: t.compareExpense, net: t.compareNet };
+});
+
+const otherHeads = computed(() =>
+  compare.value === 'budget' ? ['Budget', 'Difference'] : [`${formatDay(prev.value.from)} – ${formatDay(prev.value.to)}`, 'Change'],
+);
+
 const otherSides = computed(() =>
   (['income', 'expense'] as const).map((kind) => ({ kind, rows: report.value?.other.filter((o) => o.kind === kind) ?? [] })),
 );
@@ -62,17 +92,21 @@ const otherSides = computed(() =>
 function exportCsv() {
   const r = report.value;
   if (!r) return;
-  const head = compare.value ? ['Section', 'Category', 'This period', 'Previous period'] : ['Section', 'Category', 'Amount'];
-  const row = (section: string, name: string, a: number, b: number) =>
-    compare.value ? [section, name, csvMoney(a), csvMoney(b)] : [section, name, csvMoney(a)];
+  const head = comparing.value
+    ? ['Section', 'Category', 'This period', compare.value === 'budget' ? 'Budget' : 'Previous period']
+    : ['Section', 'Category', 'Amount'];
+  const row = (section: string, name: string, a: number, b: number | null) =>
+    comparing.value ? [section, name, csvMoney(a), b === null ? '' : csvMoney(b)] : [section, name, csvMoney(a)];
+  const o = otherTotals.value;
   void saveCsv(`Profit and Loss ${range.value.from} to ${range.value.to}`, [
     head,
-    ...r.income.map((x) => row('Income', x.name, x.total, x.compare)),
-    row('Income', 'Total income', r.totals.income, r.totals.compareIncome),
-    ...r.expense.map((x) => row('Expenses', x.name, x.total, x.compare)),
-    row('Expenses', 'Total expenses', r.totals.expense, r.totals.compareExpense),
-    row('', 'Net profit', r.totals.net, r.totals.compareNet),
-    ...r.other.map((x) => row(x.kind === 'income' ? 'Other money in' : 'Other money out', x.name, x.total, x.compare ?? 0)),
+    ...r.income.map((x) => row('Income', x.name, x.total, otherOf(x))),
+    row('Income', 'Total income', r.totals.income, o.income),
+    ...r.expense.map((x) => row('Expenses', x.name, x.total, otherOf(x))),
+    row('Expenses', 'Total expenses', r.totals.expense, o.expense),
+    row('', 'Net profit', r.totals.net, o.net),
+    // Budgets are only for income and expenses.
+    ...r.other.map((x) => row(x.kind === 'income' ? 'Other money in' : 'Other money out', x.name, x.total, compare.value === 'budget' ? null : x.compare ?? 0)),
   ]);
 }
 </script>
@@ -95,7 +129,7 @@ function exportCsv() {
         <div class="Label">Basis</div>
         <SegmentedControl v-model="basis" :options="[{ label: 'Cash', value: 'cash' }, { label: 'Accrual', value: 'accrual' }]" />
       </div>
-      <ToggleSwitch v-model="compare" label="Compare with previous period" />
+      <Select v-model="compare" label="Compare with" :options="compareOptions" />
     </div>
 
     <Card>
@@ -109,58 +143,58 @@ function exportCsv() {
             <thead>
               <tr>
                 <th>Category</th>
-                <th class="num">{{ compare ? 'This period' : 'Amount' }}</th>
-                <template v-if="compare">
-                  <th class="num">{{ formatDay(prev.from) }} – {{ formatDay(prev.to) }}</th>
-                  <th class="num">Change</th>
+                <th class="num">{{ comparing ? 'This period' : 'Amount' }}</th>
+                <template v-if="comparing">
+                  <th class="num">{{ otherHeads[0] }}</th>
+                  <th class="num">{{ otherHeads[1] }}</th>
                 </template>
               </tr>
             </thead>
             <tbody>
-              <tr class="Report__section"><td :colspan="compare ? 4 : 2">Income</td></tr>
-              <tr v-if="!report.income.length"><td class="Report__indent subdued" :colspan="compare ? 4 : 2">No income in this period.</td></tr>
+              <tr class="Report__section"><td :colspan="comparing ? 4 : 2">Income</td></tr>
+              <tr v-if="!report.income.length"><td class="Report__indent subdued" :colspan="comparing ? 4 : 2">No income in this period.</td></tr>
               <tr v-for="r in report.income" :key="'i' + r.id">
                 <td class="Report__indent">{{ r.name }}</td>
                 <td class="num">{{ money(r.total) }}</td>
-                <template v-if="compare">
-                  <td class="num subdued">{{ money(r.compare) }}</td>
-                  <td class="num subdued">{{ change(r.total, r.compare) }}</td>
+                <template v-if="comparing">
+                  <td class="num subdued">{{ money(otherOf(r)) }}</td>
+                  <td class="num subdued">{{ diff(r.total, otherOf(r)) }}</td>
                 </template>
               </tr>
               <tr class="Report__total">
                 <td>Total income</td>
                 <td class="num">{{ money(report.totals.income) }}</td>
-                <template v-if="compare">
-                  <td class="num">{{ money(report.totals.compareIncome) }}</td>
-                  <td class="num">{{ change(report.totals.income, report.totals.compareIncome) }}</td>
+                <template v-if="comparing">
+                  <td class="num">{{ money(otherTotals.income) }}</td>
+                  <td class="num">{{ diff(report.totals.income, otherTotals.income) }}</td>
                 </template>
               </tr>
 
-              <tr class="Report__section"><td :colspan="compare ? 4 : 2">Expenses</td></tr>
-              <tr v-if="!report.expense.length"><td class="Report__indent subdued" :colspan="compare ? 4 : 2">No expenses in this period.</td></tr>
+              <tr class="Report__section"><td :colspan="comparing ? 4 : 2">Expenses</td></tr>
+              <tr v-if="!report.expense.length"><td class="Report__indent subdued" :colspan="comparing ? 4 : 2">No expenses in this period.</td></tr>
               <tr v-for="r in report.expense" :key="'e' + r.id">
                 <td class="Report__indent">{{ r.name }}</td>
                 <td class="num">{{ money(r.total) }}</td>
-                <template v-if="compare">
-                  <td class="num subdued">{{ money(r.compare) }}</td>
-                  <td class="num subdued">{{ change(r.total, r.compare) }}</td>
+                <template v-if="comparing">
+                  <td class="num subdued">{{ money(otherOf(r)) }}</td>
+                  <td class="num subdued">{{ diff(r.total, otherOf(r)) }}</td>
                 </template>
               </tr>
               <tr class="Report__total">
                 <td>Total expenses</td>
                 <td class="num">{{ money(report.totals.expense) }}</td>
-                <template v-if="compare">
-                  <td class="num">{{ money(report.totals.compareExpense) }}</td>
-                  <td class="num">{{ change(report.totals.expense, report.totals.compareExpense) }}</td>
+                <template v-if="comparing">
+                  <td class="num">{{ money(otherTotals.expense) }}</td>
+                  <td class="num">{{ diff(report.totals.expense, otherTotals.expense) }}</td>
                 </template>
               </tr>
 
               <tr class="Report__grand">
                 <td>{{ report.totals.net >= 0 ? 'Net profit' : 'Net loss' }}</td>
                 <td class="num" :class="{ negative: report.totals.net < 0 }">{{ money(report.totals.net) }}</td>
-                <template v-if="compare">
-                  <td class="num">{{ money(report.totals.compareNet) }}</td>
-                  <td class="num">{{ change(report.totals.net, report.totals.compareNet) }}</td>
+                <template v-if="comparing">
+                  <td class="num">{{ money(otherTotals.net) }}</td>
+                  <td class="num">{{ diff(report.totals.net, otherTotals.net) }}</td>
                 </template>
               </tr>
             </tbody>
@@ -175,15 +209,16 @@ function exportCsv() {
                 <template v-for="side in otherSides" :key="side.kind">
                   <template v-if="side.rows.length">
                     <tr class="Report__section">
-                      <td :colspan="compare ? 4 : 2">{{ side.kind === 'income' ? 'Money in' : 'Money out' }}</td>
+                      <td :colspan="comparing ? 4 : 2">{{ side.kind === 'income' ? 'Money in' : 'Money out' }}</td>
                     </tr>
                     <tr v-for="o in side.rows" :key="o.id">
                       <td class="Report__indent">{{ o.name }}</td>
                       <td class="num">{{ money(o.total) }}</td>
-                      <template v-if="compare">
+                      <template v-if="compare === 'previous'">
                         <td class="num subdued">{{ money(o.compare ?? 0) }}</td>
                         <td class="num subdued">{{ change(o.total, o.compare ?? 0) }}</td>
                       </template>
+                      <td v-else-if="comparing" colspan="2" />
                     </tr>
                   </template>
                 </template>

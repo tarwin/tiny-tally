@@ -39,6 +39,7 @@ export const router = createRouter({
     { path: '/accounts/:id(\\d+)/reconcile', name: 'reconcile', component: () => import('./views/Reconcile.vue') },
     { path: '/contacts/:id(\\d+)/statement', name: 'statement', component: () => import('./views/Statement.vue') },
     { path: '/recurring', name: 'recurring', component: () => import('./views/Recurring.vue') },
+    { path: '/budget', name: 'budget', component: () => import('./views/Budget.vue') },
     { path: '/items', name: 'items', component: () => import('./views/Items.vue') },
     { path: '/rules', name: 'rules', component: () => import('./views/Rules.vue') },
     { path: '/reports/sales-by-customer', name: 'sales-by-customer', component: () => import('./views/ByContact.vue'), meta: { kind: 'income' } },

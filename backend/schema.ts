@@ -572,4 +572,15 @@ export const migrations: string[] = [
   CREATE INDEX attachments_entry ON attachments (entry_id);
   CREATE INDEX attachments_invoice ON attachments (invoice_id);
   `,
+  // v17: budgets. An amount per income or expense category per calendar
+  // month; reports pro-rate a month by days when a range covers part of it.
+  `
+  CREATE TABLE budgets (
+    id INTEGER PRIMARY KEY,
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    month TEXT NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    UNIQUE (category_id, month)
+  );
+  `,
 ];

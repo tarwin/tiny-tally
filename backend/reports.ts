@@ -1,6 +1,7 @@
 // Profit & Loss, the BAS and NZ GST return, US sales tax and Schedule C,
 // and lodged tax returns.
 import { all, getBooks, one, run } from './db';
+import { budgetFor } from './budgets';
 import { summarise } from './entries';
 import { getSettings, updateSettings } from './settings';
 import { basLabelsFor, nzBoxesFor, type TaxCode } from '../src/shared/tax';
@@ -27,12 +28,18 @@ function range(from: string, to: string) {
   if (to < from) throw new Error('The end date is before the start date.');
 }
 
-export function profitAndLoss(p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string }) {
+export function profitAndLoss(p: { from: string; to: string; basis: Basis; compareFrom?: string; compareTo?: string; budget?: boolean }) {
   range(p.from, p.to);
   const current = summarise({ from: p.from, to: p.to, basis: p.basis });
   const compare = p.compareFrom && p.compareTo ? summarise({ from: p.compareFrom, to: p.compareTo, basis: p.basis }) : null;
+  const budget = p.budget ? budgetFor(p.from, p.to) : null;
+  // Budgeted categories show even before anything has happened in them.
+  const budgeted = budget?.size
+    ? all<{ id: number; name: string; kind: string }>(getBooks().db,
+        `SELECT id, name, kind FROM categories WHERE id IN (${[...budget.keys()].map(Number).join(',')})`)
+    : [];
   const rowsFor = (kind: 'income' | 'expense') => {
-    const map = new Map<number, { id: number; name: string; total: number; compare: number }>();
+    const map = new Map<number, { id: number; name: string; total: number; compare: number; budget?: number }>();
     for (const r of current.byCategory.filter((r: any) => r.kind === kind)) {
       map.set(r.id, { id: r.id, name: r.name, total: r.total, compare: 0 });
     }
@@ -41,8 +48,17 @@ export function profitAndLoss(p: { from: string; to: string; basis: Basis; compa
       row.compare = r.total;
       map.set(r.id, row);
     }
-    return [...map.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    if (budget) {
+      for (const c of budgeted.filter((c) => c.kind === kind)) {
+        if (!map.has(c.id)) map.set(c.id, { id: c.id, name: c.name, total: 0, compare: 0 });
+      }
+      for (const row of map.values()) row.budget = budget.get(row.id) ?? 0;
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total || (b.budget ?? 0) - (a.budget ?? 0) || a.name.localeCompare(b.name));
   };
+  const income = rowsFor('income');
+  const expense = rowsFor('expense');
+  const budgetSum = (rows: { budget?: number }[]) => rows.reduce((t, r) => t + (r.budget ?? 0), 0);
   // Not profit or loss, but people look for it here: GST paid, drawings, loans, assets.
   const other = (current as any).other.map((r: any) => ({
     ...r,
@@ -50,8 +66,8 @@ export function profitAndLoss(p: { from: string; to: string; basis: Basis; compa
   }));
   return {
     other,
-    income: rowsFor('income'),
-    expense: rowsFor('expense'),
+    income,
+    expense,
     totals: {
       income: current.income,
       expense: current.expense,
@@ -59,6 +75,9 @@ export function profitAndLoss(p: { from: string; to: string; basis: Basis; compa
       compareIncome: compare?.income ?? 0,
       compareExpense: compare?.expense ?? 0,
       compareNet: compare ? compare.income - compare.expense : 0,
+      ...(budget
+        ? { budgetIncome: budgetSum(income), budgetExpense: budgetSum(expense), budgetNet: budgetSum(income) - budgetSum(expense) }
+        : {}),
     },
   };
 }

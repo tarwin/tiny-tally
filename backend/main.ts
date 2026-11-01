@@ -28,6 +28,7 @@ import {
   type EntryQuery,
 } from './entries';
 import { search } from './search';
+import { getBudget, saveBudget } from './budgets';
 import {
   addAttachment,
   deleteAttachment,
@@ -595,6 +596,9 @@ Object.assign(api, {
   'attachments.open': async ({ id }: { id: number }) => openAttachment(id),
   'attachments.saveCopy': async ({ id, path }: { id: number; path: string }) => saveAttachmentTo(id, path),
   'attachments.delete': async ({ id }: { id: number }) => deleteAttachment(id),
+
+  'budgets.get': async ({ firstMonth }: { firstMonth: string }) => getBudget(firstMonth),
+  'budgets.save': async (p: Parameters<typeof saveBudget>[0]) => saveBudget(p),
 
   'items.list': async () => listItems(),
   'items.save': async (input: ItemInput) => saveItem(input),

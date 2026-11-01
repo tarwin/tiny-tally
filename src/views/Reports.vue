@@ -24,7 +24,13 @@ const reports = computed(() => [
     to: '/reports/profit-and-loss',
     icon: 'mdi:chart-line',
     title: 'Profit & Loss',
-    body: 'Income minus expenses for any period, by category. Compare with the period before.',
+    body: 'Income minus expenses for any period, by category. Compare with the period before, or your budget.',
+  },
+  {
+    to: '/budget',
+    icon: 'mdi:target',
+    title: 'Budget',
+    body: 'Set what you expect to earn and spend each month, then see how you are tracking.',
   },
   {
     to: '/reports/sales-by-customer',

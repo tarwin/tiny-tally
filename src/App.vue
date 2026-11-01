@@ -73,6 +73,7 @@ const sections = computed<NavigationSectionType[]>(() => [
       { id: 'contacts', label: 'Contacts', icon: 'mdi:account-multiple-outline', url: '/contacts' },
       { id: 'items', label: 'Products & services', icon: 'mdi:package-variant-closed', url: '/items' },
       { id: 'categories', label: 'Categories', icon: 'mdi:shape-outline', url: '/categories' },
+      { id: 'budget', label: 'Budget', icon: 'mdi:target', url: '/budget' },
       { id: 'recurring', label: 'Recurring', icon: 'mdi:repeat', url: '/recurring' },
       { id: 'journals', label: 'Journal entries', icon: 'mdi:book-edit-outline', url: '/journals' },
     ],

@@ -88,6 +88,7 @@ export const TABLES: Record<string, string> = {
   trading_names: 'Trading name',
   items: 'Product or service',
   attachments: 'Attachment',
+  budgets: 'Budget',
   meta: 'Setting',
 };
 

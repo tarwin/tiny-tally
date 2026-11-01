@@ -12,7 +12,7 @@ import { all, currentHost, getBooks, one, run } from './db';
 const LOGGED = [
   'accounts', 'categories', 'contacts', 'entries', 'invoices', 'invoice_lines', 'credit_allocations',
   'invoice_templates', 'reconciliations', 'schedules', 'rules', 'journals', 'journal_lines', 'tax_returns',
-  'trading_names', 'items', 'attachments',
+  'trading_names', 'items', 'attachments', 'budgets',
 ];
 /** Bookkeeping columns that change on every save and mean nothing on their own. */
 const IGNORED = new Set(['updated_at']);
