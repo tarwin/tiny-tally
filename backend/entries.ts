@@ -32,6 +32,8 @@ export interface EntryQuery {
   from?: string;
   to?: string;
   q?: string;
+  /** cents: exactly this amount */
+  amount?: number;
   limit?: number;
   offset?: number;
 }
@@ -61,12 +63,12 @@ const JOINS = `
 
 const TABLE_COLS = {
   kind: 'e.kind', category: 'e.category_id', contact: 'e.contact_id', date: 'e.date',
-  memo: 'e.memo', contactName: 'ct.name', categoryName: 'c.name',
+  memo: 'e.memo', contactName: 'ct.name', categoryName: 'c.name', amount: 'e.amount',
 };
 // The same filters, applied to the register CTE's output columns.
 const REGISTER_COLS: typeof TABLE_COLS = {
   kind: 'kind', category: 'categoryId', contact: 'contactId', date: 'date',
-  memo: 'memo', contactName: 'contactName', categoryName: 'categoryName',
+  memo: 'memo', contactName: 'contactName', categoryName: 'categoryName', amount: 'amount',
 };
 
 function filters(q: EntryQuery, col = TABLE_COLS) {
@@ -91,6 +93,10 @@ function filters(q: EntryQuery, col = TABLE_COLS) {
   if (q.to && DATE.test(q.to)) {
     where.push(`${col.date} <= ?`);
     args.push(q.to);
+  }
+  if (Number.isInteger(q.amount) && q.amount! > 0) {
+    where.push(`${col.amount} = ?`);
+    args.push(q.amount);
   }
   const text = q.q?.trim();
   if (text) {

@@ -154,8 +154,19 @@ export interface EntryQuery {
   from?: string;
   to?: string;
   q?: string;
+  /** cents: exactly this amount */
+  amount?: number;
   limit?: number;
   offset?: number;
+}
+
+/** What the top bar's search box finds in the books (search.ts). */
+export interface SearchResults {
+  entries: Entry[];
+  documents: { id: number; number: string; docType: DocType; date: string; status: 'draft' | 'sent' | 'void'; total: number; contactName: string }[];
+  contacts: { id: number; kind: 'customer' | 'vendor'; name: string; email: string | null }[];
+  accounts: { id: number; name: string; kind: AccountKind }[];
+  categories: { id: number; name: string; kind: CategoryKind }[];
 }
 
 export interface EntryList {
@@ -692,6 +703,8 @@ export const api = {
   saveEntry: (p: EntryInput) => call<number>('entries.save', p),
   deleteEntry: (id: number) => call<true>('entries.delete', { id }),
   summary: (from: string, to: string, basis?: Basis) => call<Summary>('entries.summary', { from, to, basis }),
+
+  search: (q: string) => call<SearchResults>('search.all', { q }),
 
   listContacts: () => call<Contact[]>('contacts.list'),
   saveContact: (p: ContactInput) => call<number>('contacts.save', p),

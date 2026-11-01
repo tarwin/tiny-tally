@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { AppFrame, Navigation, Spinner, UiProvider, toast, type NavigationSectionType } from '@octans/ui';
 import AppSettings from './components/AppSettings.vue';
 import EntryEditor from './components/EntryEditor.vue';
+import TopBar from './components/TopBar.vue';
 import UpdateBanner from './components/UpdateBanner.vue';
 import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
@@ -12,6 +13,7 @@ import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, upd
 import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
 import { today } from './lib/dates';
 import { dataChanged, newEntry } from './lib/entryEditor';
+import { canGoBack, canGoForward, goBack, goForward } from './lib/navHistory';
 import { session } from './lib/session';
 import { THEME_OPTIONS, applyTheme, restoreTheme, syncThemeMenu } from './lib/theme';
 import { checkForUpdates, updateFound } from './lib/updates';
@@ -80,14 +82,24 @@ const isMain = tiny.win.id === 'main';
 
 /** Menu items that need open books. */
 const BOOKS_ITEMS = [
-  'books-close', 'books-backup', 'books-reveal', 'books-settings', 'import',
+  'books-close', 'books-backup', 'books-reveal', 'books-settings', 'import', 'search',
   'new-expense', 'new-income', 'new-transfer', 'new-invoice', 'new-quote', 'new-bill',
 ];
 
 async function syncMenus() {
   const on = !!session.books;
   await Promise.all(BOOKS_ITEMS.map((id) => tiny.win.menu.update(id, { enabled: on }).catch(() => {})));
+  syncNavMenu();
 }
+
+function syncNavMenu() {
+  void tiny.win.menu.update('nav-back', { enabled: !!session.books && canGoBack.value }).catch(() => {});
+  void tiny.win.menu.update('nav-forward', { enabled: !!session.books && canGoForward.value }).catch(() => {});
+}
+
+watch([canGoBack, canGoForward], syncNavMenu);
+
+const topBar = ref<InstanceType<typeof TopBar> | null>(null);
 
 function syncDensityMenu() {
   for (const o of DENSITY_OPTIONS) void tiny.win.menu.update(`density-${o.value}`, { checked: appSettings.density === o.value }).catch(() => {});
@@ -155,6 +167,15 @@ async function buildMenu() {
         { id: 'new-invoice', label: 'New Invoice…', key: 'I' },
         { id: 'new-quote', label: 'New Quote…' },
         { id: 'new-bill', label: 'New Bill…', key: 'B' },
+      ],
+    },
+    {
+      title: 'Go',
+      items: [
+        { id: 'nav-back', label: 'Back', key: '[' },
+        { id: 'nav-forward', label: 'Forward', key: ']' },
+        { separator: true },
+        { id: 'search', label: 'Search…', key: 'k' },
       ],
     },
     {
@@ -262,6 +283,15 @@ function onMenu(id: string) {
   switch (id) {
     case 'recent-clear':
       void clearRecent();
+      break;
+    case 'nav-back':
+      if (session.books) goBack();
+      break;
+    case 'nav-forward':
+      if (session.books) goForward();
+      break;
+    case 'search':
+      topBar.value?.focusSearch();
       break;
     case 'app-settings':
       appSettingsPanel.visible = true;
@@ -386,11 +416,17 @@ onBeforeUnmount(() => {
 
 <template>
   <UiProvider>
+    <!-- macOS windows have no title bar: something to drag them by until the top bar shows. -->
+    <div v-if="isMac && !session.books" class="DragStrip" data-tiny-drag />
     <div v-if="!session.ready" class="Boot"><Spinner /></div>
     <Welcome v-else-if="!session.books" :notice="notice" :notice-path="noticePath" />
-    <AppFrame v-else layout="sidebarOnly" :sidebar-min="navMin">
+    <AppFrame v-else layout="topbar" :sidebar-min="navMin">
+      <template #topbar>
+        <TopBar ref="topBar" />
+      </template>
       <template #sidebar>
-        <Navigation :sections="sections" :location="route.path" highlight logo allow-minimize :accent-stripe="session.books.color || false" prevent-default @click-item="onNavItem" @toggle-min="setNavMin">
+        <!-- The books' colour fills the top bar, so no stripe here. -->
+        <Navigation :sections="sections" :location="route.path" highlight logo allow-minimize prevent-default @click-item="onNavItem" @toggle-min="setNavMin">
           <template #logo>
             <RouterLink to="/" class="Brand">
               <span class="Brand__tile" :class="{ 'Brand__tile--own': session.books.logo }"><img :src="session.books.logo || character" alt="" /></span>
@@ -418,6 +454,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.DragStrip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* Clear of the Welcome screen's settings buttons, top right. */
+  right: 120px;
+  height: 36px;
+  z-index: 10;
+}
+
 .Brand {
   display: flex;
   align-items: center;

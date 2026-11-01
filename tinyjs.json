@@ -18,5 +18,14 @@
   "update": {
     "url": "https://github.com/tarwin/tiny-tally/releases/latest/download/manifest.json",
     "auto": "daily"
+  },
+  "macos": {
+    "chrome": {
+      "frame": false,
+      "windowControlsPos": {
+        "x": 14,
+        "y": 14
+      }
+    }
   }
 }

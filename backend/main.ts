@@ -27,6 +27,7 @@ import {
   type EntryInput,
   type EntryQuery,
 } from './entries';
+import { search } from './search';
 import {
   agedBalances,
   agedReceivables,
@@ -157,6 +158,9 @@ function checkMainHidden() {
   }, 150);
 }
 
+/** The traffic lights, centred in the page's 40px top bar. Keep in step with tinyjs.json. */
+const MAC_CONTROLS = { x: 14, y: 14 };
+
 function openWindow(path: string | null) {
   if (mainHidden && !openWindows().includes('main')) {
     if (path) appRef.win.push('open-files', { paths: [path] });
@@ -165,7 +169,13 @@ function openWindow(path: string | null) {
   }
   const win = `books-${++windowCount}`;
   if (path) pendingOpen.set(win, path);
-  appRef.win.open(win, { size: '1180x780', minSize: '820x560', title: 'Tiny Tally' });
+  appRef.win.open(win, {
+    size: '1180x780',
+    minSize: '820x560',
+    title: 'Tiny Tally',
+    // Same as the main window's in tinyjs.json: the page's top bar is the title bar.
+    ...(appRef.system.isMacOS() ? { chrome: { frame: false, windowControlsPos: MAC_CONTROLS } } : {}),
+  });
   return win;
 }
 
@@ -619,6 +629,7 @@ Object.assign(api, {
   'import.suggest': async ({ names }: { names: string[] }) => suggestCategories(Array.isArray(names) ? names.map(String) : []),
   'import.commit': async (plan: ImportPlan) => commitImport(plan),
   'contacts.list': async () => listContacts(),
+  'search.all': async ({ q }: { q: string }) => search(q),
 
   'changes.batches': async (p: Parameters<typeof listBatches>[0]) => listBatches(p ?? {}),
   'changes.batch': async (p: Parameters<typeof batchChanges>[0]) => batchChanges(p),

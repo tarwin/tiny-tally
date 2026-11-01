@@ -19,7 +19,7 @@ const loading = ref(true);
 const period = ref<PeriodKey>((route.query.period as PeriodKey) || 'thisYear');
 const kind = ref<EntryKind | 'all'>('all');
 const accountId = ref<number | null>(null);
-const search = ref('');
+const search = ref(typeof route.query.q === 'string' ? route.query.q : '');
 const offset = ref(0);
 const limit = ref(50);
 
@@ -71,6 +71,15 @@ watch([period, kind, accountId, limit], () => {
   void load();
 });
 watch([offset, dataVersion], () => void load());
+
+// The top bar's search sends contacts and categories here, maybe while it's open.
+watch(
+  () => route.query,
+  (q) => {
+    if (typeof q.q === 'string') search.value = q.q;
+    if (typeof q.period === 'string' && PERIOD_OPTIONS.some((o) => o.value === q.period)) period.value = q.period as PeriodKey;
+  },
+);
 
 onMounted(async () => {
   accounts.value = await api.listAccounts();
