@@ -40,10 +40,10 @@ const router = useRouter();
 const templates = ref<InvoiceTemplate[]>([]);
 const selectedId = ref<number | null>(null);
 const saving = ref(false);
+const books = computed(() => session.books!);
 const form = ref<TemplateInput>(blank());
 const dirty = ref(false);
 
-const books = computed(() => session.books!);
 const profile = computed(() => countryProfile(books.value.country));
 
 const ACCENTS = ['#2f6fde', '#0f766e', '#7c3aed', '#be123c', '#c2410c', '#1d1f24'];
