@@ -5,7 +5,7 @@
 // App.vue keeps each visit's page alive (KeepAlive, keyed by visitKey), so a
 // tab comes back as it was left: filters, half-filled forms and all. Pages
 // left in a hidden tab don't reload until shown (live.ts).
-import { computed, onActivated, reactive, ref, watch } from 'vue';
+import { computed, onActivated, reactive, ref, shallowReactive, watch } from 'vue';
 import type { RouteLocationNormalized } from 'vue-router';
 import { api } from './api';
 import { router } from '../router';
@@ -93,6 +93,20 @@ const visitKey = () => `${activeTab.value.id}:${activeTab.value.visits[activeTab
  * arrived, so a tab switch never shows the old route under the new tab's key.
  */
 export const shownKey = ref(visitKey());
+
+/**
+ * The route as one kept-alive page sees it (PageHost.vue gives it to the
+ * page's useRoute()). It follows the router only while `key` is the page
+ * showing, so a page left in a hidden tab keeps its own id and query
+ * instead of reloading for whatever another tab navigates to.
+ */
+export function pageRoute(key: string) {
+  const route = shallowReactive({ ...router.currentRoute.value });
+  const stop = watch(router.currentRoute, (r) => {
+    if (shownKey.value === key) Object.assign(route, r);
+  });
+  return { route, stop };
+}
 
 /** A page names its tab ("INV-1042", an account's name) once it knows, and again whenever it's shown. */
 export function useTabTitle(get: () => string | null | undefined) {
@@ -212,7 +226,7 @@ export async function moveTabToNewWindow(id = tabs.activeId, atCursor = false) {
 // ---- ⌘-click opens in a new tab -----------------------------------------------------
 
 const isMac = tiny.system.isMacOS();
-/** Set by a ⌘-click (Ctrl-click off macOS) or middle click for the navigation it starts. */
+/** Set by a ⌘-click (Ctrl-click off macOS) or middle click for the navigation it starts: a new tab, shown unless ⇧ is held too. */
 let newTabFromClick: { show: boolean } | null = null;
 
 function noteClick(e: MouseEvent) {
@@ -223,11 +237,11 @@ function noteClick(e: MouseEvent) {
   if (a) {
     e.preventDefault();
     e.stopPropagation();
-    openTab(a.getAttribute('href')!.slice(1), e.shiftKey);
+    openTab(a.getAttribute('href')!.slice(1), !e.shiftKey);
     return;
   }
   // Anything else that navigates (rows, buttons, search results) does so straight away.
-  newTabFromClick = { show: e.shiftKey };
+  newTabFromClick = { show: !e.shiftKey };
   setTimeout(() => (newTabFromClick = null));
 }
 window.addEventListener('click', noteClick, true);

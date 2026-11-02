@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { AppFrame, Navigation, Spinner, UiProvider, toast, type NavigationSectionType } from '@octans/ui';
 import AppSettings from './components/AppSettings.vue';
 import EntryEditor from './components/EntryEditor.vue';
+import PageHost from './components/PageHost.vue';
 import TabStrip from './components/TabStrip.vue';
 import TopBar from './components/TopBar.vue';
 import UpdateBanner from './components/UpdateBanner.vue';
@@ -545,7 +546,7 @@ onBeforeUnmount(() => {
       <div ref="host" class="TabHost">
         <RouterView v-slot="{ Component }">
           <KeepAlive :max="KEEP_ALIVE">
-            <component :is="Component" :key="`${session.books.path}|${shownKey}|${route.path}`" />
+            <PageHost v-if="Component" :key="`${session.books.path}|${shownKey}|${route.path}`" :page="Component" :page-key="shownKey" />
           </KeepAlive>
         </RouterView>
       </div>

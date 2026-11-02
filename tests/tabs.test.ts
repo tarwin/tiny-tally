@@ -6,7 +6,7 @@ import { router } from '../src/router.ts';
 import { session } from '../src/lib/session.ts';
 import {
   activateTab, activeTab, canGoBack, canGoForward, closeOtherTabs, closeTab, cycleTab, goBack, goForward,
-  moveTab, moveTabToNewWindow, openTab, shownKey, showTabNumber, startAt, tabs,
+  moveTab, moveTabToNewWindow, openTab, pageRoute, shownKey, showTabNumber, startAt, tabs,
 } from '../src/lib/tabs.ts';
 
 const settle = () => new Promise((r) => setTimeout(r, 0)).then(nextTick);
@@ -119,13 +119,18 @@ test('tabs: history per tab, switching, closing, ordering, ⌘-click and saved t
     dispatch('click', { metaKey: true, target: element('#/reports') });
     await settle();
     assert.deepEqual(titles(), ['Contacts', 'Reports']);
-    assert.equal(here(), '/contacts', 'in the background');
+    assert.equal(here(), '/reports', 'and shows it');
+    showTabNumber(1);
+    await settle();
     // Rows and buttons navigate in code: the click marks the navigation it starts.
     dispatch('click', { metaKey: true, shiftKey: true, target: element(null) });
     await router.push('/budget');
     await settle();
     assert.deepEqual(titles(), ['Contacts', 'Budget', 'Reports']);
-    assert.equal(here(), '/budget', 'with ⇧, switched to');
+    assert.equal(here(), '/contacts', 'with ⇧, in the background');
+    showTabNumber(2);
+    await settle();
+    assert.equal(here(), '/budget');
     // The mark doesn't outlive the click.
     dispatch('click', { metaKey: true, target: element(null) });
     await settle();
@@ -138,11 +143,32 @@ test('tabs: history per tab, switching, closing, ordering, ⌘-click and saved t
     assert.equal(tabs.list.length, 4);
   });
 
+  await t.test("a page in a hidden tab keeps its own route", async () => {
+    await router.push('/accounts/1');
+    const mine = pageRoute(shownKey.value);
+    // Filters on the page itself are followed.
+    await router.replace('/accounts/1?period=all');
+    await settle();
+    assert.equal(mine.route.fullPath, '/accounts/1?period=all');
+    // Another page in this tab, or another tab on another account: not.
+    await router.push('/accounts');
+    await settle();
+    openTab('/accounts/2');
+    await settle();
+    assert.equal(here(), '/accounts/2');
+    assert.equal(mine.route.params.id, '1');
+    assert.equal(mine.route.fullPath, '/accounts/1?period=all');
+    mine.stop();
+    closeTab();
+    await settle();
+  });
+
   await t.test('Move Tab to New Window', async () => {
     calls.length = 0;
     const id = activeTab.value.id;
+    const route = here();
     await moveTabToNewWindow(id, true);
-    assert.deepEqual(calls, [{ method: 'app.newWindow', params: { share: true, route: '/items', atCursor: true } }]);
+    assert.deepEqual(calls, [{ method: 'app.newWindow', params: { share: true, route, atCursor: true } }]);
     assert.ok(!tabs.list.some((x) => x.id === id));
   });
 
