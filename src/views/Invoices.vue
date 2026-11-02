@@ -7,6 +7,7 @@ import { csvMoney, saveCsv } from '../lib/csv';
 import { formatShortDay } from '../lib/dates';
 import { useBooksVersion } from '../lib/live';
 import { DOCS } from '../lib/documents';
+import { useFillHeight } from '../lib/fillHeight';
 import { dueText, statusInfo } from '../lib/invoiceStatus';
 import { formatMoney } from '../lib/money';
 import { session } from '../lib/session';
@@ -110,6 +111,10 @@ function exportCsv() {
   ];
   void saveCsv(doc.value.many, [cols.map((c) => c.label), ...list.value.rows.map((r) => cols.map((c) => c.get(r)))]);
 }
+
+// The table scrolls inside itself, filling the window below the filters.
+const tableBox = ref<HTMLElement | null>(null);
+const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
@@ -178,36 +183,39 @@ function exportCsv() {
       <TextField v-model="search" :placeholder="`Search number, ${doc.contactLabel.toLowerCase()} or reference`" />
     </div>
 
-    <DataTable
-      :columns="columns"
-      :rows="list.rows"
-      :loading="loading"
-      :empty-text="`No ${doc.many.toLowerCase()} here. Create one with New ${doc.word}.`"
-      @click-row="(row: InvoiceRow) => router.push(`${doc.base}/${row.id}`)"
-    >
-      <template #col:contactName="{ row }">
-        <span>{{ row.contactName }}</span>
-        <span v-if="doc.type === 'bill' && row.reference" class="Due">Their ref. {{ row.reference }}</span>
-      </template>
-      <template #col:issueDate="{ row }">
-        <span>{{ formatShortDay(row.issueDate) }}</span>
-      </template>
-      <template #col:dueDate="{ row }">
-        <span>{{ formatShortDay(row.dueDate) }}</span>
-        <span v-if="dueText(row)" class="Due" :class="{ 'Due--late': row.status === 'overdue' }">{{ dueText(row) }}</span>
-      </template>
-      <template #col:total="{ row }">
-        <span class="money">{{ money(row.total) }}</span>
-      </template>
-      <template #col:balance="{ row }">
-        <span class="money" :class="{ subdued: row.balance === 0 || row.status === 'void' }">
-          {{ row.status === 'void' ? '—' : money(row.balance) }}
-        </span>
-      </template>
-      <template #col:status="{ row }">
-        <Badge :status="statusInfo(row.docType, row.status as InvoiceStatus).badge">{{ statusInfo(row.docType, row.status as InvoiceStatus).label }}</Badge>
-      </template>
-    </DataTable>
+    <div ref="tableBox">
+      <DataTable
+        :max-height="maxHeight"
+        :columns="columns"
+        :rows="list.rows"
+        :loading="loading"
+        :empty-text="`No ${doc.many.toLowerCase()} here. Create one with New ${doc.word}.`"
+        @click-row="(row: InvoiceRow) => router.push(`${doc.base}/${row.id}`)"
+      >
+        <template #col:contactName="{ row }">
+          <span>{{ row.contactName }}</span>
+          <span v-if="doc.type === 'bill' && row.reference" class="Due">Their ref. {{ row.reference }}</span>
+        </template>
+        <template #col:issueDate="{ row }">
+          <span>{{ formatShortDay(row.issueDate) }}</span>
+        </template>
+        <template #col:dueDate="{ row }">
+          <span>{{ formatShortDay(row.dueDate) }}</span>
+          <span v-if="dueText(row)" class="Due" :class="{ 'Due--late': row.status === 'overdue' }">{{ dueText(row) }}</span>
+        </template>
+        <template #col:total="{ row }">
+          <span class="money">{{ money(row.total) }}</span>
+        </template>
+        <template #col:balance="{ row }">
+          <span class="money" :class="{ subdued: row.balance === 0 || row.status === 'void' }">
+            {{ row.status === 'void' ? '—' : money(row.balance) }}
+          </span>
+        </template>
+        <template #col:status="{ row }">
+          <Badge :status="statusInfo(row.docType, row.status as InvoiceStatus).badge">{{ statusInfo(row.docType, row.status as InvoiceStatus).label }}</Badge>
+        </template>
+      </DataTable>
+    </div>
   </Page>
 </template>
 

@@ -3,8 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Page, SegmentedControl, Select, TextField } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
-import { api, type Account, type EntryKind, type EntryList } from '../lib/api';
+import { api, type Account, type EntryKind } from '../lib/api';
 import { newEntry } from '../lib/entryEditor';
+import { useEntryFeed } from '../lib/entryFeed';
 import { useBooksVersion } from '../lib/live';
 import { allEntries, entryCsvRows, saveCsv } from '../lib/csv';
 import { formatMoney } from '../lib/money';
@@ -14,18 +15,13 @@ import { session } from '../lib/session';
 const dataVersion = useBooksVersion();
 
 const route = useRoute();
-const PAGE_SIZES = [50, 100, 250];
 
-const list = ref<EntryList>({ rows: [], total: 0, inflow: 0, outflow: 0 });
 const accounts = ref<Account[]>([]);
-const loading = ref(true);
 
 const period = ref<PeriodKey>((route.query.period as PeriodKey) || 'thisYear');
 const kind = ref<EntryKind | 'all'>('all');
 const accountId = ref<number | null>(null);
 const search = ref(typeof route.query.q === 'string' ? route.query.q : '');
-const offset = ref(0);
-const limit = ref(50);
 
 const currency = computed(() => session.books!.currency);
 
@@ -52,31 +48,17 @@ function query() {
   };
 }
 
-let seq = 0;
-async function load() {
-  const mine = ++seq;
-  loading.value = true;
-  try {
-    const result = await api.listEntries({ ...query(), limit: limit.value, offset: offset.value });
-    if (mine === seq) list.value = result;
-  } finally {
-    if (mine === seq) loading.value = false;
-  }
-}
+const { list, loading, loadingMore, hasMore, reload, loadMore } = useEntryFeed(query);
+const load = () => reload();
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 watch(search, () => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    offset.value = 0;
-    void load();
-  }, 250);
+  searchTimer = setTimeout(load, 250);
 });
-watch([period, kind, accountId, limit], () => {
-  offset.value = 0;
-  void load();
-});
-watch([offset, dataVersion], () => void load());
+watch([period, kind, accountId], load);
+// The books changed: the same rows, refreshed, rather than back to the top.
+watch(dataVersion, () => void reload(true));
 
 // The top bar's search sends contacts and categories here, maybe while it's open.
 watch(
@@ -92,20 +74,11 @@ onMounted(async () => {
   await load();
 });
 
-/** Every row the filters match, not just this page. */
+/** Every row the filters match, not just the ones loaded. */
 async function exportCsv() {
   const q = query();
   await saveCsv(`Transactions${q.from ? ` ${q.from} to ${q.to}` : ''}`, entryCsvRows(await allEntries(q)));
 }
-
-const pagination = computed(() => ({
-  offset: offset.value,
-  updateOffset: (v: number) => (offset.value = v),
-  limit: limit.value,
-  updateLimit: (v: number) => (limit.value = v),
-  pageSizes: PAGE_SIZES,
-  total: list.value.total,
-}));
 </script>
 
 <template>
@@ -140,8 +113,11 @@ const pagination = computed(() => ({
     <EntryTable
       :rows="list.rows"
       :loading="loading"
-      :pagination="pagination"
+      fill
+      :has-more="hasMore"
+      :loading-more="loadingMore"
       empty-text="No transactions match. Try another period, or record one with New expense."
+      @load-more="loadMore"
     />
   </Page>
 </template>

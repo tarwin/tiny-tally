@@ -18,6 +18,7 @@ import {
   type DataTableColumnType,
 } from '@octans/ui';
 import { api, errorMessage, type Category, type CategoryKind, type Item, type TaxCode } from '../lib/api';
+import { useFillHeight } from '../lib/fillHeight';
 import { onBooksChanged } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
@@ -156,6 +157,10 @@ async function remove(i: Item) {
     toast({ title: errorMessage(e), tone: 'error' });
   }
 }
+
+// The table scrolls inside itself, filling the window below the filters.
+const tableBox = ref<HTMLElement | null>(null);
+const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
@@ -171,29 +176,32 @@ async function remove(i: Item) {
         :options="[{ label: 'All', value: 'all' }, { label: 'Sell', value: 'income' }, { label: 'Buy', value: 'expense' }]"
       />
     </div>
-    <DataTable
-      :columns="columns"
-      :rows="rows"
-      :loading="loading"
-      empty-text="Nothing saved yet. Add an item here, or use “Save as item” on an invoice line."
-      @click-row="open"
-      :row-actions="(row: Item) => [
-        { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => open(row) },
-        row.archived
-          ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => archive(row, false) }
-          : { label: 'Archive', icon: 'mdi:archive-outline', onAction: () => archive(row, true) },
-        { label: 'Delete', icon: 'mdi:delete-outline', onAction: () => remove(row) },
-      ]"
-    >
-      <template #col:name="{ row }">
-        <span>{{ row.name }}</span>
-        <Badge v-if="row.archived" class="Archived">Archived</Badge>
-        <div v-if="row.description && row.description !== row.name" class="subdued Small">{{ row.description }}</div>
-      </template>
-      <template #col:kind="{ row }">{{ row.kind === 'income' ? 'Invoices' : 'Bills' }}</template>
-      <template #col:categoryName="{ row }">{{ row.categoryName ?? '' }}</template>
-      <template #col:unitPrice="{ row }"><span class="money">{{ priceText(row) }}</span></template>
-    </DataTable>
+    <div ref="tableBox">
+      <DataTable
+        :max-height="maxHeight"
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        empty-text="Nothing saved yet. Add an item here, or use “Save as item” on an invoice line."
+        @click-row="open"
+        :row-actions="(row: Item) => [
+          { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => open(row) },
+          row.archived
+            ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => archive(row, false) }
+            : { label: 'Archive', icon: 'mdi:archive-outline', onAction: () => archive(row, true) },
+          { label: 'Delete', icon: 'mdi:delete-outline', onAction: () => remove(row) },
+        ]"
+      >
+        <template #col:name="{ row }">
+          <span>{{ row.name }}</span>
+          <Badge v-if="row.archived" class="Archived">Archived</Badge>
+          <div v-if="row.description && row.description !== row.name" class="subdued Small">{{ row.description }}</div>
+        </template>
+        <template #col:kind="{ row }">{{ row.kind === 'income' ? 'Invoices' : 'Bills' }}</template>
+        <template #col:categoryName="{ row }">{{ row.categoryName ?? '' }}</template>
+        <template #col:unitPrice="{ row }"><span class="money">{{ priceText(row) }}</span></template>
+      </DataTable>
+    </div>
 
     <Modal
       :visible="editing"

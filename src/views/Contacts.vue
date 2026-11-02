@@ -17,6 +17,7 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type Contact, type ContactKind, type TradingName } from '../lib/api';
 import { formatDay } from '../lib/dates';
+import { useFillHeight } from '../lib/fillHeight';
 import { useBooksVersion } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { session } from '../lib/session';
@@ -125,6 +126,10 @@ async function setArchived(c: Contact, archived: boolean) {
 
 watch(dataVersion, load);
 onMounted(load);
+
+// The table scrolls inside itself, filling the window below the filters.
+const tableBox = ref<HTMLElement | null>(null);
+const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
@@ -141,23 +146,26 @@ onMounted(load);
         <TextField v-model="search" placeholder="Search contacts" />
       </div>
     </div>
-    <DataTable
-      :columns="columns"
-      :rows="rows"
-      :loading="loading"
-      empty-text="No contacts yet. Add one here, or while recording a transaction."
-      :row-actions="(row: Contact) => [
-        { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => openEditor(row) },
-        { label: 'Statement', icon: 'mdi:file-document-multiple-outline', onAction: () => router.push(`/contacts/${row.id}/statement`) },
-        row.kind === 'customer'
-          ? { label: 'New invoice', icon: 'mdi:file-document-plus-outline', onAction: () => router.push(`/invoices/new?contact=${row.id}`) }
-          : { label: 'New bill', icon: 'mdi:receipt-text-plus-outline', onAction: () => router.push(`/bills/new?contact=${row.id}`) },
-        row.archived
-          ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => setArchived(row, false) }
-          : { label: 'Archive', icon: 'mdi:archive-outline', onAction: () => setArchived(row, true) },
-      ]"
-      @click-row="(row: Contact) => openEditor(row)"
-    />
+    <div ref="tableBox">
+      <DataTable
+        :max-height="maxHeight"
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        empty-text="No contacts yet. Add one here, or while recording a transaction."
+        :row-actions="(row: Contact) => [
+          { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => openEditor(row) },
+          { label: 'Statement', icon: 'mdi:file-document-multiple-outline', onAction: () => router.push(`/contacts/${row.id}/statement`) },
+          row.kind === 'customer'
+            ? { label: 'New invoice', icon: 'mdi:file-document-plus-outline', onAction: () => router.push(`/invoices/new?contact=${row.id}`) }
+            : { label: 'New bill', icon: 'mdi:receipt-text-plus-outline', onAction: () => router.push(`/bills/new?contact=${row.id}`) },
+          row.archived
+            ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => setArchived(row, false) }
+            : { label: 'Archive', icon: 'mdi:archive-outline', onAction: () => setArchived(row, true) },
+        ]"
+        @click-row="(row: Contact) => openEditor(row)"
+      />
+    </div>
 
     <Modal
       :visible="editing"

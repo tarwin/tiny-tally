@@ -4,6 +4,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { DataTable, FormLayout, Modal, ModalSection, Page, SegmentedControl, Select, TextField, toast, type DataTableColumnType } from '@octans/ui';
 import { api, errorMessage, type Category, type CategoryKind, type Contact, type Rule } from '../lib/api';
+import { useFillHeight } from '../lib/fillHeight';
 import { onBooksChanged } from '../lib/live';
 
 const rules = ref<Rule[]>([]);
@@ -69,6 +70,10 @@ async function remove(r: Rule) {
     toast({ title: errorMessage(e), tone: 'error' });
   }
 }
+
+// The table scrolls inside itself, filling the window below the filters.
+const tableBox = ref<HTMLElement | null>(null);
+const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
@@ -77,17 +82,20 @@ async function remove(r: Rule) {
     subtitle="Bank lines that match a rule get its category when you import. Newest rules are checked first."
     :primary-action="{ label: 'Add rule', icon: 'mdi:plus', onAction: () => open() }"
   >
-    <DataTable
-      :columns="columns"
-      :rows="rules"
-      :loading="loading"
-      empty-text="No rules yet. Add one here, or tick “Remember” when you import."
-      @click-row="open"
-      :row-actions="(row: Rule) => [
-        { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => open(row) },
-        { label: 'Delete', icon: 'mdi:delete-outline', onAction: () => remove(row) },
-      ]"
-    />
+    <div ref="tableBox">
+      <DataTable
+        :max-height="maxHeight"
+        :columns="columns"
+        :rows="rules"
+        :loading="loading"
+        empty-text="No rules yet. Add one here, or tick “Remember” when you import."
+        @click-row="open"
+        :row-actions="(row: Rule) => [
+          { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => open(row) },
+          { label: 'Delete', icon: 'mdi:delete-outline', onAction: () => remove(row) },
+        ]"
+      />
+    </div>
 
     <Modal
       :visible="editing"

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@octans/ui':
-        specifier: ^1.10.0
-        version: 1.10.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))
+        specifier: ^1.11.0
+        version: 1.11.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))
       vue:
         specifier: ^3.5.44
         version: 3.5.44(typescript@6.0.3)
@@ -117,8 +117,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@octans/ui@1.10.0':
-    resolution: {integrity: sha512-mjjLCTLw7wlrBddVCMlendnNij4+7xVwTgkzble981i24PjKxtqydj3bopxfUh7aATsy3Wqkylqo6d8Woq2Pgg==}
+  '@octans/ui@1.11.0':
+    resolution: {integrity: sha512-EVamBLIajYcKkG25ZrgzMH0i2coi4/LmfHfsxb62uONrdNBS/lv8LC9w6ezGriqL76x7d9Ds18fjmeNuvhF3FA==}
     engines: {node: '>=24'}
     hasBin: true
     peerDependencies:
@@ -797,7 +797,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@octans/ui@1.10.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))':
+  '@octans/ui@1.11.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@iconify/vue': 5.0.4(vue@3.5.44(typescript@6.0.3))

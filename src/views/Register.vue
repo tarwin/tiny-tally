@@ -3,9 +3,10 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Badge, Page, Select, TextField } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
-import { api, type Account, type EntryList } from '../lib/api';
+import { api, type Account } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { newEntry } from '../lib/entryEditor';
+import { useEntryFeed } from '../lib/entryFeed';
 import { useBooksVersion } from '../lib/live';
 import { allEntries, entryCsvRows, saveCsv } from '../lib/csv';
 import { formatMoney } from '../lib/money';
@@ -17,16 +18,11 @@ const dataVersion = useBooksVersion();
 
 const route = useRoute();
 const router = useRouter();
-const PAGE_SIZES = [50, 100, 250];
 
 const account = ref<Account | null>(null);
 useTabTitle(() => account.value?.name);
-const list = ref<EntryList>({ rows: [], total: 0, inflow: 0, outflow: 0 });
-const loading = ref(true);
 const period = ref<PeriodKey>('all');
 const search = ref('');
-const offset = ref(0);
-const limit = ref(50);
 
 const id = computed(() => Number(route.params.id));
 const currency = computed(() => session.books!.currency);
@@ -39,62 +35,33 @@ const balanceText = computed(() => {
   return formatMoney(a.balance, currency.value);
 });
 
-let seq = 0;
-async function load() {
-  const mine = ++seq;
-  loading.value = true;
-  try {
-    const [accounts, result] = await Promise.all([
-      api.listAccounts(),
-      api.listEntries({
-        accountId: id.value,
-        ...periodRange(period.value, session.books!.fiscalYearStart),
-        q: search.value || undefined,
-        limit: limit.value,
-        offset: offset.value,
-      }),
-    ]);
-    if (mine !== seq) return;
-    account.value = accounts.find((a) => a.id === id.value) ?? null;
-    if (!account.value) {
-      await router.replace('/accounts');
-      return;
-    }
-    list.value = result;
-  } finally {
-    if (mine === seq) loading.value = false;
-  }
+const { list, loading, loadingMore, hasMore, reload, loadMore } = useEntryFeed(() => ({
+  accountId: id.value,
+  ...periodRange(period.value, session.books!.fiscalYearStart),
+  q: search.value || undefined,
+}));
+
+/** The account (for its name and balance) and its rows; `keep` as in useEntryFeed. */
+async function load(keep = false) {
+  const [accounts] = await Promise.all([api.listAccounts(), reload(keep)]);
+  account.value = accounts.find((a) => a.id === id.value) ?? null;
+  if (!account.value) await router.replace('/accounts');
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 watch(search, () => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    offset.value = 0;
-    void load();
-  }, 250);
+  searchTimer = setTimeout(() => void load(), 250);
 });
-watch([period, limit, id], () => {
-  offset.value = 0;
-  void load();
-});
-watch([offset, dataVersion], () => void load());
-onMounted(load);
+watch([period, id], () => void load());
+watch(dataVersion, () => void load(true));
+onMounted(() => load());
 
 async function exportCsv() {
   const range = periodRange(period.value, session.books!.fiscalYearStart);
   const rows = await allEntries({ accountId: id.value, ...range, q: search.value || undefined });
   await saveCsv(`${account.value?.name ?? 'Account'}${range.from ? ` ${range.from} to ${range.to}` : ''}`, entryCsvRows(rows, true));
 }
-
-const pagination = computed(() => ({
-  offset: offset.value,
-  updateOffset: (v: number) => (offset.value = v),
-  limit: limit.value,
-  updateLimit: (v: number) => (limit.value = v),
-  pageSizes: PAGE_SIZES,
-  total: list.value.total,
-}));
 </script>
 
 <template>
@@ -120,8 +87,11 @@ const pagination = computed(() => ({
       :rows="list.rows"
       :loading="loading"
       :account-id="id"
-      :pagination="pagination"
+      fill
+      :has-more="hasMore"
+      :loading-more="loadingMore"
       empty-text="Nothing recorded in this account for this period."
+      @load-more="loadMore"
     />
     <p class="subdued Opening">
       Opening balance {{ formatMoney(account?.openingBalance ?? 0, currency) }} on

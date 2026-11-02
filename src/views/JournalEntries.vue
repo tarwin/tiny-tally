@@ -21,6 +21,7 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type JournalAccount, type JournalEntryRow } from '../lib/api';
 import { addDays, formatDay, today } from '../lib/dates';
+import { useFillHeight } from '../lib/fillHeight';
 import { useBooksVersion } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, session } from '../lib/session';
@@ -194,6 +195,10 @@ watch(
     if (on && !form.value.reverseDate) form.value.reverseDate = firstOfNextMonth(form.value.date);
   },
 );
+
+// The table scrolls inside itself, filling the window below the filters.
+const tableBox = ref<HTMLElement | null>(null);
+const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
@@ -203,18 +208,21 @@ watch(
     :primary-action="{ label: 'New journal', icon: 'mdi:plus', onAction: openNew }"
     :secondary-actions="[{ label: 'General journal', icon: 'mdi:book-open-variant', onAction: () => router.push('/reports/journal') }]"
   >
-    <DataTable
-      :columns="columns"
-      :rows="rows"
-      :loading="loading"
-      empty-text="No journal entries yet. Most books never need one; your accountant may ask for depreciation at year end."
-      @click-row="openExisting"
-    >
-      <template #col:date="{ row }">{{ formatDay(row.date) }}</template>
-      <template #col:reference="{ row }">{{ row.reference || `J${row.id}` }}</template>
-      <template #col:memo="{ row }">{{ row.memo || '' }}</template>
-      <template #col:total="{ row }"><span class="money">{{ money(row.total) }}</span></template>
-    </DataTable>
+    <div ref="tableBox">
+      <DataTable
+        :max-height="maxHeight"
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        empty-text="No journal entries yet. Most books never need one; your accountant may ask for depreciation at year end."
+        @click-row="openExisting"
+      >
+        <template #col:date="{ row }">{{ formatDay(row.date) }}</template>
+        <template #col:reference="{ row }">{{ row.reference || `J${row.id}` }}</template>
+        <template #col:memo="{ row }">{{ row.memo || '' }}</template>
+        <template #col:total="{ row }"><span class="money">{{ money(row.total) }}</span></template>
+      </DataTable>
+    </div>
 
     <Modal
       :visible="visible"

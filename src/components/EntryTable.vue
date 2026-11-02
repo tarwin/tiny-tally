@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { DataTable, Icon, type DataTableColumnType, type DataTablePaginationType } from '@octans/ui';
+import { DataTable, Icon, type DataTableColumnType } from '@octans/ui';
 import type { Entry } from '../lib/api';
 import { formatShortDay } from '../lib/dates';
 import { docPath } from '../lib/documents';
 import { editEntry } from '../lib/entryEditor';
+import { useFillHeight } from '../lib/fillHeight';
 import { formatMoney } from '../lib/money';
 import { session } from '../lib/session';
 
@@ -14,10 +15,16 @@ const props = defineProps<{
   loading?: boolean;
   /** Register mode: amounts signed for this account, plus a running balance. */
   accountId?: number;
-  pagination?: DataTablePaginationType;
   emptyText?: string;
   compact?: boolean;
+  /** Fill the window below and scroll inside, fetching more rows as they come into view. */
+  fill?: boolean;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }>();
+const emit = defineEmits<{ 'load-more': [] }>();
+const box = ref<HTMLElement | null>(null);
+const maxHeight = useFillHeight(box);
 
 const currency = computed(() => session.books!.currency);
 const router = useRouter();
@@ -73,41 +80,47 @@ function amountClass(e: Entry) {
 </script>
 
 <template>
-  <DataTable
-    :columns="columns"
-    :rows="rows"
-    :loading="loading"
-    :pagination="pagination"
-    :compact="compact"
-    :empty-text="emptyText ?? 'No transactions yet.'"
-    :row-actions="compact ? undefined : [{ label: 'Open', icon: 'mdi:pencil-outline', onAction: open }]"
-    @click-row="open"
-  >
-    <template #col:date="{ row }">
-      <span class="money">{{ formatShortDay(row.date) }}</span>
-    </template>
-    <template #col:description="{ row }">
-      <span class="Desc">
-        <Icon
-          :icon="row.kind === 'income' ? 'mdi:arrow-down-bold-circle-outline' : row.kind === 'expense' ? 'mdi:arrow-up-bold-circle-outline' : 'mdi:swap-horizontal'"
-          :class="`Kind Kind--${row.kind}`"
-        />
-        <span class="Clip" :title="description(row)">{{ description(row) }}</span>
-        <Icon v-if="row.attachments" icon="mdi:paperclip" class="Flag" :title="row.attachments === 1 ? '1 attachment' : `${row.attachments} attachments`" />
-        <Icon v-if="row.scheduleId" icon="mdi:repeat" class="Flag" title="Created by a recurring schedule" />
-        <Icon v-if="reconciled(row)" icon="mdi:check-decagram-outline" class="Flag Flag--rec" title="Reconciled" />
-      </span>
-    </template>
-    <template #col:category="{ row }">
-      <span class="Clip" :class="{ subdued: row.kind === 'transfer' }" :title="category(row)">{{ category(row) }}</span>
-    </template>
-    <template #col:signed="{ row }">
-      <span class="money Amount" :class="amountClass(row)">{{ amountText(row) }}</span>
-    </template>
-    <template #col:balance="{ row }">
-      <span class="money" :class="{ negative: (row.balance ?? 0) < 0 }">{{ formatMoney(row.balance ?? 0, currency) }}</span>
-    </template>
-  </DataTable>
+  <div ref="box">
+    <DataTable
+      :columns="columns"
+      :rows="rows"
+      :loading="loading"
+      :max-height="fill ? maxHeight : undefined"
+      :virtual="fill && !!maxHeight"
+      :has-more="fill && hasMore"
+      :loading-more="loadingMore"
+      :compact="compact"
+      :empty-text="emptyText ?? 'No transactions yet.'"
+      :row-actions="compact ? undefined : [{ label: 'Open', icon: 'mdi:pencil-outline', onAction: open }]"
+      @click-row="open"
+      @load-more="emit('load-more')"
+    >
+      <template #col:date="{ row }">
+        <span class="money">{{ formatShortDay(row.date) }}</span>
+      </template>
+      <template #col:description="{ row }">
+        <span class="Desc">
+          <Icon
+            :icon="row.kind === 'income' ? 'mdi:arrow-down-bold-circle-outline' : row.kind === 'expense' ? 'mdi:arrow-up-bold-circle-outline' : 'mdi:swap-horizontal'"
+            :class="`Kind Kind--${row.kind}`"
+          />
+          <span class="Clip" :title="description(row)">{{ description(row) }}</span>
+          <Icon v-if="row.attachments" icon="mdi:paperclip" class="Flag" :title="row.attachments === 1 ? '1 attachment' : `${row.attachments} attachments`" />
+          <Icon v-if="row.scheduleId" icon="mdi:repeat" class="Flag" title="Created by a recurring schedule" />
+          <Icon v-if="reconciled(row)" icon="mdi:check-decagram-outline" class="Flag Flag--rec" title="Reconciled" />
+        </span>
+      </template>
+      <template #col:category="{ row }">
+        <span class="Clip" :class="{ subdued: row.kind === 'transfer' }" :title="category(row)">{{ category(row) }}</span>
+      </template>
+      <template #col:signed="{ row }">
+        <span class="money Amount" :class="amountClass(row)">{{ amountText(row) }}</span>
+      </template>
+      <template #col:balance="{ row }">
+        <span class="money" :class="{ negative: (row.balance ?? 0) < 0 }">{{ formatMoney(row.balance ?? 0, currency) }}</span>
+      </template>
+    </DataTable>
+  </div>
 </template>
 
 <style scoped>

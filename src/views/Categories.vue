@@ -15,6 +15,7 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type Category, type CategoryClass, type CategoryKind, type TaxCode } from '../lib/api';
 import { CLASS_INFO, classOptions } from '../lib/categoryClass';
+import { useFillHeight } from '../lib/fillHeight';
 import { onBooksChanged } from '../lib/live';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
@@ -146,6 +147,10 @@ async function setArchived(c: Category, archived: boolean) {
 
 onMounted(load);
 onBooksChanged(load);
+
+// The table scrolls inside itself, filling the window below the filters.
+const tableBox = ref<HTMLElement | null>(null);
+const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
@@ -158,22 +163,25 @@ onBooksChanged(load);
       <SegmentedControl v-model="kind" :options="kindOptions" />
       <ToggleSwitch v-if="hasArchived" v-model="showArchived" label="Show archived" />
     </div>
-    <DataTable
-      :columns="columns"
-      :rows="rows"
-      :loading="loading"
-      empty-text="No categories here yet."
-      :row-actions="(row: Category) => [
-        { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => openEditor(row) },
-        row.archived
-          ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => setArchived(row, false) }
-          : { label: 'Archive', icon: 'mdi:archive-outline', onAction: () => setArchived(row, true) },
-      ]"
-    >
-      <template #col:name="{ row }">
-        <span :class="{ Child: row.parentId }">{{ row.name }}{{ row.archived ? ' (archived)' : '' }}</span>
-      </template>
-    </DataTable>
+    <div ref="tableBox">
+      <DataTable
+        :max-height="maxHeight"
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        empty-text="No categories here yet."
+        :row-actions="(row: Category) => [
+          { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => openEditor(row) },
+          row.archived
+            ? { label: 'Restore', icon: 'mdi:archive-arrow-up-outline', onAction: () => setArchived(row, false) }
+            : { label: 'Archive', icon: 'mdi:archive-outline', onAction: () => setArchived(row, true) },
+        ]"
+      >
+        <template #col:name="{ row }">
+          <span :class="{ Child: row.parentId }">{{ row.name }}{{ row.archived ? ' (archived)' : '' }}</span>
+        </template>
+      </DataTable>
+    </div>
 
     <Modal
       :visible="editing"
