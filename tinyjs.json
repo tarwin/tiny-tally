@@ -3,7 +3,7 @@
   "name": "tiny-tally",
   "title": "Tiny Tally",
   "size": "1180x780",
-  "id": "com.tarwin.tiny-tally",
+  "id": "art.tarwin.tiny-tally",
   "version": "0.6.1",
   "backend": "backend/main.ts",
   "frontend": {

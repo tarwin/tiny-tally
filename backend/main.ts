@@ -112,6 +112,7 @@ import {
 } from './changelog';
 import { COUNTRIES, countryProfile, isCountry, type Country } from '../src/shared/countries';
 import type { ImportPlan } from '../src/shared/import';
+import { moveOldData } from './movedData';
 import { taxCodeOr, type TaxCode } from '../src/shared/tax';
 import { SCHEDULE_C_MAP, isScheduleCKey } from '../src/shared/scheduleC';
 
@@ -131,6 +132,8 @@ const STORE_KEY = 'books';
 const MAX_RECENT = 8;
 
 let appRef: TinyApp;
+/** Settles once the data from the old app id is in place (movedData.ts). */
+let dataMoved: Promise<void> = Promise.resolve();
 
 // ---- windows --------------------------------------------------------------------
 // Each window shows one set of books, and several can show the same one
@@ -348,6 +351,7 @@ export const api: Record<string, TinyApiHandler> = {
    * opens that one.
    */
   'app.start': async (_p, _app, { window: win }) => {
+    await dataMoved;
     const store = await readStore();
     let reopenError: string | null = null;
     let locked = false;
@@ -845,6 +849,7 @@ function claimDrop(paths: string[], win: string, score: number) {
 
 export function init(app: TinyApp) {
   appRef = app;
+  dataMoved = moveOldData(app).catch((e) => console.error('Moving the old data folder:', e));
   app.win.setHideOnClose(true);
 }
 
