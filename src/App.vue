@@ -164,6 +164,8 @@ function syncDensityMenu() {
 }
 
 const isMac = tiny.system.isMacOS();
+/** The user guide, built from guide/ and published with each release (scripts/publish-docs.sh). */
+const HELP_URL = 'https://apps.tarwin.art/tiny-tally/docs/';
 const REVEAL_LABEL = isMac ? 'Show in Finder' : tiny.system.isWindows() ? 'Show in File Explorer' : 'Show in Folder';
 
 /** Recent books, with the folder added where two share a name. */
@@ -257,8 +259,14 @@ async function buildMenu() {
         },
       ],
     },
-    // macOS has Check for Updates… in the app menu.
-    ...(isMac ? [] : [{ title: 'Help', items: [{ id: 'check-updates', label: 'Check for Updates…' }] }]),
+    {
+      title: 'Help',
+      items: [
+        { id: 'help', label: 'Tiny Tally Help' },
+        // macOS has Check for Updates… in the app menu.
+        ...(isMac ? [] : [{ separator: true }, { id: 'check-updates', label: 'Check for Updates…' }]),
+      ],
+    },
   ]);
   syncThemeMenu();
   syncDensityMenu();
@@ -363,6 +371,9 @@ function onMenu(id: string) {
       break;
     case 'check-updates':
       void checkForUpdates();
+      break;
+    case 'help':
+      void tiny.app.shell.open(HELP_URL);
       break;
     case 'books-reveal':
       if (session.books) void tiny.app.shell.reveal(session.books.path);

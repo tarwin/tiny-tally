@@ -29,3 +29,7 @@ release
 
 # scripts/screenshots.sh output
 screenshots
+
+# VitePress (guide/)
+guide/.vitepress/dist
+guide/.vitepress/cache

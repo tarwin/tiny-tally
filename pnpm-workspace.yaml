@@ -1,0 +1,3 @@
+allowBuilds:
+  # VitePress's esbuild runs fine without its install check.
+  esbuild: false

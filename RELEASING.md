@@ -32,3 +32,12 @@
    `releases/latest/download/manifest.json` (tinyjs.json `update.url`), so
    until this runs, installed apps simply see no update. Write the release
    notes before running it: they're shown in the app's update banner.
+6. Docs: `sh scripts/publish-docs.sh`. It builds the user guide (`guide/`,
+   VitePress), copies it into the microsite repo (`../tarwin-apps-microsites`,
+   or set `MICROSITE`) at `tiny-tally/docs/`, commits and pushes, so
+   apps.tarwin.art/tiny-tally/docs/ matches this version. The app's
+   Help → Tiny Tally Help opens it. The microsite must have no uncommitted
+   changes. Update the guide for anything new before releasing: preview
+   with `pnpm docs:dev`. New screenshots: `sh scripts/screenshots.sh`, then
+   `sh scripts/web-shots.sh` (guide and microsite images), and commit both
+   repos.
