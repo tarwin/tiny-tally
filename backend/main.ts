@@ -194,7 +194,7 @@ function openWindow(start: WindowStart = {}) {
     if (start.share) {
       shareBooks('main', start.share);
       appRef.win.push('books-shared', { route: start.route ?? null });
-    } else if (start.path) appRef.win.push('open-files', { paths: [start.path] });
+    } else if (start.path) appRef.win.push('window-open-files', { paths: [start.path] });
     showMain();
     return 'main';
   }
@@ -790,7 +790,7 @@ function claimDrop(paths: string[], win: string, score: number) {
     timer: setTimeout(() => {
       const won = drops.get(key)!;
       drops.delete(key);
-      windowHandle(won.best).push('drop', { paths });
+      windowHandle(won.best).push('window-drop', { paths });
     }, 120),
   });
 }
@@ -800,11 +800,16 @@ export function init(app: TinyApp) {
   app.win.setHideOnClose(true);
 }
 
-/** Menu clicks reach every window; send each to the focused one only. */
+/**
+ * Menu clicks reach every window: tinyjs pushes its own 'menu' event to all
+ * of them. Send each to the focused one only, as 'window-menu' (and opened
+ * files and drops as 'window-open-files' and 'window-drop'), and have pages
+ * listen to these alone, or the focused window acts twice.
+ */
 export function onMenu(id: string) {
   // With every window closed on macOS, the menu bar still works: bring main back for it.
   if (focusedWindow === 'main' && mainHidden) showMain();
-  windowHandle(focusedWindow).push('menu', { id });
+  windowHandle(focusedWindow).push('window-menu', { id });
 }
 
 export function onWindowState(info: TinyWindowStateEvent) {
@@ -818,7 +823,7 @@ export function onOpenFiles(paths: string[]) {
   if (!mainStarted) pendingFiles.push(...paths);
   else {
     if (focusedWindow === 'main' && mainHidden) showMain();
-    windowHandle(focusedWindow).push('open-files', { paths });
+    windowHandle(focusedWindow).push('window-open-files', { paths });
   }
 }
 

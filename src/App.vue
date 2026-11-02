@@ -429,9 +429,9 @@ onMounted(async () => {
   navMin.value = (await tiny.store.get('navMin').catch(() => false)) === true;
   // The backend sends menu clicks, opened files and drops to one window
   // (main.ts), since tinyjs delivers them to every window.
-  offs.push(tiny.api.on('menu', ({ id }: { id: string }) => onMenu(id)));
-  offs.push(tiny.api.on('open-files', ({ paths }: { paths: string[] }) => openFiles(paths)));
-  offs.push(tiny.api.on('drop', ({ paths }: { paths: string[] }) => onDropped(paths)));
+  offs.push(tiny.api.on('window-menu', ({ id }: { id: string }) => onMenu(id)));
+  offs.push(tiny.api.on('window-open-files', ({ paths }: { paths: string[] }) => openFiles(paths)));
+  offs.push(tiny.api.on('window-drop', ({ paths }: { paths: string[] }) => onDropped(paths)));
   offs.push(tiny.api.on('update-available', (info: TinyUpdateInfo) => updateFound(info)));
   let dragOverAt = 0;
   const onDragOver = () => (dragOverAt = Date.now());
