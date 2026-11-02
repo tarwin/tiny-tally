@@ -27,10 +27,23 @@ import splashSvg from '../assets/tiny-tally-splash.svg?raw';
 
 // Inlined (not an <img>) so dark mode can lighten the navy lettering. The
 // Illustrator class names are prefixed so they can't clash with anything else.
+// The face (eyes and smile, on the calculator's white screen) keeps its navy;
+// the hands, house and lettering lighten. The white holes in the letters and
+// the house's windows take the page's colour, so they stay holes.
 const splash = splashSvg
   .replace(/<\?xml[^>]*>/, '')
   .replace(/<!--[\s\S]*?-->/g, '')
-  .replace(/\bst(\d)\b/g, 'tts$1');
+  .replace(/\bst(\d)\b/g, 'tts$1')
+  .replace(/class="tts4" d="M([\d.]+),([\d.]+)/g, (m, mx, my) => {
+    const [x, y] = [Number(mx), Number(my)];
+    const onScreen = x > 330 && x < 630 && y > 160 && y < 290;
+    return onScreen ? m : m.replace('tts4', 'tts4 ttsLight');
+  })
+  .replace(/class="tts3" d="M([\d.]+),([\d.]+)/g, (m, mx, my) => {
+    const [x, y] = [Number(mx), Number(my)];
+    const hole = y > 500 || (x > 740 && x < 820 && y > 380 && y < 430);
+    return hole ? m.replace('tts3', 'tts3 ttsHole') : m;
+  });
 
 const props = defineProps<{ notice?: string | null; noticePath?: string | null }>();
 
@@ -406,14 +419,22 @@ function shortPath(path: string) {
 </style>
 
 <style>
-/* Dark mode: the logo's navy (tts4 in the splash SVG) becomes a soft white. */
-html[data-octans-theme='dark'] .Welcome__splash .tts4 {
+/* Dark mode: the logo's navy, bar the face, becomes a soft white. */
+html[data-octans-theme='dark'] .Welcome__splash .ttsLight {
   fill: #e6edf5;
 }
 
+html[data-octans-theme='dark'] .Welcome__splash .ttsHole {
+  fill: var(--octans-surface-app);
+}
+
 @media (prefers-color-scheme: dark) {
-  html:not([data-octans-theme='light']) .Welcome__splash .tts4 {
+  html:not([data-octans-theme='light']) .Welcome__splash .ttsLight {
     fill: #e6edf5;
+  }
+
+  html:not([data-octans-theme='light']) .Welcome__splash .ttsHole {
+    fill: var(--octans-surface-app);
   }
 }
 </style>
