@@ -140,7 +140,7 @@ const pendingSize = (f: AttachmentFile) => sizeText(Math.round((f.data.length * 
       <span class="subdued Att__hint">or drop a PDF or photo on the window</span>
     </div>
 
-    <Modal :visible="!!preview" :title="preview?.name ?? ''" size="large" @close="preview = null">
+    <Modal :visible="!!preview" :title="preview?.name ?? ''" :dialog-style="{ width: 'min(900px, 92vw)' }" @close="preview = null">
       <ModalSection>
         <img v-if="preview" :src="preview.src" :alt="preview.name" class="Att__preview" />
       </ModalSection>

@@ -27,21 +27,6 @@ export interface Tab {
 /** Pages kept alive at once, across every tab; the least recently shown go first. */
 export const KEEP_ALIVE = 12;
 
-let nextId = 1;
-let nextKey = 1;
-const visit = (path: string): Visit => ({ path, key: nextKey++ });
-const makeTab = (path: string): Tab => ({ id: nextId++, visits: [visit(path)], index: 0, title: titleFor(path) });
-
-export const tabs = reactive({ list: [makeTab('/')] as Tab[], activeId: 1 });
-
-export const activeTab = computed(() => tabs.list.find((t) => t.id === tabs.activeId) ?? tabs.list[0]);
-const visitKey = () => `${activeTab.value.id}:${activeTab.value.visits[activeTab.value.index].key}`;
-/**
- * The page showing, for App.vue's KeepAlive. Moves once the router has
- * arrived, so a tab switch never shows the old route under the new tab's key.
- */
-export const shownKey = ref(visitKey());
-
 // ---- titles --------------------------------------------------------------------
 
 const TITLES: Record<string, string> = {
@@ -93,6 +78,21 @@ function titleFor(path: string) {
   }
   return TITLES[name] ?? 'Tiny Tally';
 }
+
+let nextId = 1;
+let nextKey = 1;
+const visit = (path: string): Visit => ({ path, key: nextKey++ });
+const makeTab = (path: string): Tab => ({ id: nextId++, visits: [visit(path)], index: 0, title: titleFor(path) });
+
+export const tabs = reactive({ list: [makeTab('/')] as Tab[], activeId: 1 });
+
+export const activeTab = computed(() => tabs.list.find((t) => t.id === tabs.activeId) ?? tabs.list[0]);
+const visitKey = () => `${activeTab.value.id}:${activeTab.value.visits[activeTab.value.index].key}`;
+/**
+ * The page showing, for App.vue's KeepAlive. Moves once the router has
+ * arrived, so a tab switch never shows the old route under the new tab's key.
+ */
+export const shownKey = ref(visitKey());
 
 /** A page names its tab ("INV-1042", an account's name) once it knows, and again whenever it's shown. */
 export function useTabTitle(get: () => string | null | undefined) {
