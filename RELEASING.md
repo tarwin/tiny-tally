@@ -41,3 +41,11 @@
    with `pnpm docs:dev`. New screenshots: `sh scripts/screenshots.sh`, then
    `sh scripts/web-shots.sh` (guide and microsite images), and commit both
    repos.
+7. Shelf: `node scripts/shelf.mjs`. Shelf, the tinyjs app store, only
+   downloads from tinyjsapp-examples' own releases (`../tinyjsapp-examples`,
+   or set `EXAMPLES`), so this copies the release's dmgs, Windows zip and
+   Linux tarballs to its `tiny-tally-v<version>` release with the same notes,
+   writes Tiny Tally's catalog entry (marked `external`, which
+   `shelf/gen-catalog.js` there keeps as is), commits and pushes. That repo
+   must have no uncommitted changes. Shelf on a Mac only installs apps whose
+   id starts `art.tarwin.`, hence Tiny Tally's id.
