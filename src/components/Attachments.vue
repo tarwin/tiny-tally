@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Receipts and other files on a transaction or document. Without an owner
 // yet (a new transaction), files wait in `pending` and the parent saves them.
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue';
 import { Button, Icon, Modal, ModalSection, confirmModal, toast } from '@octans/ui';
 import { api, errorMessage, type Attachment, type AttachmentFile, type AttachmentOwner } from '../lib/api';
 import { ATTACHABLE, readForAttaching, registerDropTarget, sizeText } from '../lib/attachments';
@@ -46,16 +46,22 @@ async function pick() {
   if (paths?.length) await attach(paths);
 }
 
-// Dropped receipts land here while this is showing.
+// Dropped receipts land here while this is showing (and not in a hidden tab).
 let unregister: (() => void) | null = null;
-watch(
-  () => props.active,
-  (on) => {
-    unregister?.();
-    unregister = on ? registerDropTarget((paths) => void attach(paths)) : null;
-  },
-  { immediate: true },
-);
+let shown = true;
+function sync() {
+  unregister?.();
+  unregister = props.active && shown ? registerDropTarget((paths) => void attach(paths)) : null;
+}
+watch(() => props.active, sync, { immediate: true });
+onDeactivated(() => {
+  shown = false;
+  sync();
+});
+onActivated(() => {
+  shown = true;
+  sync();
+});
 onBeforeUnmount(() => unregister?.());
 
 // ---- view, save, remove -------------------------------------------------------------

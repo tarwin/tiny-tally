@@ -66,6 +66,8 @@ export interface StartState {
   internalDir: string;
   /** Files opened with the app before the page was ready (main window only). */
   openFiles: string[];
+  /** A window opened on another window's books: the page to start on. */
+  route: string | null;
 }
 
 export type OpenResult =
@@ -107,6 +109,8 @@ export type ContactKind = 'customer' | 'vendor';
 
 export interface Entry {
   id: number;
+  /** When it was last saved (refuses saves over a change made since). */
+  updatedAt: string;
   date: string;
   kind: EntryKind;
   /** cents, always positive */
@@ -140,6 +144,8 @@ export interface Entry {
 
 export interface EntryInput {
   id?: number;
+  /** The updatedAt it was loaded with, when editing. */
+  updatedAt?: string;
   date: string;
   kind: EntryKind;
   amount: number;
@@ -307,6 +313,8 @@ export interface InvoicePayment {
 }
 
 export interface Invoice extends InvoiceRow {
+  /** When it was last saved (refuses saves over a change made since). */
+  updatedAt: string;
   notes: string | null;
   templateId: number | null;
   pricesIncludeTax: boolean;
@@ -326,6 +334,8 @@ export interface Invoice extends InvoiceRow {
 
 export interface InvoiceInput {
   id?: number;
+  /** The updatedAt it was loaded with, when editing. */
+  updatedAt?: string;
   docType?: DocType;
   sourceId?: number | null;
   number?: string | null;
@@ -773,7 +783,8 @@ export const api = {
   openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),
   openInNewWindow: (path: string) => call<{ focused: boolean }>('books.openInNewWindow', { path }),
   windowHidden: () => call<boolean>('app.windowHidden'),
-  newWindow: () => call<true>('app.newWindow'),
+  /** A new window: on these books (at `route`, or where the cursor is) with `share`, else the welcome screen. */
+  newWindow: (p: { share?: boolean; route?: string; atCursor?: boolean } = {}) => call<true>('app.newWindow', p),
   settingsChanged: () => call<true>('app.settingsChanged'),
   claimDrop: (paths: string[], over: boolean, focused: boolean) => call<true>('drop.claim', { paths, over, focused }),
   closeBooks: () => call<true>('books.close'),

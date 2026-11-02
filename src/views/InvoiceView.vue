@@ -29,6 +29,7 @@ import { dueText, statusInfo } from '../lib/invoiceStatus';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { printElement } from '../lib/print';
 import { booksProfile, booksTax, session } from '../lib/session';
+import { useTabTitle } from '../lib/tabs';
 import { TAX_CODE_MAP, tracksTax } from '../shared/tax';
 
 const dataVersion = useBooksVersion();
@@ -42,6 +43,7 @@ const accounts = ref<Account[]>([]);
 const paper = ref<HTMLElement | null>(null);
 
 const doc = computed(() => DOCS[invoice.value?.docType ?? route.meta.docType ?? 'invoice']);
+useTabTitle(() => invoice.value?.number);
 const id = computed(() => Number(route.params.id));
 const books = computed(() => session.books!);
 /** The books' tax, where this document carries it (US bills don't). */

@@ -10,6 +10,7 @@
 // A credit note reduces what a customer owes, either by being applied to an
 // invoice (credit_allocations, no money moves) or refunded (a payment out).
 import { all, getBooks, one, run } from './db';
+import { changedSince } from './entries';
 import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from './settings';
 import { lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
 import { countryProfile } from '../src/shared/countries';
@@ -43,6 +44,8 @@ export interface InvoiceLineInput {
 
 export interface InvoiceInput {
   id?: number;
+  /** As loaded, when editing: refuses to save over a change made since (another tab or window). */
+  updatedAt?: string;
   docType?: DocType;
   number?: string | null;
   contactId: number;
@@ -144,7 +147,7 @@ export function getInvoice(id: number) {
   const { db } = getBooks();
   const inv = one<any>(db,
     `SELECT ${LIST_COLUMNS}, i.notes, i.template_id AS templateId, i.prices_include_tax AS pricesIncludeTax, i.from_snapshot AS fromSnapshot,
-            i.sent_at AS sentAt, i.schedule_id AS scheduleId, ct.address AS contactAddress, ct.phone AS contactPhone,
+            i.sent_at AS sentAt, i.schedule_id AS scheduleId, i.updated_at AS updatedAt, ct.address AS contactAddress, ct.phone AS contactPhone,
             src.number AS sourceNumber, src.doc_type AS sourceType
      FROM invoices i JOIN contacts ct ON ct.id = i.contact_id
      LEFT JOIN invoices src ON src.id = i.source_id
@@ -243,6 +246,7 @@ export function saveInvoice(input: InvoiceInput) {
   if (input.id && !existing) throw new Error('That document no longer exists.');
   const type: DocType = existing ? existing.doc_type : docType(input.docType);
   const word = DOC[type].name;
+  if (existing && input.updatedAt && input.updatedAt !== existing.updated_at) throw new Error(changedSince(word));
   if (existing?.status === 'void') throw new Error(`This ${word} is void. Duplicate it to start a new one.`);
 
   if (typeof input.contactId !== 'number' || !one(db, 'SELECT id FROM contacts WHERE id = ?', input.contactId)) {
@@ -323,7 +327,7 @@ export function saveInvoice(input: InvoiceInput) {
         `UPDATE invoices SET number = ?, contact_id = ?, issue_date = ?, due_date = ?, status = ?, reference = ?, notes = ?,
            template_id = ?, trading_name_id = ?, from_snapshot = ?, prices_include_tax = ?, net = ?, tax = ?, total = ?,
            sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
-           updated_at = datetime('now')
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id = ?`,
         renumber ? nextNumber(type, tradingNameId) : number ?? existing.number, input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
         clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status, id);
@@ -363,7 +367,7 @@ export function setInvoiceStatus(id: number, status: 'draft' | 'sent' | 'void') 
   db.transaction(() => {
     run(db,
       `UPDATE invoices SET status = ?, sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
-         updated_at = datetime('now') WHERE id = ?`, status, status, id);
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`, status, status, id);
     keepSender(id, status);
   })();
   return true;

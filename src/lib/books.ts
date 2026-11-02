@@ -1,6 +1,5 @@
 import { confirmModal, toast } from '@octans/ui';
 import { api, errorMessage } from './api';
-import { router } from '../router';
 import { session } from './session';
 
 async function refresh() {
@@ -31,8 +30,8 @@ export async function openBooksAt(path: string, force = false): Promise<boolean>
     // Open in another window, which has been brought to the front.
     if (!r.ok && r.elsewhere) return false;
     if (r.ok) {
+      // tabs.ts then shows the tabs last left open on these books.
       await refresh();
-      await router.push('/');
       return true;
     }
     if (r.locked) {

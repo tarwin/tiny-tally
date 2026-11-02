@@ -16,6 +16,7 @@ import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
+import { useTabTitle } from '../lib/tabs';
 import { countryProfile } from '../shared/countries';
 
 const route = useRoute();
@@ -28,6 +29,7 @@ const money = (v: number) => formatMoney(v, books.value.currency, books.value.do
 const from = ref(addDays(today(), -90));
 const to = ref(today());
 const statement = ref<Statement | null>(null);
+useTabTitle(() => statement.value && `Statement · ${statement.value.contact.name}`);
 /** Which trading name the statement is from; null lets the backend pick the customer's usual one. */
 const tradingNameId = ref<number | null>(null);
 const template = ref<InvoiceTemplate | null>(null);

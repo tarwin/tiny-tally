@@ -95,7 +95,7 @@ export function saveJournal(input: JournalInput) {
   db.transaction(() => {
     if (existing) {
       id = existing.id;
-      run(db, "UPDATE journals SET date = ?, reference = ?, memo = ?, updated_at = datetime('now') WHERE id = ?",
+      run(db, "UPDATE journals SET date = ?, reference = ?, memo = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
         input.date, clean(input.reference), clean(input.memo), id);
       run(db, 'DELETE FROM journal_lines WHERE journal_id = ?', id);
     } else {

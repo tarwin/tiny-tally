@@ -30,6 +30,7 @@ import { DOCS } from '../lib/documents';
 
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
+import { useTabTitle } from '../lib/tabs';
 import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
 
 const route = useRoute();
@@ -332,6 +333,7 @@ async function save(status?: 'draft' | 'sent') {
   try {
     const id = await api.saveInvoice({
       id: editingId.value ?? undefined,
+      updatedAt: existing.value?.updatedAt,
       docType: doc.value.type,
       sourceId: route.query.source ? Number(route.query.source) : undefined,
       number: form.value.number.trim() || null,
@@ -412,6 +414,7 @@ onMounted(async () => {
 });
 
 const title = computed(() => (existing.value ? `Edit ${existing.value.number}` : `New ${doc.value.word}`));
+useTabTitle(() => title.value);
 const approveHint = computed(() => {
   switch (doc.value.type) {
     case 'bill': return "Approving counts the bill as money you owe. Drafts don't.";

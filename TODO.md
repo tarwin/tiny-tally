@@ -12,7 +12,7 @@ Done: non-P&L categories (tax, owner, loans, assets), bills, bank reconciliation
 Done: credit notes (applied to invoices or refunded), quotes that turn into invoices, customer and supplier statements, remittance advice for bill payments, saved products & services, and reminder emails plus sidebar badges for overdue invoices and bills.
 
 ## App
-Done: app settings (theme, density, size, sidebar, reopen last), File → Open Recent and Show in Finder, a set of books per window (New Window, open a second set), and a change log of every edit (Activity page, History on transactions, documents and journals) with older history archived to a `.tallylog` file.
+Done: app settings (theme, density, size, sidebar, reopen last), File → Open Recent and Show in Finder, windows and tabs (several windows or tabs on the same books, all kept up to date; drag a tab out into its own window), a set of books per window, and a change log of every edit (Activity page, History on transactions, documents and journals) with older history archived to a `.tallylog` file.
 
 ## Tax
 - File returns straight from the app: NZ GST to myIR through IRD Gateway Services, the BAS to the ATO through Standard Business Reporting. Both need Tiny Tally registered and certified as a software provider, plus signing in with each person's own account. Until then people copy the figures into myIR or ATO Online services.

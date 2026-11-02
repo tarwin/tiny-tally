@@ -11,6 +11,7 @@ import { allEntries, entryCsvRows, saveCsv } from '../lib/csv';
 import { formatMoney } from '../lib/money';
 import { PERIOD_OPTIONS, periodRange, type PeriodKey } from '../lib/periods';
 import { session } from '../lib/session';
+import { useTabTitle } from '../lib/tabs';
 
 const dataVersion = useBooksVersion();
 
@@ -19,6 +20,7 @@ const router = useRouter();
 const PAGE_SIZES = [50, 100, 250];
 
 const account = ref<Account | null>(null);
+useTabTitle(() => account.value?.name);
 const list = ref<EntryList>({ rows: [], total: 0, inflow: 0, outflow: 0 });
 const loading = ref(true);
 const period = ref<PeriodKey>('all');

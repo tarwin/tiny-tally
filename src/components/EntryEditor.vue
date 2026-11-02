@@ -320,6 +320,7 @@ async function save(andNew = false) {
   try {
     const id = await api.saveEntry({
       id: editing.value?.id,
+      updatedAt: editing.value?.updatedAt,
       kind: f.kind,
       amount,
       date: f.date,

@@ -13,6 +13,7 @@ import {
   openBooks,
   openWindows,
   run,
+  shareBooks,
   windowsSharing,
   windowWithFile,
 } from './db';
@@ -132,10 +133,21 @@ const MAX_RECENT = 8;
 let appRef: TinyApp;
 
 // ---- windows --------------------------------------------------------------------
-// Each window holds its own books (db.ts). Secondary windows are opened by
-// the backend; the books a new window should show waits here until its
-// page calls app.start.
-const pendingOpen = new Map<string, string>();
+// Each window shows one set of books, and several can show the same one
+// (db.ts). Secondary windows are opened by the backend; what a new window
+// should show waits here until its page calls app.start.
+type WindowStart = {
+  /** A books file to open. */
+  path?: string;
+  /** Show the same books as this window. */
+  share?: string;
+  /** The page to start on. */
+  route?: string;
+  /** Where on screen, top-left. */
+  x?: number;
+  y?: number;
+};
+const pendingOpen = new Map<string, WindowStart>();
 let windowCount = 0;
 /** Where menu clicks and opened files go. */
 let focusedWindow = 'main';
@@ -177,15 +189,19 @@ function checkMainHidden() {
 /** The traffic lights, centred in the page's 40px top bar. Keep in step with tinyjs.json. */
 const MAC_CONTROLS = { x: 14, y: 14 };
 
-function openWindow(path: string | null) {
+function openWindow(start: WindowStart = {}) {
   if (mainHidden && !openWindows().includes('main')) {
-    if (path) appRef.win.push('open-files', { paths: [path] });
+    if (start.share) {
+      shareBooks('main', start.share);
+      appRef.win.push('books-shared', { route: start.route ?? null });
+    } else if (start.path) appRef.win.push('open-files', { paths: [start.path] });
     showMain();
     return 'main';
   }
   const win = `books-${++windowCount}`;
-  if (path) pendingOpen.set(win, path);
+  pendingOpen.set(win, start);
   appRef.win.open(win, {
+    ...(start.x !== undefined ? { x: start.x, y: start.y } : {}),
     size: '1180x780',
     minSize: '820x560',
     title: 'Tiny Tally',
@@ -315,8 +331,10 @@ export const api: Record<string, TinyApiHandler> = {
     let lastPath: string | null = null;
     const want = pendingOpen.get(win);
     pendingOpen.delete(win);
-    if (want) {
-      lastPath = want;
+    if (want?.share && booksInfo(want.share)) {
+      shareBooks(win, want.share);
+    } else if (want?.path) {
+      lastPath = want.path;
     } else if (win === 'main') {
       // App settings (src/lib/appSettings.ts) can turn reopening off.
       const prefs = (await appRef.store.get('appSettings').catch(() => null)) as { reopenLast?: boolean } | null;
@@ -345,6 +363,7 @@ export const api: Record<string, TinyApiHandler> = {
       locked,
       internalDir: await internalDir(),
       openFiles,
+      route: want?.route ?? null,
     };
   },
 
@@ -394,7 +413,7 @@ export const api: Record<string, TinyApiHandler> = {
   /** Opens a set of books in a window of its own (or focuses the one that has it). */
   'books.openInNewWindow': async ({ path }: { path: string }) => {
     if (focusFileWindow(path)) return { focused: true };
-    openWindow(path);
+    openWindow({ path });
     return { focused: false };
   },
 
@@ -405,8 +424,19 @@ export const api: Record<string, TinyApiHandler> = {
     return true;
   },
 
-  'app.newWindow': async () => {
-    openWindow(null);
+  /**
+   * A new window: on the same books as this one (at `route`), or on the
+   * welcome screen. `atCursor` puts it where a tab dragged out of a window
+   * was let go.
+   */
+  'app.newWindow': async ({ share, route, atCursor }: { share?: boolean; route?: string; atCursor?: boolean } = {}, _app, { window: win }) => {
+    const start: WindowStart = typeof route === 'string' && route.startsWith('/') ? { route } : {};
+    if (atCursor) {
+      const at = await appRef.mousePosition().catch(() => null);
+      // The tab sits a little in from the window's top-left corner.
+      if (at) Object.assign(start, { x: Math.max(0, Math.round(at.x - 160)), y: Math.max(0, Math.round(at.y - 50)) });
+    }
+    openWindow(share && booksInfo(win) ? { ...start, share: win } : {});
     return true;
   },
 

@@ -8,6 +8,8 @@ type EntryKind = 'income' | 'expense' | 'transfer';
 
 export interface EntryInput {
   id?: number;
+  /** As loaded, when editing: refuses to save over a change made since (another tab or window). */
+  updatedAt?: string;
   date: string;
   kind: EntryKind;
   /** cents, > 0 */
@@ -53,7 +55,7 @@ const SELECT_COLUMNS = `
   e.tax_code AS taxCode, e.tax_amount AS taxAmount,
   e.invoice_id AS invoiceId, inv.number AS invoiceNumber, inv.doc_type AS invoiceType,
   c.class AS categoryClass, e.rec_id AS recId, e.to_rec_id AS toRecId, e.schedule_id AS scheduleId,
-  (SELECT COUNT(*) FROM attachments x WHERE x.entry_id = e.id) AS attachments`;
+  (SELECT COUNT(*) FROM attachments x WHERE x.entry_id = e.id) AS attachments, e.updated_at AS updatedAt`;
 
 const JOINS = `
   JOIN accounts a ON a.id = e.account_id
@@ -167,6 +169,10 @@ function requireRow(table: string, id: unknown, what: string) {
   return row;
 }
 
+/** For a save over a change made since the editor opened. */
+export const changedSince = (what: string) =>
+  `This ${what} was changed in another tab or window after you opened it. Close it and open it again to see the latest, then make your change.`;
+
 export function saveEntry(input: EntryInput) {
   const { db } = getBooks();
   const kind = input.kind;
@@ -177,6 +183,7 @@ export function saveEntry(input: EntryInput) {
 
   const existing = input.id ? one<any>(db, 'SELECT * FROM entries WHERE id = ?', input.id) : null;
   if (input.id && !existing) throw new Error('That transaction no longer exists.');
+  if (existing && input.updatedAt && input.updatedAt !== existing.updated_at) throw new Error(changedSince('transaction'));
   if (existing?.invoice_id) throw new Error('This is a payment on an invoice or bill. Change it from there.');
   if (existing && (existing.rec_id || existing.to_rec_id)) {
     const same = existing.date === input.date && existing.amount === Math.round(Number(input.amount))
@@ -233,7 +240,7 @@ export function saveEntry(input: EntryInput) {
   if (existing) {
     run(db,
       `UPDATE entries SET date = ?, kind = ?, amount = ?, account_id = ?, to_account_id = ?, category_id = ?,
-         contact_id = ?, memo = ?, tax_code = ?, tax_amount = ?, updated_at = datetime('now') WHERE id = ?`,
+         contact_id = ?, memo = ?, tax_code = ?, tax_amount = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
       input.date, kind, amount, account.id, toAccountId, categoryId, contactId, memo, taxCode, taxAmount, existing.id);
     return existing.id as number;
   }

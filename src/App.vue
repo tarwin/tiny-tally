@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { AppFrame, Navigation, Spinner, UiProvider, toast, type NavigationSectionType } from '@octans/ui';
 import AppSettings from './components/AppSettings.vue';
 import EntryEditor from './components/EntryEditor.vue';
+import TabStrip from './components/TabStrip.vue';
 import TopBar from './components/TopBar.vue';
 import UpdateBanner from './components/UpdateBanner.vue';
 import Welcome from './views/Welcome.vue';
@@ -17,6 +18,7 @@ import { newEntry } from './lib/entryEditor';
 import { booksChanged, booksVersion } from './lib/live';
 import { canGoBack, canGoForward, goBack, goForward } from './lib/navHistory';
 import { session } from './lib/session';
+import { KEEP_ALIVE, closeTab, cycleTab, moveTabToNewWindow, openTab, shownKey, showTabNumber, startAt, tabs } from './lib/tabs';
 import { THEME_OPTIONS, applyTheme, restoreTheme, syncThemeMenu } from './lib/theme';
 import { checkForUpdates, updateFound } from './lib/updates';
 
@@ -103,7 +105,7 @@ const isMain = tiny.win.id === 'main';
 
 /** Menu items that need open books. */
 const BOOKS_ITEMS = [
-  'books-close', 'books-backup', 'books-reveal', 'books-settings', 'import', 'search',
+  'books-close', 'books-backup', 'books-reveal', 'books-settings', 'import', 'search', 'tab-new', 'tab-next', 'tab-previous',
   'new-expense', 'new-income', 'new-transfer', 'new-invoice', 'new-quote', 'new-bill',
 ];
 
@@ -116,9 +118,43 @@ async function syncMenus() {
 function syncNavMenu() {
   void tiny.win.menu.update('nav-back', { enabled: !!session.books && canGoBack.value }).catch(() => {});
   void tiny.win.menu.update('nav-forward', { enabled: !!session.books && canGoForward.value }).catch(() => {});
+  void tiny.win.menu.update('tab-window', { enabled: !!session.books && tabs.list.length > 1 }).catch(() => {});
 }
 
-watch([canGoBack, canGoForward], syncNavMenu);
+watch([canGoBack, canGoForward, () => tabs.list.length], syncNavMenu);
+
+// ---- tabs ------------------------------------------------------------------------
+
+/** Kept-alive pages lose their scroll position when put back: remember it per visit. */
+const host = ref<HTMLElement | null>(null);
+const scrolls = new Map<string, [Element, number][]>();
+watch(shownKey, async (key, old) => {
+  if (host.value) {
+    scrolls.set(old, [...host.value.querySelectorAll('*')].filter((el) => el.scrollTop > 0).map((el) => [el, el.scrollTop]));
+    if (scrolls.size > 60) scrolls.delete(scrolls.keys().next().value!);
+  }
+  await nextTick();
+  for (const [el, top] of scrolls.get(key) ?? []) if (el.isConnected) el.scrollTop = top;
+});
+
+function closeWindow() {
+  // The main window hides rather than closes: closing it would quit (main.ts).
+  if (isMain) void tiny.win.hide({ app: false });
+  else void tiny.win.close();
+}
+
+/** ⌘1–⌘9 and Ctrl+Tab, which have no menu items. */
+function onKey(e: KeyboardEvent) {
+  if (!session.books || tabs.list.length < 2) return;
+  const mod = isMac ? e.metaKey : e.ctrlKey;
+  if (mod && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+    e.preventDefault();
+    showTabNumber(Number(e.key));
+  } else if (e.ctrlKey && e.key === 'Tab') {
+    e.preventDefault();
+    cycleTab(e.shiftKey ? -1 : 1);
+  }
+}
 
 const topBar = ref<InstanceType<typeof TopBar> | null>(null);
 
@@ -154,8 +190,9 @@ async function buildMenu() {
     {
       title: 'File',
       items: [
+        { id: 'tab-new', label: 'New Tab', key: 't' },
+        { id: 'window-new', label: 'New Window', key: 'n' },
         { id: 'books-new', label: 'New Books…', key: 'N' },
-        { id: 'window-new', label: 'New Window', key: 'alt+n' },
         { id: 'books-open', label: 'Open Books…', key: 'o' },
         {
           id: 'books-recent',
@@ -173,8 +210,9 @@ async function buildMenu() {
         // Windows and Linux have no app menu, so app settings live here too.
         ...(isMac ? [] : [{ id: 'app-settings', label: 'App Settings…', key: ',' }]),
         { separator: true },
-        { id: 'books-close', label: 'Close Books', key: 'W' },
-        { id: 'window-close', label: 'Close Window', key: 'w' },
+        { id: 'tab-close', label: 'Close Tab', key: 'w' },
+        { id: 'window-close', label: 'Close Window', key: 'W' },
+        { id: 'books-close', label: 'Close Books' },
       ],
     },
     { role: 'edit' },
@@ -183,7 +221,7 @@ async function buildMenu() {
       items: [
         { id: 'new-expense', label: 'New Expense…', key: 'e' },
         { id: 'new-income', label: 'New Income…', key: 'i' },
-        { id: 'new-transfer', label: 'New Transfer…', key: 't' },
+        { id: 'new-transfer', label: 'New Transfer…', key: 'alt+t' },
         { separator: true },
         { id: 'new-invoice', label: 'New Invoice…', key: 'I' },
         { id: 'new-quote', label: 'New Quote…' },
@@ -197,6 +235,10 @@ async function buildMenu() {
         { id: 'nav-forward', label: 'Forward', key: ']' },
         { separator: true },
         { id: 'search', label: 'Search…', key: 'k' },
+        { separator: true },
+        { id: 'tab-next', label: 'Show Next Tab', key: 'shift+]' },
+        { id: 'tab-previous', label: 'Show Previous Tab', key: 'shift+[' },
+        { id: 'tab-window', label: 'Move Tab to New Window' },
       ],
     },
     {
@@ -327,13 +369,26 @@ function onMenu(id: string) {
     case 'books-new':
       void newBooks();
       break;
+    case 'tab-new':
+      if (session.books) openTab();
+      break;
+    case 'tab-close':
+      // The last tab closes the window.
+      if (!session.books || !closeTab()) closeWindow();
+      break;
+    case 'tab-next':
+    case 'tab-previous':
+      if (session.books) cycleTab(id === 'tab-next' ? 1 : -1);
+      break;
+    case 'tab-window':
+      if (session.books) void moveTabToNewWindow();
+      break;
     case 'window-new':
-      void api.newWindow();
+      // These books, on the page showing; the welcome screen with none open.
+      void api.newWindow(session.books ? { share: true, route: route.fullPath } : {});
       break;
     case 'window-close':
-      // The main window hides rather than closes: closing it would quit (main.ts).
-      if (isMain) void tiny.win.hide({ app: false });
-      else void tiny.win.close();
+      closeWindow();
       break;
     case 'books-open':
       void pickAndOpenBooks();
@@ -403,6 +458,16 @@ onMounted(async () => {
       booksChanged();
     }),
   );
+  // Main, hidden and empty, reused for a new window on another window's books.
+  offs.push(
+    tiny.api.on('books-shared', async ({ route: at }: { route: string | null }) => {
+      startAt(at ?? '/');
+      notice.value = null;
+      await refreshSession();
+    }),
+  );
+  window.addEventListener('keydown', onKey);
+  offs.push(() => window.removeEventListener('keydown', onKey));
   offs.push(
     tiny.api.on('recent-changed', ({ recent }: { recent: typeof session.recent }) => {
       session.recent = recent;
@@ -420,6 +485,8 @@ onMounted(async () => {
   );
 
   const s = await api.start();
+  // A window opened on another's books starts on the page it was showing.
+  if (s.route) startAt(s.route);
   session.books = s.books;
   session.recent = s.recent;
   session.internalDir = s.internalDir;
@@ -474,7 +541,14 @@ onBeforeUnmount(() => {
           </template>
         </Navigation>
       </template>
-      <RouterView :key="`${session.books.path}|${route.path}`" />
+      <TabStrip v-if="tabs.list.length > 1" />
+      <div ref="host" class="TabHost">
+        <RouterView v-slot="{ Component }">
+          <KeepAlive :max="KEEP_ALIVE">
+            <component :is="Component" :key="`${session.books.path}|${shownKey}|${route.path}`" />
+          </KeepAlive>
+        </RouterView>
+      </div>
       <EntryEditor />
     </AppFrame>
     <AppSettings :nav-min="navMin" @update:nav-min="setNavMin" />
@@ -483,6 +557,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.TabHost {
+  display: contents;
+}
+
 .DragStrip {
   position: fixed;
   top: 0;
