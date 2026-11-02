@@ -16,6 +16,7 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type Account, type AccountKind } from '../lib/api';
 import { formatDay, today } from '../lib/dates';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { session } from '../lib/session';
 
@@ -118,6 +119,7 @@ async function setArchived(a: Account, archived: boolean) {
 }
 
 onMounted(load);
+onBooksChanged(load);
 </script>
 
 <template>

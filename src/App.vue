@@ -13,7 +13,8 @@ import { dropAttachments } from './lib/attachments';
 import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density } from './lib/appSettings';
 import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
 import { today } from './lib/dates';
-import { dataChanged, dataVersion, newEntry } from './lib/entryEditor';
+import { newEntry } from './lib/entryEditor';
+import { booksChanged, booksVersion } from './lib/live';
 import { canGoBack, canGoForward, goBack, goForward } from './lib/navHistory';
 import { session } from './lib/session';
 import { THEME_OPTIONS, applyTheme, restoreTheme, syncThemeMenu } from './lib/theme';
@@ -39,7 +40,7 @@ async function loadOverdue() {
     // A badge isn't worth an error.
   }
 }
-watch([dataVersion, () => session.books?.path], loadOverdue, { immediate: true });
+watch([booksVersion, () => session.books?.path], loadOverdue, { immediate: true });
 const badge = (n: number) => (n ? String(n) : undefined);
 
 const sections = computed<NavigationSectionType[]>(() => [
@@ -236,7 +237,6 @@ async function runSchedules() {
   try {
     const r = await api.runSchedules(today());
     if (!r.created.length && !r.failed.length) return;
-    dataChanged();
     const names = [...new Set(r.created.map((c) => c.name))];
     toast({
       title: r.created.length ? `Created ${r.created.length} recurring item${r.created.length === 1 ? '' : 's'}` : "Some recurring items weren't created",
@@ -396,6 +396,13 @@ onMounted(async () => {
     document.addEventListener('visibilitychange', onVisibility);
     offs.push(() => document.removeEventListener('visibilitychange', onVisibility));
   }
+  // The books changed, here or in another window showing them: reload what's showing.
+  offs.push(
+    tiny.api.on('books-changed', ({ books }: { books: typeof session.books }) => {
+      if (books && books.path === session.books?.path) session.books = books;
+      booksChanged();
+    }),
+  );
   offs.push(
     tiny.api.on('recent-changed', ({ recent }: { recent: typeof session.recent }) => {
       session.recent = recent;

@@ -6,6 +6,7 @@ import { api, type AgedContact } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay, today } from '../lib/dates';
 import { docPath } from '../lib/documents';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
@@ -69,6 +70,7 @@ function exportCsv() {
 
 watch(asOf, load);
 onMounted(load);
+onBooksChanged(load);
 </script>
 
 <template>

@@ -27,7 +27,7 @@ import {
 } from '../lib/api';
 import { addDays, today } from '../lib/dates';
 import { DOCS } from '../lib/documents';
-import { dataChanged } from '../lib/entryEditor';
+
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
@@ -352,7 +352,6 @@ async function save(status?: 'draft' | 'sent') {
         taxCode: l.taxCode,
       })),
     });
-    dataChanged();
     const approved = status === 'sent' && existing.value?.rawStatus !== 'sent';
     toast({
       title: approved ? (doc.value.printable ? `${doc.value.one} ready to send` : `${doc.value.one} approved`) : `${doc.value.one} saved`,

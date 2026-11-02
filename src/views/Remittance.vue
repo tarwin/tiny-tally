@@ -9,6 +9,7 @@ import PaperPreview from '../components/PaperPreview.vue';
 import { api, errorMessage, type InvoiceTemplate, type Remittance } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { docPath } from '../lib/documents';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
@@ -37,6 +38,7 @@ async function load() {
 }
 watch(entryId, load);
 onMounted(load);
+onBooksChanged(load);
 const sender = computed(() => advice.value?.sender);
 
 const billRef = (i: Remittance['items'][number]) => i.reference || i.number;

@@ -4,6 +4,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { DataTable, FormLayout, Modal, ModalSection, Page, SegmentedControl, Select, TextField, toast, type DataTableColumnType } from '@octans/ui';
 import { api, errorMessage, type Category, type CategoryKind, type Contact, type Rule } from '../lib/api';
+import { onBooksChanged } from '../lib/live';
 
 const rules = ref<Rule[]>([]);
 const categories = ref<Category[]>([]);
@@ -26,6 +27,7 @@ async function load() {
   }
 }
 onMounted(load);
+onBooksChanged(load);
 
 const editing = ref(false);
 const form = ref({ id: undefined as number | undefined, pattern: '', kind: 'expense' as CategoryKind, categoryId: null as number | null, contactId: null as number | null });

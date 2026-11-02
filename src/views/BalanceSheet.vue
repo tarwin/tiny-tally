@@ -7,6 +7,7 @@ import { Banner, Card, CardSection, DatePicker, Page } from '@octans/ui';
 import { api, type BalanceSection, type BalanceSheet } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay, today } from '../lib/dates';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { toIso, yearStartFor } from '../lib/periods';
 import { printElement } from '../lib/print';
@@ -37,6 +38,7 @@ async function load() {
 }
 watch(asOf, load);
 onMounted(load);
+onBooksChanged(load);
 
 const net = computed(() => (sheet.value ? sheet.value.totals.assets - sheet.value.totals.liabilities : 0));
 const balanced = computed(() => !sheet.value || sheet.value.totals.assets === sheet.value.totals.liabilities + sheet.value.totals.equity);

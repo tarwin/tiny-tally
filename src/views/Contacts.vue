@@ -17,9 +17,11 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type Contact, type ContactKind, type TradingName } from '../lib/api';
 import { formatDay } from '../lib/dates';
-import { dataVersion } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { session } from '../lib/session';
+
+const dataVersion = useBooksVersion();
 
 const router = useRouter();
 const contacts = ref<Contact[]>([]);

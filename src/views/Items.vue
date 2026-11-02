@@ -18,6 +18,7 @@ import {
   type DataTableColumnType,
 } from '@octans/ui';
 import { api, errorMessage, type Category, type CategoryKind, type Item, type TaxCode } from '../lib/api';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
@@ -49,6 +50,7 @@ async function load() {
   }
 }
 onMounted(load);
+onBooksChanged(load);
 
 function priceText(i: Item) {
   const p = formatMoney(i.unitPrice, currency.value);

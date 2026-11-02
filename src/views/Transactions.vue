@@ -4,11 +4,14 @@ import { useRoute } from 'vue-router';
 import { Page, SegmentedControl, Select, TextField } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
 import { api, type Account, type EntryKind, type EntryList } from '../lib/api';
-import { dataVersion, newEntry } from '../lib/entryEditor';
+import { newEntry } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { allEntries, entryCsvRows, saveCsv } from '../lib/csv';
 import { formatMoney } from '../lib/money';
 import { PERIOD_OPTIONS, periodRange, type PeriodKey } from '../lib/periods';
 import { session } from '../lib/session';
+
+const dataVersion = useBooksVersion();
 
 const route = useRoute();
 const PAGE_SIZES = [50, 100, 250];

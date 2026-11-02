@@ -20,7 +20,7 @@ import { api, errorMessage, type Account, type AttachmentFile, type Category, ty
 import { CLASS_INFO } from '../lib/categoryClass';
 import { FREQUENCY_OPTIONS, nextOccurrence } from '../lib/schedule';
 import { today } from '../lib/dates';
-import { dataChanged, entryEditor } from '../lib/entryEditor';
+import { entryEditor } from '../lib/entryEditor';
 import { formatMoney, parseMoney, ratePercent, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, taxFromInclusive, tracksTax } from '../shared/tax';
@@ -364,7 +364,6 @@ async function save(andNew = false) {
       });
       repeated = ` Repeats ${FREQUENCY_OPTIONS.find((o) => o.value === repeat.value.frequency)!.label.toLowerCase()}.`;
     }
-    dataChanged();
     toast({
       title: editing.value ? 'Transaction updated' : `${labels.value.title[0].toUpperCase()}${labels.value.title.slice(1)} saved`,
       content: repeated.trim() || undefined,
@@ -403,7 +402,6 @@ async function remove() {
   if (!ok) return;
   try {
     await api.deleteEntry(e.id);
-    dataChanged();
     toast({ title: 'Transaction deleted' });
     close();
   } catch (err) {
@@ -535,7 +533,6 @@ async function addContact() {
           :owner="editing ? { entryId: editing.id } : null"
           v-model:pending="pendingFiles"
           :active="entryEditor.visible"
-          @changed="dataChanged"
         />
 
         <div v-if="canRepeat" class="Repeat">

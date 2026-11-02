@@ -24,12 +24,14 @@ import ScheduleModal from '../components/ScheduleModal.vue';
 import { api, errorMessage, type Account, type Invoice, type InvoiceRow, type InvoiceTemplate } from '../lib/api';
 import { formatDay, today } from '../lib/dates';
 import { DOCS, docPath } from '../lib/documents';
-import { dataChanged, dataVersion } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { dueText, statusInfo } from '../lib/invoiceStatus';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { printElement } from '../lib/print';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { TAX_CODE_MAP, tracksTax } from '../shared/tax';
+
+const dataVersion = useBooksVersion();
 
 const route = useRoute();
 const router = useRouter();
@@ -82,7 +84,6 @@ onMounted(load);
 async function run(fn: () => Promise<unknown>, done?: string) {
   try {
     await fn();
-    dataChanged();
     if (done) toast({ title: done, tone: 'success' });
     await load();
   } catch (e) {
@@ -120,7 +121,6 @@ async function deleteInvoice() {
   if (!ok) return;
   try {
     await api.deleteInvoice(id.value);
-    dataChanged();
     toast({ title: `${doc.value.one} deleted` });
     await router.replace(doc.value.base);
   } catch (e) {
@@ -131,7 +131,6 @@ async function deleteInvoice() {
 async function goNew(fn: () => Promise<number>, type: keyof typeof DOCS, done: string) {
   try {
     const newId = await fn();
-    dataChanged();
     toast({ title: done, tone: 'success' });
     await router.push(`${DOCS[type].base}/${newId}/edit`);
   } catch (e) {
@@ -217,7 +216,6 @@ async function savePayment() {
   try {
     await api.recordPayment({ invoiceId: id.value, date: payment.value.date, amount, accountId: payment.value.accountId!, memo: payment.value.memo });
     paying.value = false;
-    dataChanged();
     toast({ title: invoice.value?.docType === 'credit' ? 'Refund recorded' : 'Payment recorded', tone: 'success' });
     await load();
   } catch (e) {
@@ -292,7 +290,6 @@ async function saveApply() {
       date: apply.value.date,
     });
     applying.value = false;
-    dataChanged();
     toast({ title: 'Credit applied', tone: 'success' });
     await load();
   } catch (e) {

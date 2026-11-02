@@ -19,6 +19,7 @@ import {
   rowLabel,
 } from '../lib/changeLog';
 import { addDays, formatDay, today } from '../lib/dates';
+import { onBooksChanged } from '../lib/live';
 import { session } from '../lib/session';
 
 const route = useRoute();
@@ -66,6 +67,7 @@ watch([row, archive], () => {
   void load();
 });
 onMounted(() => load());
+onBooksChanged(() => load());
 
 // ---- opening a batch ----------------------------------------------------------------
 const open = reactive(new Map<number, Change[] | null>());

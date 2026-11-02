@@ -21,9 +21,11 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type JournalAccount, type JournalEntryRow } from '../lib/api';
 import { addDays, formatDay, today } from '../lib/dates';
-import { dataChanged, dataVersion } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, session } from '../lib/session';
+
+const dataVersion = useBooksVersion();
 
 const router = useRouter();
 const currency = computed(() => session.books!.currency);
@@ -157,7 +159,6 @@ async function save() {
         lines: payload.map((l) => ({ ...l, amount: -l.amount })),
       });
     }
-    dataChanged();
     toast({ title: f.reverse ? 'Journal and reversal saved' : 'Journal saved', tone: 'success' });
     visible.value = false;
   } catch (e) {
@@ -180,7 +181,6 @@ async function remove() {
   if (!ok) return;
   try {
     await api.deleteJournal(id);
-    dataChanged();
     visible.value = false;
     toast({ title: 'Journal deleted' });
   } catch (e) {

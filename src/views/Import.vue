@@ -25,7 +25,7 @@ import {
   type ImportTarget,
 } from '../lib/api';
 import { CLASS_INFO } from '../lib/categoryClass';
-import { dataChanged } from '../lib/entryEditor';
+
 import { formatShortDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { session } from '../lib/session';
@@ -436,7 +436,6 @@ async function commit() {
       await api.saveRule({ pattern, kind: g.kind, categoryId }).then(() => rules++, () => {});
     }
     rulesSaved.value = rules;
-    dataChanged();
     step.value = 'done';
   } catch (e) {
     toast({ title: 'Import failed. Nothing was changed.', content: errorMessage(e), tone: 'error' });

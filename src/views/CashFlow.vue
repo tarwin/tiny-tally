@@ -6,6 +6,7 @@ import { Card, CardSection, DatePicker, Page, Select } from '@octans/ui';
 import { api, type CashFlow } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay } from '../lib/dates';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { PERIOD_OPTIONS, periodRange, type PeriodKey } from '../lib/periods';
 import { printElement } from '../lib/print';
@@ -36,6 +37,7 @@ async function load() {
 }
 watch(range, load, { deep: true });
 onMounted(load);
+onBooksChanged(load);
 
 const sections = computed(() =>
   report.value

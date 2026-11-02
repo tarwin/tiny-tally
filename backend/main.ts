@@ -13,6 +13,7 @@ import {
   openBooks,
   openWindows,
   run,
+  windowsSharing,
   windowWithFile,
 } from './db';
 import {
@@ -243,6 +244,22 @@ async function fileExists(path: string) {
 function fileNameFor(name: string) {
   const safe = name.replace(/[^\p{L}\p{N} _.-]+/gu, '').trim().replace(/\s+/g, ' ');
   return (safe || 'Books') + '.' + FILE_EXT;
+}
+
+/**
+ * Tells every window showing `win`'s books that they changed, the window that
+ * made the change included, so open pages reload. `tables` are the ones
+ * touched; settings live in "meta".
+ */
+function announce(win: string, tables: string[]) {
+  if (!tables.length) return;
+  const wins = windowsSharing(win);
+  if (!wins.length) return;
+  const books = booksInfo(win);
+  for (const w of wins) {
+    if (tables.includes('meta')) setWindowTitle(w, books?.name ?? null);
+    windowHandle(w).push('books-changed', { tables, books, from: win });
+  }
 }
 
 function booksInfo(win: string) {
@@ -690,7 +707,9 @@ Object.assign(api, {
   'changes.archive': async (p: { before: string; beforeAt: string }, _app, { window: win }) => {
     const prep = archivePrepare(p);
     const hash = await sha256(prep.text);
-    return inWindow(win, () => ({ ...archiveCommit({ dest: prep.dest, before: prep.before, day: prep.day, hash }), changes: prep.counts.changes }));
+    const out = inWindow(win, () => ({ ...archiveCommit({ dest: prep.dest, before: prep.before, day: prep.day, hash }), changes: prep.counts.changes }));
+    announce(win, ['change_log']);
+    return out;
   },
   'contacts.save': async (input: ContactInput) => saveContact(input),
   'contacts.archive': async ({ id, archived }: { id: number; archived: boolean }) => archiveContact(id, archived),
@@ -714,11 +733,11 @@ for (const [name, handler] of Object.entries(api)) {
       try {
         out = handler(params, app, meta ?? { window: win });
       } catch (e) {
-        if (batch) endBatch(batch);
+        if (batch) announce(win, endBatch(batch));
         throw e;
       }
       if (!batch) return out;
-      return Promise.resolve(out).finally(() => endBatch(batch));
+      return Promise.resolve(out).finally(() => announce(win, endBatch(batch)));
     });
   };
 }

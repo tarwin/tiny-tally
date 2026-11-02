@@ -4,10 +4,12 @@ import { Badge, DataTable, Page, confirmModal, toast, type DataTableColumnType }
 import ScheduleModal from '../components/ScheduleModal.vue';
 import { api, errorMessage, type Schedule } from '../lib/api';
 import { formatDay, today } from '../lib/dates';
-import { dataChanged, dataVersion } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { FREQUENCY_LABEL } from '../lib/schedule';
 import { booksTax, session } from '../lib/session';
+
+const dataVersion = useBooksVersion();
 
 const schedules = ref<Schedule[]>([]);
 const loading = ref(true);
@@ -52,7 +54,6 @@ async function act(fn: () => Promise<unknown>, done: string) {
   try {
     await fn();
     toast({ title: done, tone: 'success' });
-    dataChanged();
     await load();
   } catch (e) {
     toast({ title: errorMessage(e), tone: 'error' });
@@ -73,7 +74,6 @@ async function remove(s: Schedule) {
 async function runNow() {
   try {
     const r = await api.runSchedules(today());
-    dataChanged();
     toast({
       title: r.created.length ? `Created ${r.created.length}` : 'Nothing due yet',
       content: r.failed.length ? `${r.failed.length} couldn't be created: ${r.failed[0].message}` : undefined,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { fakeApp } from './support/app.ts';
 import { makeBooks } from './support/books.ts';
 import { getBooks, one } from '../backend/db.ts';
 import { api } from '../backend/main.ts';
@@ -8,6 +9,7 @@ import { saveBudget } from '../backend/budgets.ts';
 import { profitAndLoss } from '../backend/reports.ts';
 
 test('sub-categories: one level, same side and type, and the P&L rolls them up', async () => {
+  fakeApp();
   const b = await makeBooks({ country: 'AU', fiscalYearStart: '07-01', taxEnabled: true });
   const call = (name: string, params: unknown) => api[name](params, null as any, { window: b.win } as any) as Promise<any>;
   const cat = (name: string) => b.run(() => one<{ id: number }>(getBooks().db, 'SELECT id FROM categories WHERE name = ?', name)!.id);

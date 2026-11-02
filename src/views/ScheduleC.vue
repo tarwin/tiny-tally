@@ -7,6 +7,7 @@ import { Banner, Button, Card, CardSection, DatePicker, Page, SegmentedControl, 
 import { api, type Basis, type ScheduleCReport } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay } from '../lib/dates';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { periodRange } from '../lib/periods';
 import { printElement } from '../lib/print';
@@ -42,6 +43,7 @@ async function load() {
 
 watch([range, basis], load, { deep: true });
 onMounted(load);
+onBooksChanged(load);
 
 const income = computed(() => report.value?.lines.filter((l) => l.kind === 'income') ?? []);
 const expenses = computed(() => report.value?.lines.filter((l) => l.kind === 'expense') ?? []);

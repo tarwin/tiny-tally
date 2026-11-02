@@ -5,10 +5,13 @@ import { Button, Card, CardSection, Icon, Page } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
 import MonthlyChart from '../components/MonthlyChart.vue';
 import { api, type Account, type Entry, type InvoiceList, type Summary } from '../lib/api';
-import { dataVersion, newEntry } from '../lib/entryEditor';
+import { newEntry } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { periodRange } from '../lib/periods';
 import { session } from '../lib/session';
+
+const dataVersion = useBooksVersion();
 
 const router = useRouter();
 const accounts = ref<Account[]>([]);

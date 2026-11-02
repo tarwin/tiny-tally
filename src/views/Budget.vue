@@ -5,6 +5,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { Button, Card, CardSection, Page, Select, toast } from '@octans/ui';
 import { api, errorMessage, type Category } from '../lib/api';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { toIso, yearStartFor } from '../lib/periods';
 import { session } from '../lib/session';
@@ -102,6 +103,9 @@ const changes = computed(() => {
   }
   return out;
 });
+
+// Other windows' edits show unless there are unsaved ones here.
+onBooksChanged(() => !changes.value.length && load());
 
 async function save() {
   if (bad.value) {

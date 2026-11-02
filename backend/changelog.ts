@@ -90,16 +90,25 @@ export function beginBatch(action: string) {
   return { db, id };
 }
 
-/** Closes a batch: drops it if nothing changed, otherwise records how much did. */
-export function endBatch(b: { db: Database; id: number }) {
+/**
+ * Closes a batch: drops it if nothing changed, otherwise records how much did.
+ * Returns the tables it touched (empty when nothing changed).
+ */
+export function endBatch(b: { db: Database; id: number }): string[] {
   try {
     // Only if it's still ours: an overlapping call may have started its own.
     run(b.db, 'UPDATE change_context SET batch_id = NULL WHERE id = 1 AND batch_id = ?', b.id);
+    const tables = all<{ t: string }>(b.db, 'SELECT DISTINCT table_name AS t FROM change_log WHERE batch_id = ?', b.id).map((r) => r.t);
+    if (!tables.length) {
+      run(b.db, 'DELETE FROM change_batches WHERE id = ?', b.id);
+      return [];
+    }
     const n = one<{ n: number }>(b.db, 'SELECT COUNT(*) AS n FROM change_log WHERE batch_id = ?', b.id)!.n;
-    if (n) run(b.db, 'UPDATE change_batches SET count = ? WHERE id = ?', n, b.id);
-    else run(b.db, 'DELETE FROM change_batches WHERE id = ?', b.id);
+    run(b.db, 'UPDATE change_batches SET count = ? WHERE id = ?', n, b.id);
+    return tables;
   } catch {
     // The books were closed while the call was running; nothing to finish.
+    return [];
   }
 }
 

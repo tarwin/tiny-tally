@@ -12,6 +12,7 @@ import { api, errorMessage, type InvoiceTemplate, type Statement, type Statement
 import { csvMoney, saveCsv } from '../lib/csv';
 import { addDays, formatDay, today } from '../lib/dates';
 import { docPath } from '../lib/documents';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
@@ -58,6 +59,7 @@ watch(contactId, () => (tradingNameId.value = null));
 watch([contactId, from, to, tradingNameId], load);
 const sender = computed(() => statement.value?.sender);
 onMounted(load);
+onBooksChanged(load);
 
 const supplier = computed(() => statement.value?.side === 'supplier');
 const words = computed(() =>

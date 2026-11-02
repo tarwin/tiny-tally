@@ -7,6 +7,7 @@ import { Card, CardSection, DatePicker, FormLayoutGroup, Page, SegmentedControl 
 import { api, type JournalLine, type LedgerAccount, type TrialBalance } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay, formatShortDay, today } from '../lib/dates';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { periodRange } from '../lib/periods';
 import { printElement } from '../lib/print';
@@ -34,6 +35,7 @@ async function load() {
 }
 watch([from, to, view], load);
 onMounted(load);
+onBooksChanged(load);
 
 /** Lines grouped into journal entries (same date and reference). */
 const groups = computed(() => {

@@ -27,7 +27,7 @@ import {
 import { api, errorMessage, type Basis, type Category, type TaxReturn, type TaxReturnDetailRow, type TaxReturnReport } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { addDays, formatDay, today } from '../lib/dates';
-import { dataChanged } from '../lib/entryEditor';
+
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { taxPeriods } from '../lib/periods';
 import { printElement } from '../lib/print';
@@ -323,7 +323,6 @@ async function savePay() {
       memo: `${form.value.short} ${period.value!.label}`,
     });
     paying.value = false;
-    dataChanged();
     toast({ title: refund.value ? 'Refund recorded' : 'Payment recorded', content: `Saved under ${cat.name}. It doesn't count as an expense.`, tone: 'success' });
   } catch (e) {
     payError.value = errorMessage(e);

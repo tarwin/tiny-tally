@@ -5,6 +5,7 @@ import { Card, CardSection, DatePicker, Page, SegmentedControl, Select } from '@
 import { api, type Basis, type PnlRow, type ProfitAndLoss } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay } from '../lib/dates';
+import { onBooksChanged } from '../lib/live';
 import { formatMoney } from '../lib/money';
 import { PERIOD_OPTIONS, periodRange, previousPeriod, type PeriodKey } from '../lib/periods';
 import { printElement } from '../lib/print';
@@ -53,6 +54,7 @@ async function load() {
 
 watch([range, basis, compare], load, { deep: true });
 onMounted(load);
+onBooksChanged(load);
 
 const subtitle = computed(
   () => `${formatDay(range.value.from)} – ${formatDay(range.value.to)} · ${basis.value === 'cash' ? 'Cash' : 'Accrual'} basis${booksTax() ? ` · ${booksTax()!.short} exclusive` : ''}`,

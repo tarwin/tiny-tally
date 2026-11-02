@@ -20,10 +20,13 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type ReconcileRow, type ReconcileState } from '../lib/api';
 import { formatDay, formatShortDay, today } from '../lib/dates';
-import { dataChanged, dataVersion, newEntry } from '../lib/entryEditor';
+import { newEntry } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { session } from '../lib/session';
 import { matchStatement, readStatement, type StatementLine } from '../lib/statementMatch';
+
+const dataVersion = useBooksVersion();
 
 const route = useRoute();
 const router = useRouter();
@@ -150,7 +153,6 @@ async function finish() {
   busy.value = true;
   try {
     await api.finishReconcile(state.value!.open!.id);
-    dataChanged();
     toast({ title: `Reconciled to ${formatDay(state.value!.open!.statementDate)}`, tone: 'success' });
     await load();
   } catch (e) {
@@ -184,7 +186,6 @@ async function undo(id: number, date: string) {
   if (!ok) return;
   try {
     await api.undoReconcile(id);
-    dataChanged();
     await load();
   } catch (e) {
     toast({ title: errorMessage(e), tone: 'error' });

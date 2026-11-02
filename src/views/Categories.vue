@@ -15,6 +15,7 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type Category, type CategoryClass, type CategoryKind, type TaxCode } from '../lib/api';
 import { CLASS_INFO, classOptions } from '../lib/categoryClass';
+import { onBooksChanged } from '../lib/live';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
 import { SCHEDULE_C_LINES, SCHEDULE_C_MAP } from '../shared/scheduleC';
@@ -144,6 +145,7 @@ async function setArchived(c: Category, archived: boolean) {
 }
 
 onMounted(load);
+onBooksChanged(load);
 </script>
 
 <template>

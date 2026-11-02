@@ -17,8 +17,10 @@ export interface OpenBooks {
   internal: boolean;
 }
 
-// One set of books per window. Each api call runs bound to its window (main.ts
-// wraps every handler), so getBooks() means "this window's books".
+// Each window shows one set of books; several windows can share the same open
+// file (one connection, closed when the last of them lets go). Each api call
+// runs bound to its window (main.ts wraps every handler), so getBooks() means
+// "this window's books".
 //
 // Binding lasts for the handler's synchronous part only, then clears.
 // Module code is fully synchronous (tjs:sqlite never awaits), so that covers
@@ -62,6 +64,21 @@ export function windowWithFile(path: string) {
 
 export function openWindows() {
   return [...open.keys()];
+}
+
+/** Every window showing the same books as `win`, `win` included. */
+export function windowsSharing(win: string) {
+  const c = open.get(win);
+  return c ? [...open].filter(([, o]) => o === c).map(([w]) => w) : [];
+}
+
+/** Shows `from`'s books in `win` too, sharing its connection. */
+export function shareBooks(win: string, from: string) {
+  const c = open.get(from);
+  if (!c) throw new Error('No books are open.');
+  if (open.get(win) === c) return;
+  closeBooks(win);
+  open.set(win, c);
 }
 
 export function one<T = any>(db: Database, sql: string, ...args: any[]): T | null {
@@ -225,6 +242,8 @@ export function closeBooks(win: string = boundWindow()) {
   const c = open.get(win);
   if (!c) return;
   open.delete(win);
+  // Still showing in another window.
+  if ([...open.values()].includes(c)) return;
   c.db.close();
   void removeLock(c.path);
 }

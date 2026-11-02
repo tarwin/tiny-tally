@@ -5,11 +5,13 @@ import { Badge, Card, CardSection, DataTable, Page, SegmentedControl, TextField,
 import { api, type InvoiceList, type InvoiceRow, type InvoiceStatus } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatShortDay } from '../lib/dates';
-import { dataVersion } from '../lib/entryEditor';
+import { useBooksVersion } from '../lib/live';
 import { DOCS } from '../lib/documents';
 import { dueText, statusInfo } from '../lib/invoiceStatus';
 import { formatMoney } from '../lib/money';
 import { session } from '../lib/session';
+
+const dataVersion = useBooksVersion();
 
 const route = useRoute();
 const router = useRouter();
