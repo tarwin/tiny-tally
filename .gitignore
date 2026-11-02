@@ -26,3 +26,6 @@ dist-ssr
 
 # release builds (scripts/release-mac.sh)
 release
+
+# scripts/screenshots.sh output
+screenshots

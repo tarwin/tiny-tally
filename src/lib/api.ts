@@ -68,6 +68,8 @@ export interface StartState {
   openFiles: string[];
   /** A window opened on another window's books: the page to start on. */
   route: string | null;
+  /** Started for the screenshot tour (scripts/screenshots.sh). */
+  tour: boolean;
 }
 
 export type OpenResult =

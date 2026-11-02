@@ -503,6 +503,7 @@ onMounted(async () => {
   session.ready = true;
   await syncMenus();
   if (s.openFiles.length) openFiles(s.openFiles);
+  if (s.tour) void import('./lib/tour').then((m) => m.runTour());
 });
 
 onBeforeUnmount(() => {

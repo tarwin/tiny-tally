@@ -312,6 +312,29 @@ async function tryOpen(win: string, path: string, force = false): Promise<OpenRe
   }
 }
 
+// ---- screenshot tour (scripts/screenshots.sh) -----------------------------------
+// With TINY_TALLY_TOUR set to a folder, the main window opens fresh demo
+// books there and the page steps through the app (src/lib/tour.ts). For
+// each picture it asks here; this writes shot.json and waits for the script
+// to capture the window and answer with done-<seq>. The recent-books list is
+// put back afterwards.
+const TOUR_DIR = tjs.env.TINY_TALLY_TOUR || null;
+let tourStore: BooksStore | null = null;
+let tourSeq = 0;
+
+async function startTour(win: string) {
+  tourStore = await readStore();
+  const path = `${TOUR_DIR}/${fileNameFor(DEMO_NAME)}`;
+  await tjs.remove(path).catch(() => {});
+  await createBooks(win, path, false, { name: DEMO_NAME, country: 'AU', fiscalYearStart: '07-01', taxEnabled: true });
+  inWindow(win, () => {
+    seedDemo(new Date().toISOString().slice(0, 10));
+    startHistory('books.createDemo', JSON.stringify({ name: DEMO_NAME }));
+  });
+  await afterOpen(win);
+  await appRef.win.setSize(1440, 900);
+}
+
 function blankToNull(v: unknown) {
   return typeof v === 'string' && v.trim() === '' ? null : (v ?? null);
 }
@@ -331,7 +354,10 @@ export const api: Record<string, TinyApiHandler> = {
     let lastPath: string | null = null;
     const want = pendingOpen.get(win);
     pendingOpen.delete(win);
-    if (want?.share && booksInfo(want.share)) {
+    const tour = win === 'main' && !!TOUR_DIR;
+    if (tour) {
+      if (!tourStore) await startTour(win);
+    } else if (want?.share && booksInfo(want.share)) {
       shareBooks(win, want.share);
     } else if (want?.path) {
       lastPath = want.path;
@@ -364,6 +390,7 @@ export const api: Record<string, TinyApiHandler> = {
       internalDir: await internalDir(),
       openFiles,
       route: want?.route ?? null,
+      tour,
     };
   },
 
@@ -418,6 +445,27 @@ export const api: Record<string, TinyApiHandler> = {
   },
 
   /** A new window on the welcome screen. */
+  /** Screenshot tour: waits while scripts/screenshots.sh captures the window as `name`. */
+  'tour.shot': async ({ name }: { name: string }) => {
+    if (!TOUR_DIR) throw new Error('Not on a tour.');
+    const seq = ++tourSeq;
+    await tjs.writeFile(`${TOUR_DIR}/shot.json`, new TextEncoder().encode(JSON.stringify({ seq, name: String(name) })));
+    for (let i = 0; i < 300; i++) {
+      if (await fileExists(`${TOUR_DIR}/done-${seq}`)) return true;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error(`No picture taken of ${name}.`);
+  },
+
+  'tour.done': async (_p, _app, { window: win }) => {
+    if (!TOUR_DIR || !tourStore) return false;
+    closeBooks(win);
+    await writeStore(tourStore);
+    await tjs.writeFile(`${TOUR_DIR}/finished`, new Uint8Array());
+    setTimeout(() => appRef.quit(), 300);
+    return true;
+  },
+
   /** The main window's page went hidden: it may have been closed (see mainHidden). */
   'app.windowHidden': async (_p, _app, { window: win }) => {
     if (win === 'main') checkMainHidden();
@@ -750,7 +798,7 @@ Object.assign(api, {
  * anything that writes is logged, including calls added later; a batch that
  * changed nothing is dropped.
  */
-const READ_ONLY = /^(app\.|books\.|drop\.|changes\.|file\.|import\.(read|suggest)$|prefs\.get$|rules\.match$|templates\.readLogo$|reports\.|ledger\.|bills\.remittance$|entries\.summary$|invoices\.suggestNumber$|reconcile\.state$|journals\.accounts$|bas\.list$|attachments\.(readFile|open|saveCopy)$|.*\.(list|get)$)/;
+const READ_ONLY = /^(app\.|books\.|tour\.|drop\.|changes\.|file\.|import\.(read|suggest)$|prefs\.get$|rules\.match$|templates\.readLogo$|reports\.|ledger\.|bills\.remittance$|entries\.summary$|invoices\.suggestNumber$|reconcile\.state$|journals\.accounts$|bas\.list$|attachments\.(readFile|open|saveCopy)$|.*\.(list|get)$)/;
 
 // Every handler runs bound to its calling window (see db.ts).
 for (const [name, handler] of Object.entries(api)) {
