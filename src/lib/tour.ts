@@ -10,6 +10,8 @@ import { closeOtherTabs, openTab } from './tabs';
 import { themePreference } from './theme';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Long enough for Octans' toasts to close. */
+const TOAST = 5000;
 
 async function go(path: string) {
   await router.push(path);
@@ -89,9 +91,11 @@ export async function runTour() {
     await shot('reports');
     await go('/budget');
     await click('Start from last year');
-    await click(findSaveLabel());
-    await wait(800);
+    // Toasts stay up for 4.5s; let them go so they don't cover the figures.
+    await wait(TOAST);
     await shot('budget');
+    await click(findSaveLabel());
+    await wait(TOAST);
     await go('/reports/profit-and-loss?compare=budget');
     await shot('profit-and-loss');
     await go('/reports/balance-sheet');
@@ -108,6 +112,7 @@ export async function runTour() {
     await go('/transactions');
     await typeSearch('office');
     await shot('search');
+    await typeSearch('');
     document.querySelector<HTMLInputElement>('.TopBar input')?.blur();
     (document.activeElement as HTMLElement | null)?.blur();
     await wait(400);
