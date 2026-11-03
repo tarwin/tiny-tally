@@ -12,7 +12,7 @@ import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
 import { api } from './lib/api';
 import { dropAttachments } from './lib/attachments';
-import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density } from './lib/appSettings';
+import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density, stepZoom } from './lib/appSettings';
 import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
 import { today } from './lib/dates';
 import { newEntry } from './lib/entryEditor';
@@ -147,8 +147,14 @@ function closeWindow() {
 
 /** ⌘1–⌘9 and Ctrl+Tab, which have no menu items. */
 function onKey(e: KeyboardEvent) {
-  if (!session.books || tabs.list.length < 2) return;
   const mod = isMac ? e.metaKey : e.ctrlKey;
+  // ⌘= and ⌘− come from the View menu; ⌘+ (with shift) doesn't match its key, so it's caught here.
+  if (mod && !e.altKey && e.key === '+') {
+    e.preventDefault();
+    stepZoom(1);
+    return;
+  }
+  if (!session.books || tabs.list.length < 2) return;
   if (mod && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
     e.preventDefault();
     showTabNumber(Number(e.key));
@@ -258,6 +264,10 @@ async function buildMenu() {
           label: 'Density',
           submenu: DENSITY_OPTIONS.map((o) => ({ id: `density-${o.value}`, label: o.label, checked: false })),
         },
+        { separator: true },
+        { id: 'zoom-in', label: 'Zoom In', key: '=' },
+        { id: 'zoom-out', label: 'Zoom Out', key: '-' },
+        { id: 'zoom-reset', label: 'Actual Size', key: '0' },
       ],
     },
     {
@@ -355,6 +365,12 @@ function onMenu(id: string) {
     return;
   }
   switch (id) {
+    case 'zoom-in':
+      return stepZoom(1);
+    case 'zoom-out':
+      return stepZoom(-1);
+    case 'zoom-reset':
+      return stepZoom(0);
     case 'recent-clear':
       void clearRecent();
       break;

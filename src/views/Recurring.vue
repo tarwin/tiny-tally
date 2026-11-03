@@ -98,7 +98,7 @@ function toggle(s: Schedule) {
 </script>
 
 <template>
-  <Page
+  <Page size="fullWidth"
     title="Recurring"
     subtitle="Rent, subscriptions, retainers: anything that repeats. Due ones are created when you open your books."
     :primary-action="{ label: 'Create due now', icon: 'mdi:play-circle-outline', onAction: runNow }"

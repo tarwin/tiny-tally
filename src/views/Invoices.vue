@@ -120,7 +120,7 @@ const maxHeight = useFillHeight(tableBox);
 <template>
   <Page
     :title="doc.many"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: `New ${doc.word}`, icon: 'mdi:plus', onAction: () => router.push(`${doc.base}/new`) }"
     :secondary-actions="[
       { label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv },

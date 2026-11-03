@@ -465,7 +465,7 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
   <Page
     :title="title"
     :breadcrumbs="[{ label: doc.many, onAction: () => router.push(doc.base) }]"
-    size="wide"
+    size="fullWidth"
     :loading="loading"
   >
     <div class="Grid">

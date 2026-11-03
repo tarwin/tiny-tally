@@ -20,6 +20,8 @@ export interface BooksSettings {
   /** From the country; can't change. */
   currency: string;
   /** 'MM-DD', day 1–28. */
+  /** Australia: lodges the BAS online themselves (two more weeks for quarters 1, 3 and 4). */
+  basOnline: boolean;
   fiscalYearStart: string;
   taxEnabled: boolean;
   taxRatePpm: number;
@@ -92,6 +94,8 @@ export interface Account {
   balance: number;
   /** Last statement date reconciled to. */
   reconciledTo: string | null;
+  /** Holds tax, not money: tax clients withheld (NZ), or no-ABN withholding owed to the ATO (AU). Not counted as cash. */
+  holds: 'client-wht' | 'no-abn' | null;
 }
 
 export interface Category {
@@ -104,6 +108,8 @@ export interface Category {
   taxCode: TaxCode | null;
   /** US: the Schedule C key (scheduleC.ts), numbered per tax year. */
   reportLine: string | null;
+  /** The tax return line was guessed when the books were upgraded: worth a check. */
+  lineGuessed?: boolean;
   /** A sub-category's parent. */
   parentId: number | null;
   /** "Parent › Name" for a sub-category, else the name. */
@@ -292,6 +298,7 @@ export interface YearInputs {
   vehicleTotalTenths?: number;
   vehicleBusinessPct?: number;
   vehicleFuel?: Fuel;
+  vehicles?: Record<string, { totalTenths?: number; businessPct?: number; fuel?: Fuel }>;
   homeOfficeSqFt?: number;
   homeOfficeHours?: number;
   homeOfficeArea?: number;
@@ -326,6 +333,17 @@ export interface CarClaim {
   checked: string;
 }
 
+export interface VehicleYear {
+  /** The name on its trips; '' for trips with none. */
+  name: string;
+  trips: number;
+  distanceTenths: number;
+  claim: CarClaim;
+  inputs: { totalTenths?: number; businessPct?: number; fuel?: Fuel };
+  loggedPct: number | null;
+  businessPct: number | null;
+}
+
 export interface CarYear {
   year: number;
   from: string;
@@ -338,6 +356,7 @@ export interface CarYear {
   businessPct: number | null;
   loggedPct: number | null;
   inputs: YearInputs;
+  vehicles: VehicleYear[];
 }
 
 export interface Nec1099Payee {
@@ -434,6 +453,8 @@ export interface TparPayee {
   phone: string | null;
   gross: number;
   gst: number;
+  /** No-ABN tax withheld. */
+  withheld: number;
   payments: number;
   missing: string[];
 }
@@ -445,7 +466,7 @@ export interface TparReport {
   due: string;
   payer: { name: string; abn: string };
   payees: TparPayee[];
-  totals: { gross: number; gst: number };
+  totals: { gross: number; gst: number; withheld: number };
 }
 
 export interface Instalment {
@@ -660,6 +681,9 @@ export interface Invoice extends InvoiceRow {
   contactTaxExempt: string | null;
   /** NZ: the customer withholds tax from payments at this rate, ppm. */
   contactWhtRatePpm?: number | null;
+  /** The contact's TIN or ABN, and whether their payments are reported (1099 / TPAR). */
+  contactTin?: string | null;
+  contactReportable?: number | boolean;
 }
 
 export interface InvoiceInput {
@@ -1137,11 +1161,12 @@ export const api = {
   updateSettings: (p: Partial<BooksSettings>) => call<Books>('settings.update', p),
 
   listAccounts: () => call<Account[]>('accounts.list'),
-  saveAccount: (p: Omit<Account, 'id' | 'archived' | 'balance' | 'reconciledTo'> & { id?: number }) =>
+  saveAccount: (p: Omit<Account, 'id' | 'archived' | 'balance' | 'reconciledTo' | 'holds'> & { id?: number }) =>
     call<number>('accounts.save', p),
   archiveAccount: (id: number, archived: boolean) => call<true>('accounts.archive', { id, archived }),
 
   listCategories: () => call<Category[]>('categories.list'),
+  confirmCategoryLines: () => call<boolean>('categories.confirmLines'),
   saveCategory: (p: { id?: number; name: string; kind: CategoryKind; taxCode?: TaxCode | null; class?: CategoryClass; reportLine?: string | null; parentId?: number | null }) =>
     call<number>('categories.save', p),
   archiveCategory: (id: number, archived: boolean) => call<true>('categories.archive', { id, archived }),
@@ -1201,7 +1226,7 @@ export const api = {
   estimatedTaxReport: (p: { year: number; today: string; project?: boolean }) => call<EstimatedTaxReport>('reports.estimatedTax', p),
   nexusReport: (year: number) => call<NexusReport>('reports.nexus', { year }),
   yearInputs: (year: number) => call<YearInputs>('taxYear.get', { year }),
-  setYearInputs: (p: { year: number } & { [K in keyof YearInputs]?: YearInputs[K] | null }) => call<YearInputs>('taxYear.set', p),
+  setYearInputs: (p: { year: number; vehicle?: string } & { [K in keyof YearInputs]?: YearInputs[K] | null }) => call<YearInputs>('taxYear.set', p),
   carYear: (year: number) => call<CarYear>('reports.carYear', { year }),
   incomeReturnReport: (p: { from: string; to: string; basis?: 'cash' | 'accrual' }) => call<IncomeReturnReport>('reports.incomeReturn', p),
   tparReport: (year: number) => call<TparReport>('reports.tpar', { year }),

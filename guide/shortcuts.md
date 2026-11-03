@@ -21,6 +21,8 @@
 | Open books | <kbd>⌘O</kbd> |
 | Books settings | <kbd>⌥⌘,</kbd> |
 | App settings | <kbd>⌘,</kbd> |
+| Zoom in / out | <kbd>⌘+</kbd> / <kbd>⌘−</kbd> |
+| Actual size | <kbd>⌘0</kbd> |
 == Windows and Linux
 | | |
 |---|---|
@@ -41,6 +43,8 @@
 | Open books | <kbd>Ctrl O</kbd> |
 | Books settings | <kbd>Ctrl Alt ,</kbd> |
 | App settings | <kbd>Ctrl ,</kbd> |
+| Zoom in / out | <kbd>Ctrl +</kbd> / <kbd>Ctrl −</kbd> |
+| Actual size | <kbd>Ctrl 0</kbd> |
 :::
 
 With the mouse: <kbd>⌘</kbd>-click (<kbd>Ctrl</kbd>-click) or middle-click a link to open it in a new tab. See [Tabs, windows and search](./tabs-and-search).

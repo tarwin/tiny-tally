@@ -120,7 +120,7 @@ function exportCsv() {
   <Page
     title="Profit & Loss"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
     :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >

@@ -44,6 +44,7 @@ const columns: DataTableColumnType[] = [
   { key: 'abn', label: 'ABN', width: 150 },
   { key: 'gross', label: 'Paid (with GST)', width: 150 },
   { key: 'gst', label: 'GST', width: 110 },
+  { key: 'withheld', label: 'Withheld', width: 110 },
   { key: 'missing', label: '', width: 180 },
 ];
 const paid = computed(() => report.value?.payees.filter((p) => p.gross) ?? []);
@@ -56,7 +57,7 @@ function exportCsv() {
   if (!r) return;
   void saveCsv(`TPAR ${incomeYearLabel(r.year, ys.value)}`, [
     ['ABN', 'Name', 'Address', 'Phone', 'Email', 'Gross amount paid (incl. GST)', 'Total GST', 'Total tax withheld'],
-    ...paid.value.map((p) => [p.abn ?? '', p.legalName ?? p.name, p.address ?? '', p.phone ?? '', p.email ?? '', dollars(p.gross), dollars(p.gst), '0']),
+    ...paid.value.map((p) => [p.abn ?? '', p.legalName ?? p.name, p.address ?? '', p.phone ?? '', p.email ?? '', dollars(p.gross), dollars(p.gst), dollars(p.withheld)]),
   ]);
 }
 </script>
@@ -65,7 +66,7 @@ function exportCsv() {
   <Page
     title="Taxable payments annual report"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
     :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >
@@ -88,7 +89,8 @@ function exportCsv() {
       <p>
         {{ noAbn.map((c) => `${c.name}: ${c.payments} over $75 (${money(c.gross)})`).join(', ') }}. Without an ABN you have to
         withhold 47% and report it on your BAS (W4), unless they gave you a written statement that it's a hobby or not a
-        business. Add their ABN if they have one.
+        business. Add their ABN if they have one. To withhold, enter their invoice as a bill and put the 47% in "No-ABN tax
+        withheld" when you record the payment.
       </p>
     </Banner>
 
@@ -107,6 +109,7 @@ function exportCsv() {
             <template #col:abn="{ row }">{{ row.abn ?? '' }}</template>
             <template #col:gross="{ row }"><span class="money">{{ money(row.gross) }}</span></template>
             <template #col:gst="{ row }"><span class="money">{{ money(row.gst) }}</span></template>
+            <template #col:withheld="{ row }"><span class="money">{{ row.withheld ? money(row.withheld) : '' }}</span></template>
             <template #col:missing="{ row }"><span v-if="row.missing.length" class="negative">No {{ row.missing.join(' or ') }}</span></template>
           </DataTable>
           <p v-if="report" class="subdued Note">

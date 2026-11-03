@@ -78,7 +78,7 @@ const BAS: ReturnForm = {
   // Simpler BAS: G1, 1A and 1B only. It's the ATO's method for GST turnover
   // under $10 million, whatever the reporting frequency, so every sole trader.
   rows(f, inputs) {
-    const a8 = dollars(f['1A']) + dollars(inputs.w2 ?? 0) + dollars(inputs.t7 ?? 0);
+    const a8 = dollars(f['1A']) + dollars(inputs.w2 ?? 0) + dollars(f.W4 ?? 0) + dollars(inputs.t7 ?? 0);
     const b8 = dollars(f['1B']);
     const nine = a8 - b8;
     return [
@@ -87,13 +87,14 @@ const BAS: ReturnForm = {
       { code: '1B', label: 'GST on purchases', value: f['1B'] },
       { section: 'PAYG withholding and instalments', code: 'W1', label: 'Total salary, wages and other payments', value: inputs.w1 ?? 0, input: 'w1' },
       { code: 'W2', label: 'Amounts withheld from payments at W1', value: inputs.w2 ?? 0, input: 'w2' },
+      ...(f.W4 ? [{ code: 'W4', label: 'Amounts withheld where no ABN is quoted', help: 'From bill payments with no-ABN tax withheld', value: f.W4 }] : []),
       { code: 'T7', label: 'PAYG income tax instalment', value: inputs.t7 ?? 0, input: 't7' },
-      { section: 'Summary', code: '8A', label: 'Amounts you owe the ATO (1A + W2 + T7)', value: a8 },
+      { section: 'Summary', code: '8A', label: `Amounts you owe the ATO (1A + W2${f.W4 ? ' + W4' : ''} + T7)`, value: a8 },
       { code: '8B', label: 'Amounts the ATO owes you (1B)', value: b8 },
       { code: '9', label: nine >= 0 ? 'Payable to the ATO' : 'Refund from the ATO', value: Math.abs(nine), grand: true },
     ];
   },
-  net: (f, inputs) => dollars(f['1A']) + dollars(inputs.w2 ?? 0) + dollars(inputs.t7 ?? 0) - dollars(f['1B']),
+  net: (f, inputs) => dollars(f['1A']) + dollars(inputs.w2 ?? 0) + dollars(f.W4 ?? 0) + dollars(inputs.t7 ?? 0) - dollars(f['1B']),
   headline: (f) => [
     { label: 'GST on sales (1A)', value: f['1A'] },
     { label: 'GST credits (1B)', value: f['1B'] },

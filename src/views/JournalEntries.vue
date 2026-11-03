@@ -202,7 +202,7 @@ const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
-  <Page
+  <Page size="fullWidth"
     title="Journal entries"
     subtitle="Depreciation, accruals, prepayments and corrections: adjustments that aren't money moving."
     :primary-action="{ label: 'New journal', icon: 'mdi:plus', onAction: openNew }"

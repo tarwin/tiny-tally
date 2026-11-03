@@ -84,7 +84,7 @@ async function exportCsv() {
 <template>
   <Page
     title="Transactions"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'New expense', icon: 'mdi:plus', onAction: () => newEntry('expense', accountId) }"
     :secondary-actions="[
       { label: 'New income', icon: 'mdi:arrow-down-bold-circle-outline', onAction: () => newEntry('income', accountId) },

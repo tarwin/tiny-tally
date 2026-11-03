@@ -137,13 +137,16 @@ async function saveFiles() {
     toast({ title: "Couldn't save the pack", content: errorMessage(e), tone: 'error' });
   }
 }
+/** Every car's odometer total, when each has one. */
+const carTotal = computed(() =>
+  car.value && car.value.vehicles.every((v) => v.inputs.totalTenths) ? car.value.vehicles.reduce((t, v) => t + v.inputs.totalTenths!, 0) : 0);
 </script>
 
 <template>
   <Page
     title="Year-end pack"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Save files…', icon: 'mdi:folder-download-outline', onAction: saveFiles }"
     :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >
@@ -187,7 +190,7 @@ async function saveFiles() {
           <h3>Car</h3>
           <p v-if="!car?.distanceTenths" class="subdued">No trips logged.</p>
           <p v-else>
-            {{ km(car.distanceTenths) }} business km in {{ car.trips.length }} trips<template v-if="car.inputs.vehicleTotalTenths"> of {{ km(car.inputs.vehicleTotalTenths) }} km in all</template><template v-if="car.businessPct != null"> ({{ car.businessPct }}% business use)</template>.
+            {{ km(car.distanceTenths) }} business km in {{ car.trips.length }} trips<template v-if="carTotal"> of {{ km(carTotal) }} km in all</template><template v-if="car.vehicles.length > 1"> across {{ car.vehicles.length }} vehicles</template><template v-if="car.businessPct != null"> ({{ car.businessPct }}% business use)</template>.
             Claimed {{ car.method === 'rate' ? `at the ${au ? 'cents per km' : 'kilometre'} rate: ${money(car.claim.deduction)}` : 'as actual costs at the business share' }}.
           </p>
 

@@ -10,8 +10,11 @@ import { recordPayment, saveInvoice } from '../backend/invoices.ts';
 import { incomeReturnReport, profitAndLoss } from '../backend/reports.ts';
 import { carYear, saveTrip } from '../backend/trips.ts';
 import { setYearInputs } from '../backend/taxYear.ts';
-import { deadlines, gstThreshold, paygInstalments, provisionalTax, taxWithheld, tparReport } from '../backend/auNzTax.ts';
+import { deadlines, gstThreshold, noAbnPayments, paygInstalments, provisionalTax, taxWithheld, tparReport } from '../backend/auNzTax.ts';
 import { basDue, nzGstDue, paygDue, provisionalDue } from '../src/shared/dueDates.ts';
+import { easter, nextWorkingDay, publicHolidays } from '../src/shared/holidays.ts';
+import { holdingAccount } from '../backend/invoices.ts';
+import { basReport } from '../backend/reports.ts';
 import { incomeYearLabel, incomeYearOf, incomeYearRange } from '../src/shared/incomeYear.ts';
 import { auIncomeTax, auTaxYear } from '../src/shared/auTaxYears.ts';
 import { nzTaxYear } from '../src/shared/nzTaxYears.ts';
@@ -152,7 +155,8 @@ test('New Zealand: tax withheld by a client, provisional tax and the two-tier km
     assert.equal(p.provisional, 630_000);
     assert.deepEqual(p.installments.map((i) => i.amount), [210_000, 210_000, 210_000]);
     assert.deepEqual(p.installments.map((i) => i.state), ['paid', 'upcoming', 'upcoming']);
-    assert.equal(p.terminalDue, '2027-02-08'); // 7 Feb 2027 is a Sunday
+    // 7 Feb 2027 is a Sunday, and Monday is Waitangi Day (6 Feb, a Saturday) moved.
+    assert.equal(p.terminalDue, '2027-02-09');
     // Under $5,000 last year: none.
     setYearInputs({ year: 2026, priorYearTax: 400_000 });
     assert.equal(provisionalTax({ year: 2026, today: '2025-12-01' }, profit).provisional, 0);
@@ -180,6 +184,71 @@ test('GST threshold for books not registered', async () => {
     assert.equal(r.turnover, 8_000_000);
     assert.equal(r.level, 'over');
     assert.equal(gstThreshold({ today: '2027-02-01' }).turnover, 4_000_000);
+  });
+  b.close();
+});
+
+test('public holidays and the online BAS concession', () => {
+  assert.equal(easter(2026), '2026-04-05');
+  assert.equal(easter(2027), '2027-03-28');
+  const au = publicHolidays('AU', 2027);
+  assert.ok(au.has('2027-03-26') && au.has('2027-03-29')); // Good Friday, Easter Monday
+  assert.ok(au.has('2027-12-27') && au.has('2027-12-28')); // Christmas on a Saturday
+  const nz = publicHolidays('NZ', 2026);
+  assert.ok(nz.has('2026-10-26')); // Labour Day
+  assert.ok(nz.has('2026-07-10')); // Matariki
+  assert.ok(nz.has('2026-06-01')); // King's Birthday
+  // Labour Day 2025 is 27 October: the GST return for September is still the 28th.
+  assert.equal(nzGstDue('2025-09-30'), '2025-10-28');
+  // Labour Day 2030 is 28 October.
+  assert.equal(nzGstDue('2030-09-30'), '2030-10-29');
+  // A monthly BAS due on Good Friday 2025 (18 April)? March's is due 21 April, Easter Monday: so the 22nd.
+  assert.equal(basDue('2025-03-01', '2025-03-31'), '2025-04-22');
+  // Christmas 2026 is a Friday; Boxing Day (Saturday) moves to Monday the 28th.
+  assert.equal(nextWorkingDay('2026-12-25', 'AU'), '2026-12-29');
+  // Lodged online: two more weeks for quarters 1, 3 and 4, not 2.
+  assert.equal(basDue('2026-07-01', '2026-09-30', true), '2026-11-11');
+  assert.equal(basDue('2026-10-01', '2026-12-31', true), '2027-03-01');
+  assert.equal(basDue('2027-01-01', '2027-03-31', true), '2027-05-12');
+  assert.equal(basDue('2027-04-01', '2027-06-30', true), '2027-08-11');
+  assert.deepEqual(paygDue(2027, true), ['2026-11-11', '2027-03-01', '2027-05-12', '2027-08-11']);
+});
+
+test('Australia: each car has its own 5,000 km', async () => {
+  const b = await makeBooks({ country: 'AU', fiscalYearStart: '07-01', taxEnabled: false });
+  b.run(() => {
+    saveTrip({ date: '2025-09-01', distanceTenths: 60_000, purpose: 'Jobs', vehicle: 'Ute' });
+    saveTrip({ date: '2025-09-02', distanceTenths: 20_000, purpose: 'Jobs', vehicle: 'Hatch' });
+    let car = carYear(2026);
+    assert.deepEqual(car.vehicles.map((v) => [v.name, v.claim.claimedTenths]), [['Hatch', 20_000], ['Ute', 50_000]]);
+    assert.equal(car.claim.deduction, 7_000 * 88);
+    assert.equal(car.claim.capped, true);
+    // Each car's own logbook share; together they're weighted by the km driven.
+    setYearInputs({ year: 2026, vehicle: 'Ute', vehicleTotalTenths: 100_000 });
+    setYearInputs({ year: 2026, vehicle: 'Hatch', vehicleTotalTenths: 100_000, vehicleBusinessPct: 40 });
+    car = carYear(2026);
+    assert.deepEqual(car.vehicles.map((v) => v.businessPct), [40, 60]);
+    assert.equal(car.businessPct, 50);
+  });
+  b.close();
+});
+
+test('Australia: no-ABN withholding on a bill, at W4 and in the TPAR', async () => {
+  const b = await makeBooks({ country: 'AU', fiscalYearStart: '07-01', taxEnabled: true, taxRatePpm: 100_000 });
+  b.run(() => {
+    const ann = saveContact({ kind: 'vendor', name: 'Ann', is1099: true, address: '2 Low St' });
+    const bill = saveInvoice({
+      docType: 'bill', contactId: ann, issueDate: '2026-08-01', dueDate: '2026-08-31', pricesIncludeTax: false, status: 'sent',
+      lines: [{ description: 'Labour', qtyMilli: 1000, unitPrice: 100_000, categoryId: cat('Contractors'), taxCode: 'FRE' }],
+    } as any);
+    recordPayment({ invoiceId: bill, date: '2026-08-10', amount: 53_000, withheld: 47_000, accountId: bank() });
+    assert.equal(one<any>(getBooks().db, 'SELECT balance FROM (SELECT SUM(-amount) AS balance FROM entries WHERE account_id = ?)', holdingAccount('no-abn', false)).balance, -47_000);
+    assert.equal(basReport({ from: '2026-07-01', to: '2026-09-30', basis: 'cash' }).figures.W4, 47_000);
+    const t = tparReport({ year: 2027 }).payees[0];
+    assert.equal(t.gross, 100_000);
+    assert.equal(t.withheld, 47_000);
+    // Withheld, so no longer flagged.
+    assert.equal(noAbnPayments({ from: '2026-07-01', to: '2027-06-30' }).length, 0);
   });
   b.close();
 });

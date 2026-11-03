@@ -24,11 +24,21 @@ export const DENSITY_OPTIONS: { label: string; value: Density; icon: string; hel
 ];
 
 export const ZOOM_OPTIONS = [
+  { label: '75%', value: 0.75 },
   { label: '90%', value: 0.9 },
   { label: '100%', value: 1 },
   { label: '110%', value: 1.1 },
   { label: '125%', value: 1.25 },
+  { label: '150%', value: 1.5 },
 ];
+
+/** View › Zoom In / Zoom Out (⌘+ / ⌘−): the next zoom step up or down; 0 is back to 100%. */
+export function stepZoom(dir: -1 | 0 | 1) {
+  const values = ZOOM_OPTIONS.map((o) => o.value);
+  if (dir === 0) return updateAppSettings({ zoom: 1 });
+  const next = dir > 0 ? values.find((v) => v > appSettings.zoom + 1e-6) : [...values].reverse().find((v) => v < appSettings.zoom - 1e-6);
+  if (next) updateAppSettings({ zoom: next });
+}
 
 export const appSettings = reactive<AppSettings>({ ...DEFAULTS });
 

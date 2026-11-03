@@ -225,6 +225,8 @@ export interface BasFigures {
   G11: number;
   '1A': number;
   '1B': number;
+  /** Amounts withheld where no ABN was quoted (not a GST label). */
+  W4?: number;
 }
 
 /** BAS labels in cents, plus every row that fed them. */
@@ -253,6 +255,11 @@ export function basReport(p: { from: string; to: string; basis: Basis }) {
     if (tax) figures[tax] += r.tax;
     if (g.length || tax) detail.push({ ...r, labels: [...g, ...(tax ? [tax] : [])] });
   }
+  // W4: tax kept back from suppliers who gave no ABN, when it was kept back.
+  const w4 = one<{ t: number }>(db,
+    `SELECT COALESCE(SUM(e.amount), 0) AS t FROM entries e JOIN accounts a ON a.id = e.account_id
+     WHERE a.holds = 'no-abn' AND e.kind = 'expense' AND e.date BETWEEN ? AND ?`, p.from, p.to)!.t;
+  if (w4) figures.W4 = w4;
   return { figures, detail, untagged };
 }
 

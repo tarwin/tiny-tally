@@ -74,7 +74,7 @@ function email() {
       { label: 'Bills', onAction: () => router.push('/bills') },
       ...(advice?.items.length === 1 ? [{ label: advice.items[0].number, onAction: () => router.push(docPath('bill', advice!.items[0].billId)) }] : []),
     ]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: print }"
     :secondary-actions="[{ label: 'Email', icon: 'mdi:email-outline', onAction: email }]"
     :loading="!advice"

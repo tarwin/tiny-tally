@@ -33,6 +33,8 @@ import { taxPeriods } from '../lib/periods';
 import { printElement } from '../lib/print';
 import { booksProfile, session } from '../lib/session';
 import { TAX_CODE_MAP } from '../shared/tax';
+import { basDue, nzGstDue } from '../shared/dueDates';
+import { incomeYearOf } from '../shared/incomeYear';
 import {
   ADJUSTMENT_MAP,
   rulesById,
@@ -111,6 +113,21 @@ const rows = computed(() => (figures.value ? form.value.rows(figures.value, inpu
 /** Positive to pay, negative for a refund. */
 const net = computed(() => (figures.value ? form.value.net(figures.value, inputs.value) : 0));
 
+/** Australia: this quarter's PAYG instalment, from the PAYG instalments page, for T7. */
+const paygT7 = ref<number | null>(null);
+async function loadPayg() {
+  paygT7.value = null;
+  const p = period.value;
+  if (kind.value !== 'bas' || !p) return;
+  const r = await api.paygReport({ year: incomeYearOf(p.to, books.value.fiscalYearStart), today: today() }).catch(() => null);
+  const q = r?.quarters.find((x) => x.from === p.from && x.to === p.to);
+  paygT7.value = q?.amount || null;
+  if (paygT7.value && !saved.value && !typed.value.t7) typed.value = { ...typed.value, t7: toInput(paygT7.value, books.value.currency) };
+}
+
+/** When the return is due: the BAS or GST return due date for the period (lodging it yourself). */
+const dueDate = computed(() => (period.value ? (kind.value === 'bas' ? basDue(period.value.from, period.value.to, books.value.basOnline) : nzGstDue(period.value.to)) : null));
+
 async function load() {
   if (!period.value) return;
   loading.value = true;
@@ -119,6 +136,7 @@ async function load() {
       api.taxReturnReport({ from: period.value.from, to: period.value.to, basis: basis.value }),
       api.listTaxReturns(),
     ]);
+    await loadPayg();
   } catch (e) {
     toast({ title: errorMessage(e), tone: 'error' });
   } finally {
@@ -288,8 +306,7 @@ async function openPay() {
   payError.value = null;
   const accounts = await api.listAccounts();
   payAccounts.value = accounts.filter((a) => !a.archived).map((a) => ({ label: a.name, value: a.id }));
-  // Roughly when it's due: about four weeks after the period ends (BAS and GST alike).
-  const due = addDays(period.value!.to, 28);
+  const due = dueDate.value ?? addDays(period.value!.to, 28);
   pay.value = {
     amount: toInput(Math.abs(net.value), books.value.currency),
     date: due < today() ? due : today(),
@@ -377,7 +394,7 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
   <Page
     :title="form.kind === 'bas' ? 'BAS & GST' : 'GST return'"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Export detail CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
     :secondary-actions="[{ label: 'Print', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >
@@ -418,7 +435,7 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
             <div class="ReportHead">
               <h2>{{ books.name }}: {{ form.title }}</h2>
               <p>
-                {{ period ? `${period.label} · ${formatDay(period.from)} – ${formatDay(period.to)}` : '' }}
+                {{ period ? `${period.label} · ${formatDay(period.from)} – ${formatDay(period.to)}` : '' }}{{ dueDate && !lodged ? ` · due ${formatDay(dueDate)}` : '' }}
                 · {{ basis === 'cash' ? 'Cash' : 'Accrual' }} basis
                 <template v-if="books.taxId"> · {{ profile.taxId.label }} {{ books.taxId }}</template>
               </p>
@@ -430,7 +447,10 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
                   <tr v-if="r.section" class="Report__section"><td colspan="3">{{ r.section }}</td></tr>
                   <tr :class="{ Report__grand: r.grand }">
                     <td class="Code">{{ r.code }}</td>
-                    <td>{{ r.label }} <span v-if="r.help" class="subdued Small">{{ r.help }}</span></td>
+                    <td>
+                      {{ r.label }} <span v-if="r.help" class="subdued Small">{{ r.help }}</span>
+                      <span v-if="r.input === 't7' && paygT7 && !lodged" class="subdued Small no-print">From PAYG instalments: {{ formatMoney(paygT7, books.currency) }}</span>
+                    </td>
                     <td class="num">
                       <TextField v-if="r.input && !lodged" v-model="typed[r.input]" align="right" placeholder="0" class="no-print Input" />
                       <template v-else>{{ boxMoney(r.value) }}</template>

@@ -69,7 +69,7 @@ async function exportCsv() {
     :title="account?.name ?? 'Account'"
     :subtitle="account ? `Balance ${balanceText} · tracking since ${formatDay(account.openingDate)}` : ''"
     :breadcrumbs="[{ label: 'Money accounts', onAction: () => router.push('/accounts') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: isCard ? 'New card expense' : 'New expense', icon: 'mdi:plus', onAction: () => newEntry('expense', id) }"
     :secondary-actions="[
       { label: 'New income', icon: 'mdi:arrow-down-bold-circle-outline', onAction: () => newEntry('income', id) },

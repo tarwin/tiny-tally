@@ -54,7 +54,7 @@ const columns = computed<DataTableColumnType[]>(() => [
         label: returnName.value,
         width: 240,
         formatFunc: (v: string | null, row: Category) =>
-          v === 'estimated-tax' ? instalmentWord.value : row.class !== 'pnl' ? '' : lineText(v),
+          v === 'estimated-tax' ? instalmentWord.value : row.class !== 'pnl' ? '' : `${lineText(v)}${row.lineGuessed ? ' (guessed: check)' : ''}`,
       }]
     : []),
   { key: 'uses', label: 'Transactions', type: 'integer' as const, width: 140 },
@@ -170,7 +170,7 @@ const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
-  <Page
+  <Page size="fullWidth"
     title="Categories"
     subtitle="How income and spending are grouped on your reports."
     :primary-action="{ label: 'Add category', icon: 'mdi:plus', onAction: () => openEditor() }"

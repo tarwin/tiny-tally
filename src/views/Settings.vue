@@ -68,6 +68,7 @@ function fromBooks(c: Books): Form {
     logo: c.logo,
     homeState: c.homeState,
     taxRateName: c.taxRateName,
+    basOnline: c.basOnline,
   };
 }
 
@@ -164,7 +165,7 @@ async function setLock(date: string | null) {
 </script>
 
 <template>
-  <Page title="Settings" size="narrow">
+  <Page title="Settings" size="fullWidth">
     <div class="Stack">
       <Card title="Books">
         <CardSection>
@@ -289,6 +290,12 @@ async function setLock(date: string | null) {
                 :options="frequencyOptions"
                 :show-description="frequencyOptions.some((o) => o.description)"
                 :help-text="periodHint"
+              />
+              <ToggleSwitch
+                v-if="profile.tax.report === 'bas' && form.taxPeriod === 'quarterly'"
+                v-model="form.basOnline"
+                label="I lodge my BAS online myself"
+                help-text="The ATO gives two more weeks for quarters 1, 3 and 4 (11 November, 12 May, 11 August). Reminders use those dates."
               />
               <ToggleSwitch v-model="form.pricesIncludeTax" :label="`Invoice prices include ${profile.tax.short} by default`" />
             </template>

@@ -470,7 +470,7 @@ const importLabel = computed(() => {
   <Page
     title="Import"
     subtitle="Bring in transactions and contacts from QuickBooks, your bank, or a spreadsheet."
-    size="wide"
+    size="fullWidth"
     :breadcrumbs="step !== 'pick' ? [{ label: 'Import', onAction: reset }] : undefined"
   >
     <!-- ---------------------------------------------------------------- pick -->

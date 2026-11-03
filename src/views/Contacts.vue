@@ -180,7 +180,7 @@ const maxHeight = useFillHeight(tableBox);
   <Page
     title="Contacts"
     subtitle="Customers you get paid by and vendors you pay."
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Add contact', icon: 'mdi:plus', onAction: () => openEditor() }"
   >
     <div class="Toolbar">

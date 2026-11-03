@@ -20,6 +20,8 @@ export interface BooksSettings {
   taxId: string;
   taxBasis: 'cash' | 'accrual';
   /** How often tax returns are filed. */
+  /** Australia: lodges the BAS online themselves, so quarters 1, 3 and 4 get two more weeks. */
+  basOnline: boolean;
   taxPeriod: TaxFrequency;
   pricesIncludeTax: boolean;
   invoicePrefix: string;
@@ -140,6 +142,7 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
     },
   },
   taxRateName: { key: 'tax_rate_name', ...str() },
+  basOnline: { key: 'bas_online', ...bool(false) },
   lockDate: {
     key: 'lock_date',
     parse: (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null),

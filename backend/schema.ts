@@ -646,4 +646,20 @@ export const migrations: string[] = [
   UPDATE categories SET report_line = CASE name WHEN 'Sales' THEN 'nz-sales' WHEN 'Services' THEN 'nz-sales' WHEN 'Interest Income' THEN 'nz-interest' WHEN 'Other Income' THEN 'nz-other-income' WHEN 'Contractors' THEN 'nz-contractors' WHEN 'Insurance' THEN 'nz-insurance' WHEN 'Professional Fees' THEN 'nz-professional' WHEN 'Rent' THEN 'nz-rent' WHEN 'Vehicle' THEN 'nz-vehicle' WHEN 'Equipment' THEN 'nz-depreciation' ELSE CASE kind WHEN 'income' THEN 'nz-other-income' ELSE 'nz-other-expenses' END END
     WHERE class = 'pnl' AND report_line IS NULL AND (SELECT value FROM meta WHERE key = 'country') = 'NZ';
   `,
+  // v21: Accounts that hold tax rather than money (tax clients withheld in
+  // NZ, no-ABN withholding owed to the ATO) are marked, so they aren't
+  // counted as cash. Categories v20 put under other income or expenses only
+  // because it didn't know them are flagged, so the dashboard asks for a check.
+  `
+  ALTER TABLE accounts ADD COLUMN holds TEXT;
+  UPDATE accounts SET holds = 'client-wht' WHERE id = (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'wht_account_id');
+  DELETE FROM meta WHERE key = 'wht_account_id';
+  ALTER TABLE categories ADD COLUMN line_guessed INTEGER NOT NULL DEFAULT 0;
+  UPDATE categories SET line_guessed = 1
+    WHERE class = 'pnl' AND (
+      ((SELECT value FROM meta WHERE key = 'country') = 'AU' AND report_line IN ('au-other-income', 'au-other-expenses')
+        AND name NOT IN ('Sales','Services','Interest Income','Other Income','Advertising & Marketing','Bank Fees','Insurance','Meals & Entertainment','Office Supplies','Professional Fees','Software & Subscriptions','Taxes & Licences','Travel','Utilities','Uncategorised Expense'))
+      OR ((SELECT value FROM meta WHERE key = 'country') = 'NZ' AND report_line IN ('nz-other-income', 'nz-other-expenses')
+        AND name NOT IN ('Other Income','Advertising & Marketing','Bank Fees','Meals & Entertainment','Office Supplies','Software & Subscriptions','Taxes & Licences','Travel','Utilities','Uncategorised Expense')));
+  `,
 ];

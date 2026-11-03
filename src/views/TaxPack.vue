@@ -149,7 +149,7 @@ async function saveFiles() {
   <Page
     title="Year-end tax pack"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Save files…', icon: 'mdi:folder-download-outline', onAction: saveFiles }"
     :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >

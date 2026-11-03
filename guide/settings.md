@@ -19,11 +19,11 @@ There are two kinds: settings for these books, which are kept in the books file,
 <kbd>⌘,</kbd> on a Mac, or File → **App Settings…** on Windows and Linux:
 
 - **Theme**: System, Light or Dark.
-- **Density**: Compact, Regular or Spacious. **Size**: 90% to 125%.
+- **Density**: Compact, Regular or Spacious. **Size**: 75% to 150%.
 - **Collapse the sidebar to icons**.
 - **Open the last books when Tiny Tally starts**.
 
-Theme and density are also in the View menu.
+Theme and density are also in the View menu, along with Zoom In (<kbd>⌘=</kbd> or <kbd>⌘+</kbd>), Zoom Out (<kbd>⌘−</kbd>) and Actual Size (<kbd>⌘0</kbd>), which step through the same sizes.
 
 ![The dashboard in dark mode](/shots/dashboard-dark.webp)
 

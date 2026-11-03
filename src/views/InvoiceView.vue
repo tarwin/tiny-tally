@@ -190,9 +190,14 @@ const paying = ref(false);
 const savingPayment = ref(false);
 const payment = ref({ date: today(), amount: '', withheld: '', accountId: null as number | null, memo: '' });
 // New Zealand: a client paying schedular payments keeps back tax at their rate, worked on the amount before GST.
-const withholds = computed(() => session.books?.country === 'NZ' && invoice.value?.docType === 'invoice');
+// Australia: a supplier who gives no ABN has 47% kept back (over $75 before GST), owed to the ATO.
+const withholds = computed(() =>
+  (session.books?.country === 'NZ' && invoice.value?.docType === 'invoice') || (session.books?.country === 'AU' && invoice.value?.docType === 'bill'));
+const noAbnBill = computed(() => session.books?.country === 'AU' && invoice.value?.docType === 'bill');
 function withheldOn(balance: number) {
   const inv = invoice.value!;
+  const exGst = inv.total ? (balance * (inv.total - inv.tax)) / inv.total : 0;
+  if (noAbnBill.value) return inv.contactReportable && !inv.contactTin && exGst > 7_500 ? Math.round(exGst * 0.47) : 0;
   const rate = inv.contactWhtRatePpm ?? 0;
   if (!rate || !inv.total) return 0;
   return Math.round((balance * (inv.total - inv.tax) / inv.total) * rate / 1_000_000);
@@ -201,7 +206,7 @@ const paymentError = ref<string | null>(null);
 // Money paid out can come off a card; money in lands in a bank or cash account.
 const accountOptions = computed(() =>
   accounts.value
-    .filter((a) => !a.archived && (invoice.value?.docType !== 'invoice' || a.kind !== 'credit_card'))
+    .filter((a) => !a.archived && !a.holds && (invoice.value?.docType !== 'invoice' || a.kind !== 'credit_card'))
     .map((a) => ({ label: a.name, value: a.id })),
 );
 
@@ -393,7 +398,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
     :breadcrumbs="[{ label: doc.many, onAction: () => router.push(doc.base) }]"
     :primary-action="primary"
     :secondary-actions="secondary"
-    size="wide"
+    size="fullWidth"
     :loading="!invoice"
   >
     <template v-if="invoice">
@@ -578,10 +583,12 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
           <TextField
             v-if="withholds"
             v-model="payment.withheld"
-            label="Tax withheld by the client"
+            :label="noAbnBill ? 'No-ABN tax withheld' : 'Tax withheld by the client'"
             :prefix="currency"
             align="right"
-            help-text="Schedular payments: the tax they kept back and pay to IRD for you. It counts as paid, and as tax already paid on your IR3."
+            :help-text="noAbnBill
+              ? 'They gave no ABN: keep back 47% (on supplies over $75 before GST) and pay it to the ATO with your BAS (W4). The bill counts as paid in full.'
+              : 'Schedular payments: the tax they kept back and pay to IRD for you. It counts as paid, and as tax already paid on your IR3.'"
           />
           <DatePicker v-model="payment.date" type="date" model-format="YYYY-MM-DD" :label="payWords.date" />
           <Select v-model="payment.accountId" :label="payWords.account" :options="accountOptions" />

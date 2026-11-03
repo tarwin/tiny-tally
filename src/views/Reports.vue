@@ -182,7 +182,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Page title="Reports" size="wide">
+  <Page title="Reports" size="fullWidth">
     <Card v-if="gst" :title="`GST so far: ${period.label}`" class="Gst">
       <CardSection>
         <div class="Gst__row">

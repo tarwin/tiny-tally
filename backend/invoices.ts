@@ -152,7 +152,7 @@ export function getInvoice(id: number) {
     `SELECT ${LIST_COLUMNS}, i.notes, i.template_id AS templateId, i.prices_include_tax AS pricesIncludeTax, i.from_snapshot AS fromSnapshot,
             i.sent_at AS sentAt, i.schedule_id AS scheduleId, i.updated_at AS updatedAt, ct.address AS contactAddress, ct.phone AS contactPhone,
             src.number AS sourceNumber, src.doc_type AS sourceType,
-            i.tax_rate_id AS taxRateId, i.tax_rate_ppm AS taxRatePpm, tr.name AS taxRateName, ct.tax_exempt AS contactTaxExempt, ct.wht_rate_ppm AS contactWhtRatePpm
+            i.tax_rate_id AS taxRateId, i.tax_rate_ppm AS taxRatePpm, tr.name AS taxRateName, ct.tax_exempt AS contactTaxExempt, ct.wht_rate_ppm AS contactWhtRatePpm, ct.tin AS contactTin, ct.is_1099 AS contactReportable
      FROM invoices i JOIN contacts ct ON ct.id = i.contact_id
      LEFT JOIN invoices src ON src.id = i.source_id
      LEFT JOIN tax_rates tr ON tr.id = i.tax_rate_id
@@ -462,20 +462,30 @@ export function creditInvoice(id: number, today: string) {
 }
 
 /**
- * New Zealand: tax a client withheld from a payment (schedular payments) is
- * settled through this account, so the invoice is paid in full and its income
- * counts in full, and the account's balance is the year's tax credit for the
- * IR3. Made the first time it's needed.
+ * Accounts that hold tax rather than money, made the first time they're needed:
+ *
+ * - 'client-wht' (New Zealand): tax a client withheld from a payment
+ *   (schedular payments). The invoice is settled through it, so it's paid in
+ *   full and its income counts in full; the balance is the year's tax credit
+ *   for the IR3.
+ * - 'no-abn' (Australia): 47% kept back from a supplier who gave no ABN. The
+ *   bill is settled through it, so the whole cost counts; the balance (below
+ *   zero) is what's owed to the ATO, reported at W4 on the BAS.
  */
-export function withholdingAccount() {
+export type Holding = 'client-wht' | 'no-abn';
+const HOLDING_NAME: Record<Holding, string> = {
+  'client-wht': 'Tax withheld by clients',
+  'no-abn': 'No-ABN tax withheld (owed to the ATO)',
+};
+
+export function holdingAccount(holds: Holding, create = true) {
   const { db } = getBooks();
-  const id = Number(one<{ value: string }>(db, "SELECT value FROM meta WHERE key = 'wht_account_id'")?.value);
-  if (id && one(db, 'SELECT id FROM accounts WHERE id = ?', id)) return id;
-  const made = one<{ id: number }>(db,
-    `INSERT INTO accounts (name, kind, opening_date, sort)
-     VALUES ('Tax withheld by clients', 'cash', date('now'), (SELECT COALESCE(MAX(sort), 0) + 1 FROM accounts)) RETURNING id`)!.id;
-  run(db, "INSERT OR REPLACE INTO meta (key, value) VALUES ('wht_account_id', ?)", String(made));
-  return made;
+  const found = one<{ id: number }>(db, 'SELECT id FROM accounts WHERE holds = ? ORDER BY id LIMIT 1', holds)?.id;
+  if (found || !create) return found ?? 0;
+  return one<{ id: number }>(db,
+    `INSERT INTO accounts (name, kind, opening_date, sort, holds)
+     VALUES (?, 'cash', date('now'), (SELECT COALESCE(MAX(sort), 0) + 1 FROM accounts), ?) RETURNING id`,
+    HOLDING_NAME[holds], holds)!.id;
 }
 
 export function recordPayment(p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null; withheld?: number | null }) {
@@ -492,7 +502,9 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
   const balance = inv.total - settledOn(inv.id).settled;
   const withheld = Math.round(Number(p.withheld ?? 0));
   if (!Number.isFinite(withheld) || withheld < 0) throw new Error('Enter the tax withheld, or leave it empty.');
-  if (withheld && (type !== 'invoice' || getSettings().country !== 'NZ')) throw new Error('Tax withheld is only for New Zealand invoices.');
+  const country = getSettings().country;
+  const holds: Holding | null = type === 'invoice' && country === 'NZ' ? 'client-wht' : type === 'bill' && country === 'AU' ? 'no-abn' : null;
+  if (withheld && !holds) throw new Error('Tax withheld is only for New Zealand invoices and Australian bills.');
   if (amount + withheld > balance) {
     throw new Error(`That's more than the ${money(balance)} ${type === 'credit' ? 'left on this credit note' : 'still owing'}.`);
   }
@@ -511,11 +523,12 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
       `INSERT INTO entries (date, kind, amount, account_id, contact_id, memo, invoice_id, tax_amount)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       p.date, kind, amount, account.id, inv.contact_id, clean(p.memo), inv.id, tax)!.id;
-    if (withheld) {
+    if (withheld && holds) {
       run(db,
         `INSERT INTO entries (date, kind, amount, account_id, contact_id, memo, invoice_id, tax_amount)
-         VALUES (?, 'income', ?, ?, ?, 'Tax withheld', ?, ?)`,
-        p.date, withheld, withholdingAccount(), inv.contact_id, inv.id, Math.round((withheld * inv.tax) / inv.total));
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        p.date, kind, withheld, holdingAccount(holds), inv.contact_id, holds === 'no-abn' ? 'No-ABN tax withheld (47%)' : 'Tax withheld',
+        inv.id, Math.round((withheld * inv.tax) / inv.total));
     }
   })();
   return id!;

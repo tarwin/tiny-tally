@@ -212,7 +212,7 @@ const differenceText = computed(() => {
       { label: 'Money accounts', onAction: () => router.push('/accounts') },
       ...(state ? [{ label: state.account.name, onAction: () => router.push(`/accounts/${accountId}`) }] : []),
     ]"
-    size="wide"
+    size="fullWidth"
     :loading="!state"
   >
     <template v-if="state">

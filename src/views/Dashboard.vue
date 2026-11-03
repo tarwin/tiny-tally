@@ -35,7 +35,7 @@ function lastTwelveMonths() {
 
 const currency = computed(() => session.books!.currency);
 const active = computed(() => accounts.value.filter((a) => !a.archived));
-const cash = computed(() => active.value.filter((a) => a.kind !== 'credit_card').reduce((s, a) => s + a.balance, 0));
+const cash = computed(() => active.value.filter((a) => a.kind !== 'credit_card' && !a.holds).reduce((s, a) => s + a.balance, 0));
 const owed = computed(() => active.value.filter((a) => a.kind === 'credit_card').reduce((s, a) => s - a.balance, 0));
 const net = computed(() => month.value.income - month.value.expense);
 const monthName = new Date().toLocaleDateString(undefined, { month: 'long' });
@@ -95,6 +95,12 @@ async function load() {
 
 // Australia and New Zealand: returns and instalments coming up or overdue, and the GST threshold when not registered.
 const due = ref<Deadline[]>([]);
+/** Categories the upgrade put on a tax return line without knowing them. */
+const guessed = ref<string[]>([]);
+async function confirmLines() {
+  await api.confirmCategoryLines();
+  guessed.value = [];
+}
 const gst = ref<GstThreshold | null>(null);
 async function loadDeadlines() {
   const c = session.books?.country;
@@ -104,6 +110,7 @@ async function loadDeadlines() {
     return;
   }
   due.value = await api.deadlines({ today: today() }).catch(() => []);
+  guessed.value = (await api.listCategories().catch(() => [])).filter((c) => c.lineGuessed && !c.archived).map((c) => c.name);
   gst.value = session.books?.taxEnabled ? null : await api.gstThreshold(today()).catch(() => null);
 }
 
@@ -125,7 +132,7 @@ onMounted(load);
 </script>
 
 <template>
-  <Page :title="session.books!.name" subtitle="Dashboard" size="wide">
+  <Page :title="session.books!.name" subtitle="Dashboard" size="fullWidth">
     <div class="Quick">
       <Button type="primary" icon="mdi:arrow-up-bold-circle-outline" @click="newEntry('expense')">Expense</Button>
       <Button icon="mdi:arrow-down-bold-circle-outline" @click="newEntry('income')">Income</Button>
@@ -141,6 +148,23 @@ onMounted(load);
     >
       <p>About {{ formatMoney(estimated.short, session.books!.currency) }} for {{ estimated.year }}, worked out from your profit.</p>
       <Button @click="router.push('/reports/estimated-tax')">Estimated tax</Button>
+    </Banner>
+
+    <Banner
+      v-if="guessed.length"
+      status="info"
+      :title="`Check where ${guessed.length === 1 ? 'a category goes' : `${guessed.length} categories go`} on your tax return`"
+      class="Estimated"
+    >
+      <p>
+        {{ guessed.join(', ') }} {{ guessed.length === 1 ? 'was' : 'were' }} put under other
+        {{ session.books?.country === 'AU' ? 'business income or expenses (P8)' : 'income or expenses (IR10)' }} because Tiny Tally
+        didn't know {{ guessed.length === 1 ? 'it' : 'them' }}. Change any that belong somewhere else.
+      </p>
+      <div class="Buttons">
+        <Button @click="router.push('/categories')">Categories</Button>
+        <Button type="plain" @click="confirmLines">They're right</Button>
+      </div>
     </Banner>
 
     <Banner
@@ -291,6 +315,11 @@ onMounted(load);
 
 .Estimated p {
   margin: 0 0 8px;
+}
+
+.Buttons {
+  display: flex;
+  gap: 8px;
 }
 
 .Tile--link {

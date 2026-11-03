@@ -56,15 +56,16 @@ const data = ref<CarYear | null>(null);
 const loading = ref(false);
 
 // The year's inputs, as typed.
-const total = ref('');
-const businessPct = ref('');
+const typed = ref<Record<string, { total: string; pct: string }>>({});
 
 async function load() {
   loading.value = true;
   try {
     data.value = await api.carYear(year.value);
-    total.value = data.value.inputs.vehicleTotalTenths ? String(data.value.inputs.vehicleTotalTenths / 10) : '';
-    businessPct.value = data.value.inputs.vehicleBusinessPct != null ? String(data.value.inputs.vehicleBusinessPct) : '';
+    typed.value = Object.fromEntries(data.value.vehicles.map((v) => [v.name, {
+      total: v.inputs.totalTenths ? String(v.inputs.totalTenths / 10) : '',
+      pct: v.inputs.businessPct != null ? String(v.inputs.businessPct) : '',
+    }]));
   } finally {
     loading.value = false;
   }
@@ -81,15 +82,19 @@ async function setInputs(p: Parameters<typeof api.setYearInputs>[0]) {
   }
 }
 const setMethod = (v: 'rate' | 'actual') => setInputs({ year: year.value, vehicleMethod: v });
-const setFuel = (v: Fuel) => setInputs({ year: year.value, vehicleFuel: v });
-function saveTotal() {
-  const n = Number(total.value.replace(/,/g, ''));
-  void setInputs({ year: year.value, vehicleTotalTenths: total.value.trim() && Number.isFinite(n) ? Math.round(n * 10) : null });
+// Each car has its own odometer total, logbook share and fuel.
+const setFuel = (vehicle: string, v: Fuel) => setInputs({ year: year.value, vehicle, vehicleFuel: v });
+function saveTotal(vehicle: string) {
+  const t = typed.value[vehicle]?.total ?? '';
+  const n = Number(t.replace(/,/g, ''));
+  void setInputs({ year: year.value, vehicle, vehicleTotalTenths: t.trim() && Number.isFinite(n) ? Math.round(n * 10) : null });
 }
-function savePct() {
-  const n = Number(businessPct.value.replace('%', ''));
-  void setInputs({ year: year.value, vehicleBusinessPct: businessPct.value.trim() && Number.isFinite(n) ? n : null });
+function savePct(vehicle: string) {
+  const t = typed.value[vehicle]?.pct ?? '';
+  const n = Number(t.replace('%', ''));
+  void setInputs({ year: year.value, vehicle, vehicleBusinessPct: t.trim() && Number.isFinite(n) ? n : null });
 }
+const vehicleName = (name: string) => name || (data.value && data.value.vehicles.length > 1 ? 'No vehicle named' : 'The car');
 
 const fuelOptions = [
   { label: 'Petrol', value: 'petrol' },
@@ -183,7 +188,7 @@ function exportCsv() {
 <template>
   <Page
     :title="words.title"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Add trip', icon: 'mdi:plus', onAction: () => openEditor() }"
     :secondary-actions="[{ label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }]"
   >
@@ -197,7 +202,6 @@ function exportCsv() {
           @update:model-value="setMethod"
         />
       </div>
-      <Select v-if="country === 'NZ'" :model-value="data?.inputs.vehicleFuel ?? 'petrol'" label="Fuel" :options="fuelOptions" @update:model-value="setFuel" />
     </div>
 
     <Banner v-if="data && data.claim.status !== 'checked'" status="warning" title="This year's rate hasn't been checked" class="Gap">
@@ -231,34 +235,48 @@ function exportCsv() {
         <CardSection>
           <div class="subdued Small">Business use</div>
           <div class="Big">{{ data?.businessPct != null ? `${data.businessPct}%` : '–' }}</div>
-          <div class="subdued Small">{{ data?.loggedPct != null ? `${data.loggedPct}% from the trips logged` : 'Enter the year’s total km to work it out' }}</div>
+          <div class="subdued Small">{{ data && data.vehicles.length > 1 ? 'All the cars together' : data?.loggedPct != null ? `${data.loggedPct}% from the trips logged` : 'Enter the year’s total km to work it out' }}</div>
         </CardSection>
       </Card>
     </div>
 
-    <Card v-if="country !== 'US'" class="Gap">
-      <CardSection title="The car this year">
-        <FormLayout>
+    <Card v-if="country !== 'US' && data" class="Gap">
+      <CardSection
+        v-for="v in data.vehicles"
+        :key="v.name"
+        :title="`${vehicleName(v.name)} this year`"
+      >
+        <p v-if="data.vehicles.length > 1" class="subdued Small Vehicle">
+          {{ dist(v.distanceTenths) }} business km in {{ v.trips }} trips · {{ money(v.claim.deduction) }} at the rate{{ v.claim.capped ? ' (5,000 km most)' : '' }}{{ v.businessPct != null ? ` · ${v.businessPct}% business use` : '' }}
+        </p>
+        <FormLayout v-if="typed[v.name]">
           <FormLayoutGroup>
             <TextField
-              v-model="total"
+              v-model="typed[v.name].total"
               label="Total km driven in the year"
               inputmode="decimal"
               :help-text="country === 'NZ' ? 'From the odometer, private km too. Tier 1 covers the business share of the first 14,000 km.' : 'From the odometer at the start and end of the year, private km too.'"
-              @blur="saveTotal"
-              @keydown.enter="saveTotal"
+              @blur="saveTotal(v.name)"
+              @keydown.enter="saveTotal(v.name)"
             />
             <TextField
-              v-model="businessPct"
+              v-model="typed[v.name].pct"
               label="Business use from your logbook"
               suffix="%"
-              :placeholder="data?.loggedPct != null ? String(data.loggedPct) : ''"
+              :placeholder="v.loggedPct != null ? String(v.loggedPct) : ''"
               :help-text="country === 'AU' ? 'A 12-week logbook sets it for 5 years.' : 'A 90-day logbook sets it for 3 years.'"
-              @blur="savePct"
-              @keydown.enter="savePct"
+              @blur="savePct(v.name)"
+              @keydown.enter="savePct(v.name)"
             />
+            <Select v-if="country === 'NZ'" :model-value="v.inputs.fuel ?? 'petrol'" label="Fuel" :options="fuelOptions" @update:model-value="(f: Fuel) => setFuel(v.name, f)" />
           </FormLayoutGroup>
         </FormLayout>
+      </CardSection>
+      <CardSection v-if="data.vehicles.length > 1 && data.method === 'actual'">
+        <p class="subdued Small Vehicle">
+          Car costs aren't split by vehicle, so actual costs are claimed at the cars' combined business use ({{ data.businessPct ?? '–' }}%).
+          For an exact claim, give each car its own expense category and use its own share.
+        </p>
       </CardSection>
     </Card>
 
@@ -378,6 +396,10 @@ function exportCsv() {
 .Note {
   margin: 12px 0 0;
   font-size: 12px;
+}
+
+.Vehicle {
+  margin: 0 0 12px;
 }
 
 .RoundTrip {

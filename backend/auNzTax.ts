@@ -5,6 +5,7 @@
 // and nzTaxYears.ts; dates from dueDates.ts.
 import { all, getBooks, one } from './db';
 import { getSettings } from './settings';
+import { holdingAccount } from './invoices';
 import { yearInputs, yearOf } from './taxYear';
 import { auIncomeTax, auTaxYear, bracketTax } from '../src/shared/auTaxYears';
 import { nzTaxYear } from '../src/shared/nzTaxYears';
@@ -86,11 +87,14 @@ export function tparReport(p: { year: number }) {
      WHERE l.kind = 'expense' AND l.date BETWEEN ? AND ? AND COALESCE(c.class, 'pnl') IN ('pnl', 'asset')
        AND l.contact_id IN (SELECT id FROM contacts WHERE is_1099 = 1)
      GROUP BY l.contact_id`, from, to).map((r) => [r.id, r]));
+  const withheld = new Map(all<{ id: number; t: number }>(db,
+    `SELECT e.contact_id AS id, SUM(e.amount) AS t FROM entries e JOIN accounts a ON a.id = e.account_id
+     WHERE a.holds = 'no-abn' AND e.kind = 'expense' AND e.date BETWEEN ? AND ? GROUP BY e.contact_id`, from, to).map((r) => [r.id, r.t]));
   const payees = all<any>(db, 'SELECT id, name, legal_name AS legalName, tin AS abn, address, email, phone FROM contacts WHERE is_1099 = 1')
     .map((c) => {
       const r = paid.get(c.id);
       const missing = [...(!c.abn ? ['ABN'] : []), ...(!c.address ? ['address'] : [])];
-      return { ...c, gross: r?.gross ?? 0, gst: r?.gst ?? 0, payments: r?.payments ?? 0, missing };
+      return { ...c, gross: r?.gross ?? 0, gst: r?.gst ?? 0, withheld: withheld.get(c.id) ?? 0, payments: r?.payments ?? 0, missing };
     })
     .sort((a, b) => b.gross - a.gross || a.name.localeCompare(b.name));
   const s = getSettings();
@@ -101,14 +105,15 @@ export function tparReport(p: { year: number }) {
     due: tparDue(year),
     payer: { name: s.name, abn: s.taxId },
     payees,
-    totals: { gross: payees.reduce((x, c) => x + c.gross, 0), gst: payees.reduce((x, c) => x + c.gst, 0) },
+    totals: { gross: payees.reduce((x, c) => x + c.gross, 0), gst: payees.reduce((x, c) => x + c.gst, 0), withheld: payees.reduce((x, c) => x + c.withheld, 0) },
   };
 }
 
 /**
- * Payments over the no-ABN limit to vendors with no ABN on file, in a date
- * range: each may have needed 47% withheld, unless the supplier gave a
- * statement that it's a hobby or private, or they're not in business.
+ * Payments over the no-ABN limit to TPAR contractors with no ABN on file and
+ * nothing withheld, in a date range: each may have needed 47% withheld,
+ * unless the supplier gave a statement that it's a hobby or private, or
+ * they're not in business.
  */
 export function noAbnPayments(p: { from: string; to: string }) {
   assertCountry('AU');
@@ -118,7 +123,9 @@ export function noAbnPayments(p: { from: string; to: string }) {
      FROM ledger_cash l JOIN contacts ct ON ct.id = l.contact_id LEFT JOIN categories c ON c.id = l.category_id
      WHERE l.kind = 'expense' AND l.date BETWEEN ? AND ? AND ct.is_1099 = 1 AND ct.tin IS NULL
        AND COALESCE(c.class, 'pnl') = 'pnl' AND l.gross - l.tax > ?
-     GROUP BY ct.id ORDER BY gross DESC`, p.from, p.to, rules.noAbnUnder);
+       AND NOT EXISTS (SELECT 1 FROM entries w JOIN accounts a ON a.id = w.account_id
+                       WHERE a.holds = 'no-abn' AND w.contact_id = ct.id AND w.date BETWEEN ? AND ?)
+     GROUP BY ct.id ORDER BY gross DESC`, p.from, p.to, rules.noAbnUnder, p.from, p.to);
 }
 
 // ---- Australia: PAYG instalments ---------------------------------------------------------
@@ -138,7 +145,9 @@ export function paygInstalments(p: { year: number; today: string }, profit: Prof
   const { from, to } = incomeYearRange(year, s.fiscalYearStart);
   const inputs = yearInputs(year);
   const { rules, status } = auTaxYear(year);
-  const due = paygDue(year);
+  // Paid with a BAS lodged online: two more weeks for quarters 1, 3 and 4. Not on an instalment notice.
+  const online = s.basOnline && s.taxEnabled && s.taxPeriod === 'quarterly';
+  const due = paygDue(year, online);
   // The four quarters of the year.
   const quarters = [0, 3, 6, 9].map((m) => {
     const start = new Date(`${from}T00:00:00Z`);
@@ -158,7 +167,7 @@ export function paygInstalments(p: { year: number; today: string }, profit: Prof
   const quarterIncome = quarters.map((q) => (q.from <= p.today ? profit(q.from, q.to < p.today ? q.to : p.today).income : 0));
   const y = yearProfit(from, to, p.today, profit);
   const estimatedTax = auIncomeTax(Math.max(0, y.profit), year);
-  const paid = instalmentsPaid(addDays(paygDue(year - 1)[3], 0), due[3]);
+  const paid = instalmentsPaid(paygDue(year - 1, online)[3], due[3]);
   const plan = installments(due, amounts, paid.payments, p.today);
   return {
     year,
@@ -182,7 +191,7 @@ export function paygInstalments(p: { year: number; today: string }, profit: Prof
 /** Tax clients withheld from payments in a date range (the "Tax withheld by clients" account). */
 export function taxWithheld(from: string, to: string) {
   const { db } = getBooks();
-  const account = Number(one<{ value: string }>(db, "SELECT value FROM meta WHERE key = 'wht_account_id'")?.value) || 0;
+  const account = holdingAccount('client-wht', false);
   if (!account) return { total: 0, byClient: [] as { id: number; name: string; amount: number }[] };
   const byClient = all<{ id: number; name: string; amount: number }>(db,
     `SELECT ct.id, ct.name, SUM(e.amount) AS amount FROM entries e LEFT JOIN contacts ct ON ct.id = e.contact_id
@@ -354,7 +363,7 @@ export function deadlines(p: { today: string; days?: number }, profit: ProfitFn)
       const to = b.toISOString().slice(0, 10);
       if (to >= p.today) break;
       if (lodged.has(from + to)) continue;
-      const due = s.country === 'AU' ? basDue(from, to) : nzGstDue(to);
+      const due = s.country === 'AU' ? basDue(from, to, s.basOnline) : nzGstDue(to);
       if (within(due)) {
         out.push({ key: `return-${from}`, title: s.country === 'AU' ? `BAS for ${label(from, to)}` : `GST return for ${label(from, to)}`, due, route: '/reports/tax-return' });
       }

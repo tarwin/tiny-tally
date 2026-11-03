@@ -71,5 +71,6 @@ against in `docs/TAX-SOURCES.md`:
   low-value asset limit, provisional tax threshold and uplifts, tax brackets.
 - `src/shared/incomeReturnLines.ts`: the P8 labels (BPI schedule
   instructions) and IR10 boxes, when the forms change.
-- `src/shared/dueDates.ts`: BAS, GST, PAYG, provisional tax and TPAR dates
-  (weekends move; public holidays aren't known).
+- `src/shared/dueDates.ts`: BAS, GST, PAYG, provisional tax and TPAR dates.
+- `src/shared/holidays.ts`: national public holidays. NZ Matariki dates are
+  in law up to 2034; add later ones when they're set.

@@ -123,7 +123,7 @@ onBooksChanged(load);
 </script>
 
 <template>
-  <Page
+  <Page size="fullWidth"
     title="Money accounts"
     subtitle="Bank accounts, credit cards and cash: anywhere business money sits."
     :primary-action="{ label: 'Add account', icon: 'mdi:plus', onAction: () => openEditor() }"

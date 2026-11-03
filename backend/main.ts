@@ -565,7 +565,7 @@ export const api: Record<string, TinyApiHandler> = {
     return all(
       db,
       `SELECT a.id, a.name, a.kind, a.opening_balance AS openingBalance,
-              a.opening_date AS openingDate, a.is_archived AS archived,
+              a.opening_date AS openingDate, a.is_archived AS archived, a.holds,
               a.opening_balance
                 + COALESCE((SELECT SUM(CASE e.kind WHEN 'income' THEN e.amount ELSE -e.amount END)
                             FROM entries e WHERE e.account_id = a.id), 0)
@@ -606,12 +606,17 @@ export const api: Record<string, TinyApiHandler> = {
 
   // ---- categories --------------------------------------------------------
 
+  /** The tax return lines the upgrade guessed are right as they are. */
+  'categories.confirmLines': async () => {
+    run(getBooks().db, 'UPDATE categories SET line_guessed = 0 WHERE line_guessed = 1');
+    return true;
+  },
   'categories.list': async () => {
     const { db } = getBooks();
     return all(
       db,
       `SELECT c.id, c.name, c.kind, c.class AS class, c.is_archived AS archived, c.tax_code AS taxCode,
-              c.report_line AS reportLine, c.parent_id AS parentId,
+              c.report_line AS reportLine, c.parent_id AS parentId, c.line_guessed AS lineGuessed,
               CASE WHEN p.id IS NULL THEN c.name ELSE p.name || ' › ' || c.name END AS path,
               (SELECT COUNT(*) FROM entries e WHERE e.category_id = c.id)
                 + (SELECT COUNT(*) FROM invoice_lines l WHERE l.category_id = c.id)
@@ -620,7 +625,7 @@ export const api: Record<string, TinyApiHandler> = {
        -- Sub-categories straight after their parent.
        ORDER BY c.kind, COALESCE(p.is_archived, c.is_archived), COALESCE(p.class, c.class) <> 'pnl',
                 COALESCE(p.name, c.name) COLLATE NOCASE, c.parent_id IS NOT NULL, c.name COLLATE NOCASE`,
-    ).map((r: any) => ({ ...r, archived: !!r.archived }));
+    ).map((r: any) => ({ ...r, archived: !!r.archived, lineGuessed: !!r.lineGuessed }));
   },
 
   'categories.save': async ({ id, name, kind, taxCode, class: cls, reportLine, parentId }: {
@@ -662,7 +667,7 @@ export const api: Record<string, TinyApiHandler> = {
       const children = all<{ class: string; kind: string }>(db, 'SELECT class, kind FROM categories WHERE parent_id = ?', id);
       if (children.length && parent) throw new Error('This category has sub-categories of its own, so it has to stay at the top level.');
       if (children.some((c) => c.class !== klass || c.kind !== kind)) throw new Error('Its sub-categories are a different type. Change or move them first.');
-      run(db, 'UPDATE categories SET name = ?, kind = ?, tax_code = ?, class = ?, report_line = ?, parent_id = ? WHERE id = ?',
+      run(db, 'UPDATE categories SET name = ?, kind = ?, tax_code = ?, class = ?, report_line = ?, parent_id = ?, line_guessed = 0 WHERE id = ?',
         name, kind, code, klass, line, parent?.id ?? null, id);
       return id;
     }

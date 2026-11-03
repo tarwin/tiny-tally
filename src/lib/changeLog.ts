@@ -55,6 +55,7 @@ const ACTIONS: Record<string, string> = {
   'taxReturns.reopen': 'Reopened a tax return',
   'taxReturns.delete': 'Deleted a tax return',
   'scheduleC.setInventory': 'Changed inventory on hand (Schedule C)',
+  'categories.confirmLines': 'Confirmed the tax return lines',
   'taxYear.set': 'Changed a tax year’s figures',
   'trips.save': 'Saved a trip',
   'trips.delete': 'Deleted a trip',

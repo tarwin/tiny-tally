@@ -88,7 +88,7 @@ async function recordPayment() {
   <Page
     title="Estimated tax"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Record a payment', icon: 'mdi:plus', onAction: recordPayment }"
     :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >

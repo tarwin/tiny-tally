@@ -149,7 +149,7 @@ const subtitle = computed(() => {
   <Page
     :title="row ? 'History' : 'Activity'"
     :subtitle="subtitle"
-    size="wide"
+    size="fullWidth"
     :breadcrumbs="row ? [{ label: 'Activity', onAction: () => router.push('/activity') }] : undefined"
     :primary-action="row || archive ? undefined : { label: 'Archive older history…', icon: 'mdi:archive-arrow-down-outline', onAction: startArchive }"
     :secondary-actions="

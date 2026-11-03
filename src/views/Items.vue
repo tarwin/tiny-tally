@@ -167,7 +167,7 @@ const maxHeight = useFillHeight(tableBox);
   <Page
     title="Products & services"
     subtitle="Lines you use often. Pick one on an invoice or bill and it fills in the description, price, category and tax."
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Add item', icon: 'mdi:plus', onAction: () => open() }"
   >
     <div class="Filter">

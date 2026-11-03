@@ -84,7 +84,7 @@ function exportCsv() {
   <Page
     title="Sales by state"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }, { label: 'Sales tax', onAction: () => router.push('/reports/sales-tax') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
     :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
   >

@@ -129,7 +129,7 @@ function email() {
   <Page
     :title="statement ? `Statement · ${statement.contact.name}` : 'Statement'"
     :breadcrumbs="[{ label: 'Contacts', onAction: () => router.push('/contacts') }]"
-    size="wide"
+    size="fullWidth"
     :primary-action="{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: print }"
     :secondary-actions="[
       { label: 'Email', icon: 'mdi:email-outline', onAction: email },

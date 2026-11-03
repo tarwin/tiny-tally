@@ -14,11 +14,17 @@ Fill in wages (W1, W2) and any PAYG instalment (T7) if they apply. Switch betwee
 
 **Business schedule** sets out your Profit & Loss by the labels on item P8 of your tax return (business and professional items). Each category maps to a label (new books start mapped; change it on the category). Type your stock on hand if you sell goods, and the hours you worked from home for the fixed rate method.
 
-- **Car trips**: log business trips in km. With **cents per km**, motor vehicle expenses are your km at the ATO rate (up to 5,000 km) and the car's running costs are left out. With a **logbook**, enter the year's total km and your business-use percentage, and it claims that share of the car's costs.
+- **Car trips**: log business trips in km. With **cents per km**, motor vehicle expenses are your km at the ATO rate (up to 5,000 km) and the car's running costs are left out. With a **logbook**, enter the year's total km and your business-use percentage, and it claims that share of the car's costs. Give each trip a vehicle name if you have more than one car: each gets its own 5,000 km, total km and logbook percentage.
 
 **PAYG instalments** works out each quarter's instalment, either the amount on the ATO's notice or your instalment rate times the quarter's income before GST, and checks it against the payments in your Income Tax Payment category. The dashboard reminds you as each BAS and instalment comes due.
 
 **Taxable payments (TPAR)**: if you're in building and construction, cleaning, courier or road freight, IT, or security, turn on **On my TPAR** for each contractor (with their ABN). The report totals what you paid each one in the year, with GST, for 28 August. It also flags payments to contractors with no ABN, which may have needed 47% withheld.
+
+**No-ABN withholding**: when a contractor on your TPAR has no ABN, enter their invoice as a bill. Recording the payment fills in **No-ABN tax withheld** at 47%: the bill is paid in full, the whole cost counts, and the 47% goes to a **No-ABN tax withheld** account. It shows at W4 on your BAS (added to 8A) and in the TPAR's tax withheld column.
+
+**PAYG on the BAS**: T7 is filled in from the PAYG instalments page for the quarter. Change it if your instalment notice says something different.
+
+**Due dates** move past weekends and national public holidays (not state ones). If you lodge your quarterly BAS online yourself, turn on **I lodge my BAS online myself** in Settings: quarters 1, 3 and 4 then fall due two weeks later (11 November, 12 May, 11 August), and so do the PAYG instalments paid with them.
 
 **Year-end pack** puts the year together for your tax agent: print it, or save the CSV files into one folder. Assets bought are marked for the instant asset write-off (under $20,000 each) or depreciation.
 
@@ -28,11 +34,11 @@ Not registered for GST? The dashboard warns you as your sales near $75,000 a yea
 
 **IR10 summary** sets out your Profit & Loss by the IR10 boxes, to go with your IR3. Each category maps to a box (new books start mapped; change it on the category). Type your stock on hand if you sell goods, and your home office area for the square metre method.
 
-- **Vehicle trips**: log business trips in km and pick the fuel. With **kilometre rates**, Tier 1 covers the business share of the first 14,000 km the vehicle travels in the year (enter the year's total km from the odometer) and Tier 2 the rest, and the running costs are left out. With a **logbook**, enter your business-use percentage and it claims that share of the costs.
+- **Vehicle trips**: log business trips in km and pick the fuel. With **kilometre rates**, Tier 1 covers the business share of the first 14,000 km the vehicle travels in the year (enter the year's total km from the odometer) and Tier 2 the rest, and the running costs are left out. With a **logbook**, enter your business-use percentage and it claims that share of the costs. With more than one vehicle, name each on its trips: each has its own 14,000 km, total km, fuel and percentage.
 
 **Tax withheld by clients**: if a client deducts withholding tax from what they pay you (schedular payments), put their rate on the contact. When you record their payment, the tax withheld is filled in: the invoice is paid in full, all of the income counts, and the tax goes to a **Tax withheld by clients** account as a credit for your IR3.
 
-**Provisional tax** works out your three instalments (28 August, 15 January, 7 May) with the standard method, last year's residual income tax plus 5%, or your own estimate, and checks them against the payments in your Income Tax Payment category. It also shows roughly what you'll owe for the year, less tax withheld. The dashboard reminds you as each GST return and instalment comes due.
+**Provisional tax** works out your three instalments (28 August, 15 January, 7 May) with the standard method, last year's residual income tax plus 5%, or your own estimate, and checks them against the payments in your Income Tax Payment category. It also shows roughly what you'll owe for the year, less tax withheld. The dashboard reminds you as each GST return and instalment comes due. Due dates move past weekends and national public holidays, Matariki and Labour Day included.
 
 **Year-end pack** puts the year together for your accountant: print it, or save the CSV files into one folder. Assets bought are marked as low-value ($1,000 or less, expensed) or to depreciate.
 

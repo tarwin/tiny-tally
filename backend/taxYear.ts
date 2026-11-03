@@ -7,6 +7,12 @@ import { metaValue } from './settings';
 
 export type Fuel = 'petrol' | 'diesel' | 'hybrid' | 'electric';
 
+export interface VehicleInputs {
+  totalTenths?: number;
+  businessPct?: number;
+  fuel?: Fuel;
+}
+
 export interface YearInputs {
   // ---- car ----
   /** The rate per mile or km for the trips logged, or actual costs times the business share. Default: the rate once there are trips. */
@@ -17,6 +23,13 @@ export interface YearInputs {
   vehicleBusinessPct?: number;
   /** NZ kilometre rates depend on the fuel. */
   vehicleFuel?: Fuel;
+  /**
+   * The same three per vehicle, by the name on its trips ('' for trips with
+   * none). Australia's 5,000 km and NZ's 14,000 km apply to each car. The
+   * fields above are used for a car with nothing of its own here when it's
+   * the only one.
+   */
+  vehicles?: Record<string, VehicleInputs>;
 
   // ---- home office ----
   /** US simplified method: square feet. */
@@ -80,10 +93,23 @@ const num = (v: unknown, max: number, what: string) => {
 };
 const oneOf = <T extends string>(v: unknown, values: T[]) => (values.includes(v as T) ? (v as T) : undefined);
 
-/** Changes the fields given; null or '' clears one. */
-export function setYearInputs(p: { year: number } & { [K in keyof YearInputs]?: YearInputs[K] | null }) {
+/**
+ * Changes the fields given; null or '' clears one. With `vehicle`, the car
+ * fields (vehicleTotalTenths, vehicleBusinessPct, vehicleFuel) are that
+ * vehicle's.
+ */
+export function setYearInputs(p: { year: number; vehicle?: string | null } & { [K in keyof YearInputs]?: YearInputs[K] | null }) {
   const year = yearOf(p.year);
   const now: YearInputs = { ...yearInputs(year) };
+  if (typeof p.vehicle === 'string') {
+    const name = p.vehicle.trim();
+    const v: VehicleInputs = { ...now.vehicles?.[name] };
+    if ('vehicleTotalTenths' in p) v.totalTenths = num(p.vehicleTotalTenths, 10_000_000, 'the distance driven in the year');
+    if ('vehicleBusinessPct' in p) v.businessPct = num(p.vehicleBusinessPct, 100, 'a percent between 0 and 100');
+    if ('vehicleFuel' in p) v.fuel = oneOf(p.vehicleFuel, ['petrol', 'diesel', 'hybrid', 'electric']);
+    now.vehicles = { ...now.vehicles, [name]: v };
+    p = { year: p.year, ...('vehicleMethod' in p ? { vehicleMethod: p.vehicleMethod } : {}) };
+  }
   const has = (k: keyof YearInputs) => k in p;
   if (has('vehicleMethod')) now.vehicleMethod = oneOf(p.vehicleMethod, ['rate', 'actual']);
   if (has('vehicleTotalTenths')) now.vehicleTotalTenths = num(p.vehicleTotalTenths, 10_000_000, 'the distance driven in the year');

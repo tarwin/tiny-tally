@@ -77,7 +77,7 @@ const maxHeight = useFillHeight(tableBox);
 </script>
 
 <template>
-  <Page
+  <Page size="fullWidth"
     title="Import rules"
     subtitle="Bank lines that match a rule get its category when you import. Newest rules are checked first."
     :primary-action="{ label: 'Add rule', icon: 'mdi:plus', onAction: () => open() }"
