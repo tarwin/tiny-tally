@@ -589,4 +589,61 @@ export const migrations: string[] = [
   ALTER TABLE categories ADD COLUMN parent_id INTEGER REFERENCES categories(id);
   CREATE INDEX categories_parent ON categories (parent_id);
   `,
+  // v19: US year-end. Vendors carry what a 1099-NEC needs (the W-9
+  // details); customers a state, a usual sales tax rate and any exemption.
+  // Sales tax rates beyond the books' own (tax_rate_id NULL is the books'
+  // rate); a document keeps the rate it was worked out at. A mileage log.
+  // The estimated tax payments category is marked with report_line.
+  `
+  CREATE TABLE tax_rates (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    state TEXT,
+    rate_ppm INTEGER NOT NULL CHECK (rate_ppm BETWEEN 0 AND 500000),
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  ALTER TABLE contacts ADD COLUMN is_1099 INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE contacts ADD COLUMN legal_name TEXT;
+  ALTER TABLE contacts ADD COLUMN tin TEXT;
+  ALTER TABLE contacts ADD COLUMN state TEXT;
+  ALTER TABLE contacts ADD COLUMN tax_rate_id INTEGER REFERENCES tax_rates(id);
+  ALTER TABLE contacts ADD COLUMN tax_exempt TEXT;
+  ALTER TABLE invoices ADD COLUMN tax_rate_id INTEGER REFERENCES tax_rates(id);
+  ALTER TABLE invoices ADD COLUMN tax_rate_ppm INTEGER;
+  ALTER TABLE entries ADD COLUMN tax_rate_id INTEGER REFERENCES tax_rates(id);
+  CREATE TABLE trips (
+    id INTEGER PRIMARY KEY,
+    date TEXT NOT NULL,
+    miles_tenths INTEGER NOT NULL CHECK (miles_tenths > 0),
+    purpose TEXT NOT NULL,
+    from_place TEXT,
+    to_place TEXT,
+    vehicle TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX trips_date ON trips (date);
+  UPDATE categories SET report_line = 'estimated-tax'
+    WHERE class = 'tax' AND name = 'Income Tax Payment' AND (SELECT value FROM meta WHERE key = 'country') = 'US';
+  `,
+  // v20: Australia and New Zealand catch up. Trips are in the books' own
+  // unit (miles in the US, km elsewhere). NZ customers who deduct schedular
+  // withholding tax carry their rate. Income tax instalments (PAYG, NZ
+  // provisional tax) are marked like US estimated tax. The year's inputs
+  // aren't only American any more. AU and NZ categories map to the P8
+  // labels or IR10 boxes (anything not known is other income or expenses,
+  // which the person can change).
+  `
+  ALTER TABLE trips RENAME COLUMN miles_tenths TO distance_tenths;
+  ALTER TABLE contacts ADD COLUMN wht_rate_ppm INTEGER;
+  UPDATE categories SET report_line = 'estimated-tax'
+    WHERE class = 'tax' AND name = 'Income Tax Payment' AND report_line IS NULL;
+  UPDATE meta SET key = 'tax_year_inputs' WHERE key = 'us_year_inputs';
+  -- Australian and New Zealand categories onto the tax return's lines, as new books start.
+  UPDATE categories SET report_line = CASE name WHEN 'Sales' THEN 'au-other-income' WHEN 'Services' THEN 'au-other-income' WHEN 'Interest Income' THEN 'au-other-income' WHEN 'Other Income' THEN 'au-other-income' WHEN 'Contractors' THEN 'au-contractors' WHEN 'Rent' THEN 'au-rent' WHEN 'Motor Vehicle' THEN 'au-motor-vehicle' WHEN 'Equipment' THEN 'au-depreciation' ELSE CASE kind WHEN 'income' THEN 'au-other-income' ELSE 'au-other-expenses' END END
+    WHERE class = 'pnl' AND report_line IS NULL AND (SELECT value FROM meta WHERE key = 'country') = 'AU';
+  UPDATE categories SET report_line = CASE name WHEN 'Sales' THEN 'nz-sales' WHEN 'Services' THEN 'nz-sales' WHEN 'Interest Income' THEN 'nz-interest' WHEN 'Other Income' THEN 'nz-other-income' WHEN 'Contractors' THEN 'nz-contractors' WHEN 'Insurance' THEN 'nz-insurance' WHEN 'Professional Fees' THEN 'nz-professional' WHEN 'Rent' THEN 'nz-rent' WHEN 'Vehicle' THEN 'nz-vehicle' WHEN 'Equipment' THEN 'nz-depreciation' ELSE CASE kind WHEN 'income' THEN 'nz-other-income' ELSE 'nz-other-expenses' END END
+    WHERE class = 'pnl' AND report_line IS NULL AND (SELECT value FROM meta WHERE key = 'country') = 'NZ';
+  `,
 ];

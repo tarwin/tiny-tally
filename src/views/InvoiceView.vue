@@ -188,7 +188,15 @@ const payWords = computed(() => {
 
 const paying = ref(false);
 const savingPayment = ref(false);
-const payment = ref({ date: today(), amount: '', accountId: null as number | null, memo: '' });
+const payment = ref({ date: today(), amount: '', withheld: '', accountId: null as number | null, memo: '' });
+// New Zealand: a client paying schedular payments keeps back tax at their rate, worked on the amount before GST.
+const withholds = computed(() => session.books?.country === 'NZ' && invoice.value?.docType === 'invoice');
+function withheldOn(balance: number) {
+  const inv = invoice.value!;
+  const rate = inv.contactWhtRatePpm ?? 0;
+  if (!rate || !inv.total) return 0;
+  return Math.round((balance * (inv.total - inv.tax) / inv.total) * rate / 1_000_000);
+}
 const paymentError = ref<string | null>(null);
 // Money paid out can come off a card; money in lands in a bank or cash account.
 const accountOptions = computed(() =>
@@ -199,9 +207,11 @@ const accountOptions = computed(() =>
 
 function openPayment() {
   paymentError.value = null;
+  const held = withholds.value ? withheldOn(invoice.value!.balance) : 0;
   payment.value = {
     date: today(),
-    amount: toInput(invoice.value!.balance, currency.value),
+    amount: toInput(invoice.value!.balance - held, currency.value),
+    withheld: held ? toInput(held, currency.value) : '',
     accountId: accountOptions.value[0]?.value ?? null,
     memo: '',
   };
@@ -216,7 +226,12 @@ async function savePayment() {
   }
   savingPayment.value = true;
   try {
-    await api.recordPayment({ invoiceId: id.value, date: payment.value.date, amount, accountId: payment.value.accountId!, memo: payment.value.memo });
+    const withheld = withholds.value && payment.value.withheld.trim() ? parseMoney(payment.value.withheld, currency.value) : 0;
+    if (withheld == null || withheld < 0) {
+      paymentError.value = 'Enter the tax withheld, or leave it empty.';
+      return;
+    }
+    await api.recordPayment({ invoiceId: id.value, date: payment.value.date, amount, withheld, accountId: payment.value.accountId!, memo: payment.value.memo });
     paying.value = false;
     toast({ title: invoice.value?.docType === 'credit' ? 'Refund recorded' : 'Payment recorded', tone: 'success' });
     await load();
@@ -559,6 +574,14 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
             :error="paymentError"
             :help-text="invoice ? `${money(invoice.balance)} ${payWords.left}` : ''"
             @keydown.enter="savePayment"
+          />
+          <TextField
+            v-if="withholds"
+            v-model="payment.withheld"
+            label="Tax withheld by the client"
+            :prefix="currency"
+            align="right"
+            help-text="Schedular payments: the tax they kept back and pay to IRD for you. It counts as paid, and as tax already paid on your IR3."
           />
           <DatePicker v-model="payment.date" type="date" model-format="YYYY-MM-DD" :label="payWords.date" />
           <Select v-model="payment.accountId" :label="payWords.account" :options="accountOptions" />

@@ -20,6 +20,7 @@ import { onBooksChanged } from '../lib/live';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
 import { SCHEDULE_C_LINES, SCHEDULE_C_MAP } from '../shared/scheduleC';
+import { incomeReturnFor } from '../shared/incomeReturnLines';
 
 const country = computed(() => session.books?.country);
 /** Tax codes matter on this side (not US purchases). */
@@ -47,21 +48,36 @@ const columns = computed<DataTableColumnType[]>(() => [
   ...(taxOnFor(kind.value)
     ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, formatFunc: (v: TaxCode | null) => (v ? TAX_CODE_MAP[v].label : 'None') }]
     : []),
-  ...(usesScheduleC.value
+  ...(usesReturn.value
     ? [{
         key: 'reportLine',
-        label: 'Schedule C',
+        label: returnName.value,
         width: 240,
         formatFunc: (v: string | null, row: Category) =>
-          row.class !== 'pnl' ? '' : v && SCHEDULE_C_MAP[v] ? `${SCHEDULE_C_MAP[v].line} ${SCHEDULE_C_MAP[v].label}` : 'Not mapped',
+          v === 'estimated-tax' ? instalmentWord.value : row.class !== 'pnl' ? '' : lineText(v),
       }]
     : []),
   { key: 'uses', label: 'Transactions', type: 'integer' as const, width: 140 },
 ]);
 
+/** Australia's P8 labels or New Zealand's IR10 boxes; null for the US (Schedule C) . */
+const otherReturn = computed(() => incomeReturnFor(session.books?.country ?? ''));
+const returnName = computed(() => (usesScheduleC.value ? 'Schedule C' : otherReturn.value?.country === 'AU' ? 'Business schedule' : 'IR10'));
+const usesReturn = computed(() => usesScheduleC.value || !!otherReturn.value);
+const otherMap = computed(() => new Map((otherReturn.value?.lines ?? []).map((l) => [l.key, l])));
+function lineText(v: string | null) {
+  if (usesScheduleC.value) return v && SCHEDULE_C_MAP[v] ? `${SCHEDULE_C_MAP[v].line} ${SCHEDULE_C_MAP[v].label}` : 'Not mapped';
+  const l = v ? otherMap.value.get(v) : null;
+  return l ? `${l.code} ${l.label}` : 'Not mapped';
+}
+const lineHelp = (v: string | null) => (v ? (usesScheduleC.value ? SCHEDULE_C_MAP[v]?.help : otherMap.value.get(v)?.help) : undefined);
+const instalmentWord = computed(() => ({ US: 'Estimated tax payments (Form 1040-ES)', AU: 'PAYG instalments', NZ: 'Provisional tax payments' } as Record<string, string>)[session.books?.country ?? 'US']);
+
 const lineOptions = computed(() => [
   { label: 'Not mapped', value: null },
-  ...SCHEDULE_C_LINES.filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.line} ${l.label}`, value: l.key })),
+  ...(usesScheduleC.value
+    ? SCHEDULE_C_LINES.filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.line} ${l.label}`, value: l.key, description: l.help }))
+    : (otherReturn.value?.lines ?? []).filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.code} ${l.label}`, value: l.key, description: l.help }))),
 ]);
 
 const taxOptions = computed(() =>
@@ -219,12 +235,21 @@ const maxHeight = useFillHeight(tableBox);
           />
           <p v-else class="subdued Hint">Has sub-categories, so it stays at the top level.</p>
           <Select
-            v-if="usesScheduleC && form.class === 'pnl'"
+            v-if="usesReturn && form.class === 'pnl'"
             v-model="form.reportLine"
-            label="Schedule C line"
+            :label="usesScheduleC ? 'Schedule C line' : otherReturn?.country === 'AU' ? 'Business schedule label (P8)' : 'IR10 box'"
             :options="lineOptions"
-            help-text="Where this category's total goes on your Schedule C."
+            show-description
+            :help-text="lineHelp(form.reportLine) ?? `Where this category's total goes on your ${returnName}.`"
           />
+          <template v-if="form.class === 'tax' && form.kind === 'expense'">
+            <ToggleSwitch
+              :model-value="form.reportLine === 'estimated-tax'"
+              :label="`${instalmentWord} go here`"
+              @update:model-value="(on: boolean) => (form.reportLine = on ? 'estimated-tax' : null)"
+            />
+            <p class="subdued Hint">The {{ usesScheduleC ? 'Estimated tax' : instalmentWord }} report counts payments in this category.</p>
+          </template>
           <Select
             v-if="taxOnFor(form.kind) && !offBas"
             v-model="form.taxCode"

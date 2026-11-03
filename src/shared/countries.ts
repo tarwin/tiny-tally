@@ -67,7 +67,7 @@ export interface SeedCategory {
   name: string;
   taxCode: TaxCode | null;
   /** Default 'pnl'. The rest are money kept off Profit & Loss. */
-  class?: 'tax' | 'owner' | 'loan';
+  class?: 'tax' | 'owner' | 'loan' | 'asset';
   /** The tax form line it maps onto (US: a Schedule C key, see scheduleC.ts). */
   reportLine?: string;
 }
@@ -114,6 +114,10 @@ interface SeedOptions {
   taxRefund?: string;
   /** Extra expense categories this country starts with. */
   extraExpenses?: string[];
+  /** Shared expense categories this country leaves out. */
+  withoutExpenses?: string[];
+  /** Extra expense categories kept off Profit & Loss. */
+  offExpenses?: { name: string; class: 'owner' | 'asset' }[];
   /** Tax form line key per category name. */
   lines?: Record<string, string>;
 }
@@ -127,7 +131,12 @@ function categories(o: SeedOptions) {
       ...(o.lines?.[name] ? { reportLine: o.lines[name] } : {}),
     }));
   // Off Profit & Loss, and never on a tax return.
-  const off = (name: string, cls: 'tax' | 'owner' | 'loan'): SeedCategory => ({ name, taxCode: o.fallback && 'NTR', class: cls });
+  const off = (name: string, cls: NonNullable<SeedCategory['class']>): SeedCategory => ({
+    name,
+    taxCode: o.fallback && 'NTR',
+    class: cls,
+    ...(o.lines?.[name] ? { reportLine: o.lines[name] } : {}),
+  });
   return {
     income: [
       ...make(['Sales', 'Services', 'Interest Income', 'Other Income'], 'income'),
@@ -152,10 +161,11 @@ function categories(o: SeedOptions) {
         'Utilities',
         ...(o.extraExpenses ?? []),
         'Uncategorised Expense',
-      ], 'expense'),
+      ].filter((n) => !o.withoutExpenses?.includes(n)), 'expense'),
       ...(o.taxPayment ? [off(o.taxPayment, 'tax')] : []),
       off('Income Tax Payment', 'tax'),
       off('Owner Drawings', 'owner'),
+      ...(o.offExpenses ?? []).map((c) => off(c.name, c.class)),
       off('Loan Repayment', 'loan'),
     ],
   };
@@ -195,6 +205,32 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       fallback: { income: 'GST', expense: 'GST' },
       taxPayment: 'GST / BAS Payment',
       taxRefund: 'GST Refund',
+      extraExpenses: ['Motor Vehicle'],
+      // Item P8 of the business and professional items schedule (incomeReturnLines.ts).
+      lines: {
+        Sales: 'au-other-income',
+        Services: 'au-other-income',
+        'Interest Income': 'au-other-income',
+        'Other Income': 'au-other-income',
+        Contractors: 'au-contractors',
+        Rent: 'au-rent',
+        'Motor Vehicle': 'au-motor-vehicle',
+        // Equipment under the instant asset write-off is depreciation (written off at once).
+        Equipment: 'au-depreciation',
+        'Advertising & Marketing': 'au-other-expenses',
+        'Bank Fees': 'au-other-expenses',
+        Insurance: 'au-other-expenses',
+        'Meals & Entertainment': 'au-other-expenses',
+        'Office Supplies': 'au-other-expenses',
+        'Professional Fees': 'au-other-expenses',
+        'Software & Subscriptions': 'au-other-expenses',
+        'Taxes & Licences': 'au-other-expenses',
+        Travel: 'au-other-expenses',
+        Utilities: 'au-other-expenses',
+        'Uncategorised Expense': 'au-other-expenses',
+        // Not a P8 label: where PAYG instalments go.
+        'Income Tax Payment': 'estimated-tax',
+      },
     }),
   },
   NZ: {
@@ -233,6 +269,32 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       fallback: { income: 'GST', expense: 'GST' },
       taxPayment: 'GST Payment',
       taxRefund: 'GST Refund',
+      extraExpenses: ['Vehicle'],
+      // IR10 boxes (incomeReturnLines.ts).
+      lines: {
+        Sales: 'nz-sales',
+        Services: 'nz-sales',
+        'Interest Income': 'nz-interest',
+        'Other Income': 'nz-other-income',
+        Contractors: 'nz-contractors',
+        Insurance: 'nz-insurance',
+        'Professional Fees': 'nz-professional',
+        Rent: 'nz-rent',
+        Vehicle: 'nz-vehicle',
+        // Under $1,000 an item: written off as a low-value asset.
+        Equipment: 'nz-depreciation',
+        'Advertising & Marketing': 'nz-other-expenses',
+        'Bank Fees': 'nz-other-expenses',
+        'Meals & Entertainment': 'nz-other-expenses',
+        'Office Supplies': 'nz-other-expenses',
+        'Software & Subscriptions': 'nz-other-expenses',
+        'Taxes & Licences': 'nz-other-expenses',
+        Travel: 'nz-other-expenses',
+        Utilities: 'nz-other-expenses',
+        'Uncategorised Expense': 'nz-other-expenses',
+        // Not an IR10 box: where provisional tax payments go.
+        'Income Tax Payment': 'estimated-tax',
+      },
     }),
   },
   US: {
@@ -269,7 +331,19 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       codes: { 'Interest Income': 'NON', 'Other Income': 'NON' },
       fallback: { income: 'TAX', expense: 'NTR' },
       taxPayment: 'Sales Tax Payment',
-      extraExpenses: ['Car & Truck', 'Supplies'],
+      // Equipment is either expensed as supplies ($2,500 or less an item,
+      // the de minimis safe harbor) or bought as an asset and depreciated
+      // through Form 4562; neither is "other expenses".
+      extraExpenses: ['Car & Truck', 'Supplies', 'Small Equipment', 'Merchant Fees', 'Cost of Goods Sold'],
+      withoutExpenses: ['Equipment'],
+      // The owner's own health insurance and retirement plan go on
+      // Schedule 1, not Schedule C (lines 15 and 19 are for the business
+      // and its employees).
+      offExpenses: [
+        { name: 'Equipment & Assets', class: 'asset' },
+        { name: "Owner's Health Insurance", class: 'owner' },
+        { name: "Owner's Retirement Contributions", class: 'owner' },
+      ],
       lines: {
         Sales: 'gross-receipts',
         Services: 'gross-receipts',
@@ -289,7 +363,11 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
         'Meals & Entertainment': 'meals',
         Utilities: 'utilities',
         'Bank Fees': 'other-expenses',
-        Equipment: 'other-expenses',
+        'Merchant Fees': 'commissions',
+        'Small Equipment': 'supplies',
+        'Cost of Goods Sold': 'cogs-purchases',
+        // Not a Schedule C line: marks where estimated tax payments go (scheduleC.ts).
+        'Income Tax Payment': 'estimated-tax',
         'Uncategorised Expense': 'other-expenses',
       },
     }),

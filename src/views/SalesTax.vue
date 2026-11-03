@@ -12,6 +12,7 @@ import { taxPeriods } from '../lib/periods';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
 import { TAX_CODE_MAP } from '../shared/tax';
+import { US_STATE_MAP } from '../shared/usStates';
 
 type Row = SalesTaxReport['detail'][number];
 
@@ -49,7 +50,11 @@ const figures = computed(() => {
   if (!t) return [];
   return [
     { label: 'Total sales', value: t.totalSales, help: 'Everything you sold, before sales tax.' },
-    { label: 'Taxable sales', value: t.taxableSales, help: `Sales you charged ${ratePercent(books.value.taxRatePpm)}% on.` },
+    {
+      label: 'Taxable sales',
+      value: t.taxableSales,
+      help: (report.value?.byRate.length ?? 0) > 1 ? 'Sales you charged sales tax on, at any rate.' : `Sales you charged ${ratePercent(report.value?.byRate[0]?.ratePpm ?? books.value.taxRatePpm)}% on.`,
+    },
     { label: 'Non-taxable sales', value: t.nonTaxableSales, help: 'Exempt, resale or out-of-state sales.' },
     { label: 'Sales tax collected', value: t.taxCollected, help: 'What you owe the state for this period.', strong: true },
   ];
@@ -59,6 +64,7 @@ const columns: DataTableColumnType[] = [
   { key: 'date', label: 'Date', width: 110 },
   { key: 'memo', label: 'Description', minWidth: 200 },
   { key: 'taxCode', label: 'Tax code', width: 130, formatFunc: (v) => (v ? TAX_CODE_MAP[v as keyof typeof TAX_CODE_MAP]?.label ?? v : 'None') },
+  { key: 'taxRateName', label: 'Rate', width: 150, formatFunc: (v) => v ?? '' },
   { key: 'net', label: 'Sale', width: 120 },
   { key: 'tax', label: 'Sales tax', width: 110 },
 ];
@@ -70,13 +76,15 @@ function openRow(r: Row) {
 function exportCsv() {
   if (!report.value) return;
   void saveCsv(`Sales tax ${period.value.from} to ${period.value.to}`, [
-    ['Date', 'Description', 'Customer', 'Category', 'Tax code', 'Sale', 'Sales tax'],
+    ['Date', 'Description', 'Customer', 'Customer state', 'Category', 'Tax code', 'Rate', 'Sale', 'Sales tax'],
     ...report.value.detail.map((r) => [
       r.date,
       r.memo ?? '',
       r.contactName ?? '',
+      r.contactState ?? '',
       r.categoryName ?? '',
       r.taxCode ?? '',
+      r.taxRateName ?? '',
       csvMoney(r.gross - r.tax),
       csvMoney(r.tax),
     ]),
@@ -90,7 +98,10 @@ function exportCsv() {
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
     size="wide"
     :primary-action="{ label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
-    :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
+    :secondary-actions="[
+      { label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) },
+      { label: 'Sales by state', icon: 'mdi:map-outline', onAction: () => router.push('/reports/sales-by-state') },
+    ]"
   >
     <div class="Controls">
       <Select v-model="periodKey" label="Period" :options="periodOptions" show-description />
@@ -121,9 +132,22 @@ function exportCsv() {
               <dd class="money">{{ money(f.value) }}</dd>
             </div>
           </dl>
+          <table v-if="report && report.byRate.length > 1" class="Report ByRate">
+            <thead>
+              <tr><th>Rate</th><th>State</th><th class="num">Taxable sales</th><th class="num">Sales tax</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in report.byRate" :key="r.id ?? 'own'">
+                <td>{{ r.name }} <span class="subdued">({{ ratePercent(r.ratePpm) }}%)</span></td>
+                <td>{{ r.state ? US_STATE_MAP[r.state]?.name ?? r.state : '' }}</td>
+                <td class="num">{{ money(r.taxableSales) }}</td>
+                <td class="num">{{ money(r.taxCollected) }}</td>
+              </tr>
+            </tbody>
+          </table>
           <p class="subdued Note">
-            Copy these into your state's sales tax return. If you sell into more than one state, or your rate changed during
-            the period, check the sales below with the state's rules.
+            Copy these into your state's sales tax return. Each rate is totalled on its own above, for returns that ask
+            for sales by city or county. If a rate changed during the period, check the sales below with the state's rules.
           </p>
         </div>
       </CardSection>
@@ -205,5 +229,10 @@ function exportCsv() {
 
 .Detail {
   margin-top: 16px;
+}
+
+.ByRate {
+  margin-top: 16px;
+  max-width: 720px;
 }
 </style>

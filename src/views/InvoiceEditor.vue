@@ -23,12 +23,13 @@ import {
   type InvoiceTemplate,
   type Item,
   type TaxCode,
+  type TaxRate,
   type TradingName,
 } from '../lib/api';
 import { addDays, today } from '../lib/dates';
 import { DOCS } from '../lib/documents';
 
-import { formatMoney, parseMoney, toInput } from '../lib/money';
+import { formatMoney, parseMoney, ratePercent, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { useTabTitle } from '../lib/tabs';
 import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
@@ -92,6 +93,8 @@ const form = ref({
   tradingNameId: null as number | null,
   // Supplier bills almost always show tax-inclusive totals.
   pricesIncludeTax: isBill.value ? true : books.value.pricesIncludeTax,
+  /** US sales: null is the books' own rate. */
+  taxRateId: null as number | null,
   notes: '',
   lines: [] as LineForm[],
 });
@@ -105,8 +108,31 @@ function defaultCategory() {
 }
 
 function defaultTaxFor(categoryId: number | null): TaxCode | null {
-  return taxCodeOr(booksProfile().tax, taxKind.value, categories.value.find((c) => c.id === categoryId)?.taxCode);
+  const code = taxCodeOr(booksProfile().tax, taxKind.value, categories.value.find((c) => c.id === categoryId)?.taxCode);
+  // A customer with a resale or exemption certificate isn't charged sales tax.
+  return code === 'TAX' && exemptCustomer.value ? 'NON' : code;
 }
+
+// ---- US sales tax rates -----------------------------------------------------------
+
+/** US invoices, quotes and credit notes can be at one of several rates. */
+const usSale = computed(() => books.value.country === 'US' && !isBill.value && taxOn.value);
+const taxRates = ref<TaxRate[]>([]);
+const contactOf = (id: number | null) => customers.value.find((c) => c.id === id);
+const exemptCustomer = computed(() => (usSale.value ? contactOf(form.value.contactId)?.taxExempt ?? null : null));
+const rateOptions = computed(() => [
+  { label: `${books.value.taxRateName || 'Your rate'} (${ratePercent(books.value.taxRatePpm)}%)`, value: null },
+  ...taxRates.value
+    .filter((r) => !r.archived || r.id === form.value.taxRateId)
+    .map((r) => ({ label: `${r.name} (${ratePercent(r.ratePpm)}%)`, value: r.id })),
+]);
+/** A saved document keeps the rate it was worked out at while it stays on the same one. */
+const ratePpm = computed(() => {
+  if (!usSale.value) return books.value.taxRatePpm;
+  const inv = existing.value;
+  if (inv && inv.taxRatePpm !== null && (inv.taxRateId ?? null) === form.value.taxRateId) return inv.taxRatePpm;
+  return taxRates.value.find((r) => r.id === form.value.taxRateId)?.ratePpm ?? books.value.taxRatePpm;
+});
 
 const termOptions = computed(() =>
   doc.value.type === 'quote'
@@ -198,6 +224,11 @@ watch(
   () => form.value.contactId,
   (id) => {
     if (!loading.value && !existing.value && !isBill.value && !fromTouched.value) useTradingName(tradingNameFor(id));
+    if (!loading.value && !existing.value && usSale.value) {
+      // New documents start at the customer's rate, and with no tax for an exempt customer.
+      form.value.taxRateId = contactOf(id)?.taxRateId ?? null;
+      for (const l of form.value.lines) l.taxCode = defaultTaxFor(l.categoryId);
+    }
   },
 );
 
@@ -229,7 +260,7 @@ const computedLines = computed(() =>
   form.value.lines.map((l) => {
     const qtyMilli = parseQty(l.qty) ?? 0;
     const unitPrice = parseMoney(l.price, currency.value) ?? 0;
-    return { ...lineTotals({ qtyMilli, unitPrice, taxCode: l.taxCode }, form.value.pricesIncludeTax, taxOn.value, books.value.taxRatePpm), qtyMilli, unitPrice };
+    return { ...lineTotals({ qtyMilli, unitPrice, taxCode: l.taxCode }, form.value.pricesIncludeTax, taxOn.value, ratePpm.value), qtyMilli, unitPrice };
   }),
 );
 const totals = computed(() => sumTotals(computedLines.value));
@@ -269,7 +300,7 @@ function addItem(id: number | null) {
   const taxCode = !taxOn.value ? null : taxOptions.value.some((t) => t.value === item.taxCode) ? item.taxCode : defaultTaxFor(categoryId);
   let price = item.unitPrice;
   if (taxOn.value && item.priceIncludesTax !== form.value.pricesIncludeTax) {
-    const rate = books.value.taxRatePpm;
+    const rate = ratePpm.value;
     price = item.priceIncludesTax ? price - taxFromInclusive(price, item.taxCode, rate) : price + taxOnExclusive(price, item.taxCode, rate);
   }
   const line: LineForm = {
@@ -345,6 +376,7 @@ async function save(status?: 'draft' | 'sent') {
       templateId: form.value.templateId,
       tradingNameId: isBill.value ? null : form.value.tradingNameId,
       pricesIncludeTax: form.value.pricesIncludeTax,
+      taxRateId: usSale.value ? form.value.taxRateId : null,
       status,
       lines: form.value.lines.map((l, i) => ({
         description: l.description,
@@ -376,6 +408,7 @@ onMounted(async () => {
     api.suggestInvoiceNumber(doc.value.type),
     api.listItems(),
   ]);
+  if (usSale.value) taxRates.value = await api.listTaxRates();
   form.value.templateId = templates.value.find((t) => t.isDefault)?.id ?? null;
   if (editingId.value) {
     const inv = (existing.value = await api.getInvoice(editingId.value));
@@ -390,6 +423,7 @@ onMounted(async () => {
       templateId: inv.templateId ?? form.value.templateId,
       tradingNameId: inv.tradingNameId,
       pricesIncludeTax: inv.pricesIncludeTax,
+      taxRateId: inv.taxRateId,
       notes: inv.notes ?? '',
       lines: inv.lines.map((l) => ({
         key: ++lineKey,
@@ -403,6 +437,7 @@ onMounted(async () => {
   } else {
     const contact = Number(route.query.contact);
     if (contact) form.value.contactId = contact;
+    if (usSale.value) form.value.taxRateId = contactOf(form.value.contactId)?.taxRateId ?? null;
     if (!isBill.value) {
       useTradingName(tradingNameFor(form.value.contactId));
       suggested.value = await api.suggestInvoiceNumber(doc.value.type, form.value.tradingNameId);
@@ -486,7 +521,15 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
                 size="small"
                 :options="[{ label: `${tax?.short} inclusive`, value: true }, { label: `${tax?.short} exclusive`, value: false }]"
               />
+              <Select
+                v-if="usSale && (taxRates.length || form.taxRateId !== null)"
+                v-model="form.taxRateId"
+                :options="rateOptions"
+                size="small"
+                class="RatePick"
+              />
             </div>
+            <p v-if="exemptCustomer" class="subdued Exempt">No sales tax for this customer: {{ exemptCustomer }}</p>
           </CardSection>
           <CardSection>
             <div class="Lines">
@@ -640,7 +683,17 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
 .TaxMode {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.RatePick {
+  min-width: 220px;
+}
+
+.Exempt {
+  margin: 8px 0 0;
+  font-size: 12px;
 }
 
 .Lines {

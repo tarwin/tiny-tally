@@ -163,6 +163,15 @@ html[data-density='spacious'] :is(.Side, .Main, .Tiles, .Grid, .Stack, .Columns)
   #print-root .no-print {
     display: none !important;
   }
+
+  #print-root .print-only {
+    display: inline !important;
+  }
+}
+
+/* Shown only on paper: the typed value behind an input, say. */
+.print-only {
+  display: none;
 }
 
 /* ---- report tables (P&L, BAS, receivables) ---- */

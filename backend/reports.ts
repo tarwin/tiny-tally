@@ -3,7 +3,7 @@
 import { all, getBooks, one, run } from './db';
 import { budgetFor } from './budgets';
 import { summarise } from './entries';
-import { getSettings, updateSettings } from './settings';
+import { getSettings, metaValue, updateSettings } from './settings';
 import { basLabelsFor, nzBoxesFor, type TaxCode } from '../src/shared/tax';
 import { countryProfile } from '../src/shared/countries';
 import {
@@ -18,7 +18,14 @@ import {
   type ReturnInputs,
   type ReturnKind,
 } from '../src/shared/taxReturns';
-import { scheduleCFor } from '../src/shared/scheduleC';
+import { partOf, scheduleCFor } from '../src/shared/scheduleC';
+import { homeOfficeDeduction } from '../src/shared/usTaxYears';
+import { yearInputs } from './taxYear';
+import { carYear, mileageBetween } from './trips';
+import { incomeReturnFor } from '../src/shared/incomeReturnLines';
+import { incomeYearOf } from '../src/shared/incomeYear';
+import { auTaxYear } from '../src/shared/auTaxYears';
+import { nzTaxYear } from '../src/shared/nzTaxYears';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 type Basis = 'cash' | 'accrual';
@@ -259,31 +266,52 @@ export function salesTaxReport(p: { from: string; to: string; basis: Basis }) {
   range(p.from, p.to);
   const { db } = getBooks();
   const view = p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
+  // A payment on an invoice is at the invoice's rate; a sale entered straight in, at its own.
   const rows = all<any>(db,
     `SELECT l.entry_id AS entryId, l.invoice_id AS invoiceId, l.date, l.gross, l.tax, l.tax_code AS taxCode,
-            l.memo, c.name AS categoryName, ct.name AS contactName
+            l.memo, c.name AS categoryName, ct.name AS contactName, ct.state AS contactState,
+            CASE WHEN l.invoice_id IS NOT NULL THEN i.tax_rate_id ELSE e.tax_rate_id END AS taxRateId
      FROM ${view} l
      LEFT JOIN categories c ON c.id = l.category_id
      LEFT JOIN contacts ct ON ct.id = l.contact_id
+     LEFT JOIN invoices i ON i.id = l.invoice_id
+     LEFT JOIN entries e ON e.id = l.entry_id
      WHERE l.kind = 'income' AND l.date BETWEEN ? AND ? AND COALESCE(l.tax_code, '') <> 'NTR'
      ORDER BY l.date, l.entry_id`, p.from, p.to);
+  const settings = getSettings();
+  const rates = new Map(all<any>(db, 'SELECT id, name, state, rate_ppm AS ratePpm FROM tax_rates').map((r) => [r.id, r]));
+  const own = { id: null, name: settings.taxRateName || 'Your rate', state: settings.homeState || null, ratePpm: settings.taxRatePpm };
   const totals = { taxableSales: 0, nonTaxableSales: 0, taxCollected: 0 };
+  const byRate = new Map<number | null, { id: number | null; name: string; state: string | null; ratePpm: number; taxableSales: number; taxCollected: number }>();
   let untagged = 0;
   for (const r of rows) {
     if (r.taxCode === 'TAX') {
       totals.taxableSales += r.gross - r.tax;
       totals.taxCollected += r.tax;
+      const rate = rates.get(r.taxRateId) ?? own;
+      const g = byRate.get(rate.id) ?? { ...rate, taxableSales: 0, taxCollected: 0 };
+      g.taxableSales += r.gross - r.tax;
+      g.taxCollected += r.tax;
+      byRate.set(rate.id, g);
+      r.taxRateName = rate.name;
     } else {
       totals.nonTaxableSales += r.gross;
       if (!r.taxCode) untagged++;
     }
   }
-  return { totals: { ...totals, totalSales: totals.taxableSales + totals.nonTaxableSales }, detail: rows, untagged };
+  return {
+    totals: { ...totals, totalSales: totals.taxableSales + totals.nonTaxableSales },
+    byRate: [...byRate.values()].sort((a, b) => (a.state ?? '').localeCompare(b.state ?? '') || a.name.localeCompare(b.name)),
+    detail: rows,
+    untagged,
+  };
 }
 
 /**
  * Profit & Loss grouped by Schedule C line. Categories with no line are
- * listed so they can be mapped; meals show the deductible half.
+ * listed so they can be mapped; meals show the deductible half. Credit notes
+ * on gross receipts show as returns and allowances (line 2), and Part III
+ * works out cost of goods sold from the inventory typed in for the year.
  */
 export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
   range(p.from, p.to);
@@ -293,7 +321,8 @@ export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
   // Numbered as in the tax year the range ends in.
   const { year, status } = scheduleCFor(p.to);
   const keyed = new Map(year.lines.map((l) => [l.key, l]));
-  const lines = new Map<string, { line: string; label: string; kind: 'income' | 'expense'; total: number; deductible: number; categories: { id: number; name: string; total: number }[] }>();
+  type Row = { key: string; line: string; label: string; kind: 'income' | 'expense'; part: 'I' | 'II' | 'III'; total: number; deductible: number; categories: { id: number; name: string; total: number }[] };
+  const lines = new Map<string, Row>();
   const unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[] = [];
   for (const r of byCategory as any[]) {
     const def = keyed.get(lineOf.get(r.id) ?? '');
@@ -301,21 +330,204 @@ export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
       unmapped.push({ id: r.id, name: r.name, kind: r.kind, total: r.total });
       continue;
     }
-    const row = lines.get(def.line) ?? { line: def.line, label: def.label, kind: def.kind, total: 0, deductible: 0, categories: [] };
+    const row = lines.get(def.key) ?? { key: def.key, line: def.line, label: def.label, kind: def.kind, part: partOf(def), total: 0, deductible: 0, categories: [] };
     row.total += r.total;
     row.deductible = Math.round((row.total * (def.deductiblePct ?? 100)) / 100);
     row.categories.push({ id: r.id, name: r.name, total: r.total });
-    lines.set(def.line, row);
+    lines.set(def.key, row);
   }
-  const ordered = year.lines.map((l) => lines.get(l.line)).filter((l) => !!l);
-  const sum = (kind: 'income' | 'expense') => ordered.filter((l) => l.kind === kind).reduce((t, l) => t + l.deductible, 0);
-  const grossIncome = sum('income');
-  const totalExpenses = sum('expense');
+  const ordered = year.lines.map((l) => lines.get(l.key)).filter((l) => !!l);
+  const sum = (part: Row['part'], key?: string) =>
+    ordered.filter((l) => l.part === part && (!key || l.key === key)).reduce((t, l) => t + l.deductible, 0);
+
+  // Line 2: credit notes against gross receipts, already netted off line 1's categories.
+  const view = p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash';
+  const receiptCats = [...lineOf].filter(([, k]) => k === 'gross-receipts').map(([id]) => id);
+  const returns = receiptCats.length
+    ? -(one<{ t: number }>(db,
+        `SELECT COALESCE(SUM(l.gross - l.tax), 0) AS t FROM ${view} l JOIN invoices d ON d.id = l.invoice_id
+         WHERE d.doc_type = 'credit' AND l.kind = 'income' AND l.date BETWEEN ? AND ?
+           AND l.category_id IN (${receiptCats.map(Number).join(',')})`, p.from, p.to)?.t ?? 0)
+    : 0;
+
+  // Part III. Opening inventory is what was on hand the day before the range starts.
+  const inventory = inventoryValues();
+  const openingInventory = inventory[dayBefore(p.from)] ?? 0;
+  const closingInventory = inventory[p.to] ?? 0;
+  const costOfGoodsSold = openingInventory + sum('III') - closingInventory;
+
+  // Line 9: the standard mileage rate replaces actual car costs; parking and tolls go on top of either.
+  const inputs = yearInputs(Number(p.to.slice(0, 4)));
+  const miles = mileageBetween(p.from, p.to);
+  const method: 'mileage' | 'actual' = (inputs.vehicleMethod ?? (miles.milesTenths > 0 ? 'rate' : 'actual')) === 'rate' ? 'mileage' : 'actual';
+  const car = lines.get('car-truck');
+  const parking = lines.get('parking-tolls');
+  const notDeducted = method === 'mileage' ? car?.categories ?? [] : [];
+  if (car || parking || (method === 'mileage' && miles.deduction)) {
+    const row: Row = {
+      key: 'car-truck', line: keyed.get('car-truck')!.line, label: keyed.get('car-truck')!.label, kind: 'expense', part: 'II',
+      total: 0, deductible: 0, categories: [...(method === 'actual' ? car?.categories ?? [] : []), ...(parking?.categories ?? [])],
+    };
+    row.total = (method === 'mileage' ? miles.deduction : car?.total ?? 0) + (parking?.total ?? 0);
+    row.deductible = row.total;
+    const at = ordered.findIndex((l) => l.key === 'car-truck' || l.key === 'parking-tolls');
+    const kept = ordered.filter((l) => l.key !== 'car-truck' && l.key !== 'parking-tolls');
+    const place = at < 0 ? kept.findIndex((l) => l.part === 'II' && Number.parseInt(l.line) > 9) : at;
+    kept.splice(place < 0 ? kept.length : place, 0, row);
+    ordered.splice(0, ordered.length, ...kept);
+  }
+
+  const grossReceipts = sum('I', 'gross-receipts') + returns;
+  const netReceipts = grossReceipts - returns;
+  const grossProfit = netReceipts - costOfGoodsSold;
+  const grossIncome = grossProfit + sum('I') - sum('I', 'gross-receipts');
+  const totalExpenses = sum('II');
+  const tentativeProfit = grossIncome - totalExpenses;
+  // Line 30, simplified method: a share of the year's amount for a shorter range, and never more than the profit.
+  const yearDays = daysIn(`${p.to.slice(0, 4)}-01-01`, `${p.to.slice(0, 4)}-12-31`);
+  const share = Math.min(1, daysIn(p.from, p.to) / yearDays);
+  const homeOfficeFull = homeOfficeDeduction(inputs.homeOfficeSqFt ?? 0, Number(p.to.slice(0, 4)));
+  const homeOffice = Math.min(Math.round(homeOfficeFull * share), Math.max(0, tentativeProfit));
   return {
     lines: ordered,
     unmapped,
-    totals: { grossIncome, totalExpenses, netProfit: grossIncome - totalExpenses },
+    partI: { grossReceipts, returns, netReceipts, costOfGoodsSold, grossProfit },
+    partIII: {
+      // Shown when there's anything to show.
+      used: ordered.some((l) => l.part === 'III') || !!openingInventory || !!closingInventory,
+      openingInventory,
+      closingInventory,
+      openingDate: dayBefore(p.from),
+    },
+    vehicle: { method, milesTenths: miles.milesTenths, mileageDeduction: miles.deduction, notDeducted },
+    homeOffice: { sqFt: inputs.homeOfficeSqFt ?? 0, full: homeOfficeFull, deduction: homeOffice, limited: homeOffice < Math.round(homeOfficeFull * share) },
+    totals: { grossIncome, totalExpenses, tentativeProfit, homeOffice, netProfit: tentativeProfit - homeOffice },
     rules: { id: year.id, name: year.name, checkedAgainst: year.checkedAgainst, checkedUntil: year.checkedUntil, status },
+  };
+}
+
+function daysIn(from: string, to: string) {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+/** Inventory on hand at the end of a day, in cents, keyed by date (Schedule C lines 35 and 41). */
+function inventoryValues(): Record<string, number> {
+  try {
+    const v = JSON.parse(metaValue('schedule_c_inventory') ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Sets (or, with null, clears) the inventory on hand at the end of `date`. */
+export function setInventory(p: { date: string; amount: number | null }) {
+  if (!DATE.test(p.date)) throw new Error('Pick a date.');
+  if (p.amount !== null && (!Number.isInteger(p.amount) || p.amount < 0)) throw new Error("Inventory can't be negative.");
+  const values = inventoryValues();
+  if (p.amount) values[p.date] = p.amount;
+  else delete values[p.date];
+  run(getBooks().db, 'INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'schedule_c_inventory', JSON.stringify(values));
+  return true;
+}
+
+function dayBefore(date: string) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// ---- AU and NZ: the business income summary ------------------------------------
+
+/**
+ * Australia's business schedule (P8) or New Zealand's IR10 from the
+ * categories' lines, with cost of sales from the stock on hand, the car
+ * (the km rate from the trip log, or actual costs at the business share) and
+ * working from home. For the income year the range ends in.
+ */
+export function incomeReturnReport(p: { from: string; to: string; basis: Basis }) {
+  range(p.from, p.to);
+  const settings = getSettings();
+  const ret = incomeReturnFor(settings.country);
+  if (!ret) throw new Error('This is for Australian and New Zealand books.');
+  const { db } = getBooks();
+  const lineOf = new Map(all<any>(db, 'SELECT id, report_line FROM categories').map((c) => [c.id, c.report_line as string | null]));
+  const { byCategory } = summarise({ from: p.from, to: p.to, basis: p.basis });
+  const keyed = new Map(ret.lines.map((l) => [l.key, l]));
+  type Row = { key: string; code: string; label: string; kind: 'income' | 'expense'; costOfSales: boolean; total: number; categories: { id: number; name: string; total: number }[]; notes: string[] };
+  const rows = new Map<string, Row>();
+  const unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[] = [];
+  const add = (key: string, amount: number, cat?: { id: number; name: string; total: number }, note?: string) => {
+    const def = keyed.get(key)!;
+    const row = rows.get(key) ?? { key, code: def.code, label: def.label, kind: def.kind, costOfSales: !!def.costOfSales, total: 0, categories: [], notes: [] };
+    row.total += amount;
+    if (cat) row.categories.push(cat);
+    if (note) row.notes.push(note);
+    rows.set(key, row);
+  };
+  const carCats: { id: number; name: string; total: number }[] = [];
+  for (const r of byCategory as any[]) {
+    let key = lineOf.get(r.id) ?? '';
+    const def = keyed.get(key);
+    if (!def || def.kind !== r.kind) {
+      unmapped.push({ id: r.id, name: r.name, kind: r.kind, total: r.total });
+      key = ret.defaults[r.kind as 'income' | 'expense'];
+    }
+    if (key === ret.carKey) carCats.push({ id: r.id, name: r.name, total: r.total });
+    else add(key, r.total, { id: r.id, name: r.name, total: r.total });
+  }
+
+  // The car: the km rate from the trip log replaces running costs; otherwise actual costs at the business share.
+  const year = incomeYearOf(p.to, settings.fiscalYearStart);
+  const car = carYear(year);
+  const yearShare = Math.min(1, daysIn(p.from, p.to) / daysIn(car.from, car.to));
+  const carCosts = carCats.reduce((t, c) => t + c.total, 0);
+  const pct = car.businessPct ?? 100;
+  let carTotal = 0;
+  if (car.method === 'rate') {
+    carTotal = Math.round(car.claim.deduction * yearShare);
+    if (carTotal) add(ret.carKey, carTotal, undefined, `${(car.claim.claimedTenths / 10).toLocaleString('en')} km at the ${settings.country === 'AU' ? 'cents per km' : 'kilometre'} rate${car.claim.capped ? ' (the 5,000 km most)' : ''}`);
+  } else if (carCosts) {
+    carTotal = Math.round((carCosts * pct) / 100);
+    add(ret.carKey, carTotal, undefined, car.businessPct == null ? 'All of it: no business share set' : `${pct}% business use of ${carCats.map((c) => c.name).join(', ')}`);
+  }
+
+  // Working from home.
+  const inputs = car.inputs;
+  let homeOffice = 0;
+  let homeNote = '';
+  if (settings.country === 'AU' && inputs.homeOfficeHours) {
+    const { rules } = auTaxYear(year);
+    homeOffice = Math.round((inputs.homeOfficeHours * rules.wfhPerHour) / 10 * yearShare);
+    homeNote = `Working from home: ${inputs.homeOfficeHours} hours at ${rules.wfhPerHour / 10}c (fixed rate method)`;
+  } else if (settings.country === 'NZ' && inputs.homeOfficeArea && inputs.homeArea) {
+    const { rules } = nzTaxYear(year);
+    const share = inputs.homeOfficeArea / inputs.homeArea;
+    homeOffice = Math.round((inputs.homeOfficeArea * rules.homeOfficePerSqm + (inputs.premisesCosts ?? 0) * share) * yearShare);
+    homeNote = `Home office: ${inputs.homeOfficeArea} m² of ${inputs.homeArea} m² (${Math.round(share * 1000) / 10}%), square metre rate`;
+  }
+  if (homeOffice) add(ret.homeOfficeKey, homeOffice, undefined, homeNote);
+
+  const ordered = ret.lines.map((l) => rows.get(l.key)).filter((r) => !!r);
+  const inventory = inventoryValues();
+  const openingStock = inventory[dayBefore(p.from)] ?? 0;
+  const closingStock = inventory[p.to] ?? 0;
+  const purchases = ordered.filter((r) => r.costOfSales).reduce((t, r) => t + r.total, 0);
+  const costOfSales = openingStock + purchases - closingStock;
+  const income = ordered.filter((r) => r.kind === 'income').reduce((t, r) => t + r.total, 0);
+  const expenses = ordered.filter((r) => r.kind === 'expense' && !r.costOfSales).reduce((t, r) => t + r.total, 0);
+  return {
+    country: ret.country,
+    title: ret.title,
+    source: ret.source,
+    checked: ret.checked,
+    year,
+    lines: ordered,
+    unmapped,
+    stock: { opening: openingStock, closing: closingStock, openingDate: dayBefore(p.from), purchases, costOfSales },
+    car: { method: car.method, distanceTenths: car.distanceTenths, claim: car.claim, businessPct: car.businessPct, costs: carCosts, notDeducted: car.method === 'rate' ? carCats : [], total: carTotal },
+    homeOffice,
+    totals: { income, costOfSales, grossProfit: income - costOfSales, expenses, net: income - costOfSales - expenses },
   };
 }
 

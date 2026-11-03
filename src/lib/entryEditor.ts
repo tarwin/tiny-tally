@@ -20,6 +20,7 @@ export interface EntryDraft {
   amount?: number;
   date?: string;
   memo?: string;
+  categoryId?: number;
 }
 
 export function newEntry(kind: EntryKind, accountId: number | null = null, toAccountId: number | null = null, draft: EntryDraft | null = null) {

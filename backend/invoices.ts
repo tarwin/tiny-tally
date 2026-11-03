@@ -16,6 +16,7 @@ import { lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/ta
 import { countryProfile } from '../src/shared/countries';
 import { normaliseLayout } from '../src/shared/templateLayout';
 import { defaultTradingNameId, resolveTradingName, senderFor, snapshotOf } from './tradingNames';
+import { resolveTaxRate } from './usTax';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -57,6 +58,8 @@ export interface InvoiceInput {
   /** Who it's from. Omit for the customer's (or the default) trading name. Bills ignore it. */
   tradingNameId?: number | null;
   pricesIncludeTax: boolean;
+  /** US sales: the sales tax rate (null = the books' own). Bills ignore it. */
+  taxRateId?: number | null;
   lines: InvoiceLineInput[];
   /** Save as draft or straight to sent. Omit to keep the current status. */
   status?: 'draft' | 'sent';
@@ -148,9 +151,11 @@ export function getInvoice(id: number) {
   const inv = one<any>(db,
     `SELECT ${LIST_COLUMNS}, i.notes, i.template_id AS templateId, i.prices_include_tax AS pricesIncludeTax, i.from_snapshot AS fromSnapshot,
             i.sent_at AS sentAt, i.schedule_id AS scheduleId, i.updated_at AS updatedAt, ct.address AS contactAddress, ct.phone AS contactPhone,
-            src.number AS sourceNumber, src.doc_type AS sourceType
+            src.number AS sourceNumber, src.doc_type AS sourceType,
+            i.tax_rate_id AS taxRateId, i.tax_rate_ppm AS taxRatePpm, tr.name AS taxRateName, ct.tax_exempt AS contactTaxExempt, ct.wht_rate_ppm AS contactWhtRatePpm
      FROM invoices i JOIN contacts ct ON ct.id = i.contact_id
      LEFT JOIN invoices src ON src.id = i.source_id
+     LEFT JOIN tax_rates tr ON tr.id = i.tax_rate_id
      WHERE i.id = ?`, id);
   if (!inv) throw new Error('That document no longer exists.');
   inv.pricesIncludeTax = !!inv.pricesIncludeTax;
@@ -268,6 +273,13 @@ export function saveInvoice(input: InvoiceInput) {
   if (!lines.length) throw new Error('Add at least one line.');
 
   const kind = DOC[type].categoryKind;
+  // US sales can be at one of several rates. A document keeps the rate it was
+  // worked out at while it stays on the same one, even if the rate changes later.
+  const usSale = settings.country === 'US' && type !== 'bill';
+  const wanted = usSale && typeof input.taxRateId === 'number' ? input.taxRateId : null;
+  const rate = !usSale ? { id: null, ppm: settings.taxRatePpm }
+    : existing && existing.tax_rate_ppm !== null && (existing.tax_rate_id ?? null) === wanted ? { id: wanted, ppm: existing.tax_rate_ppm as number }
+    : resolveTaxRate(wanted);
   const computed = lines.map((l, i) => {
     const qtyMilli = Math.round(Number(l.qtyMilli));
     const unitPrice = Math.round(Number(l.unitPrice));
@@ -281,7 +293,7 @@ export function saveInvoice(input: InvoiceInput) {
     }
     if (categoryId === null) throw new Error(`Line ${i + 1}: choose an ${kind} category.`);
     const taxCode: TaxCode | null = settings.taxEnabled ? taxCodeOr(countryProfile(settings.country).tax, kind, l.taxCode) : null;
-    const t = lineTotals({ qtyMilli, unitPrice, taxCode }, !!input.pricesIncludeTax, settings.taxEnabled, settings.taxRatePpm);
+    const t = lineTotals({ qtyMilli, unitPrice, taxCode }, !!input.pricesIncludeTax, settings.taxEnabled, rate.ppm);
     return { description: clean(l.description) ?? '', qtyMilli, unitPrice, categoryId, taxCode, ...t, sort: i };
   });
   const totals = sumTotals(computed);
@@ -326,11 +338,13 @@ export function saveInvoice(input: InvoiceInput) {
       run(db,
         `UPDATE invoices SET number = ?, contact_id = ?, issue_date = ?, due_date = ?, status = ?, reference = ?, notes = ?,
            template_id = ?, trading_name_id = ?, from_snapshot = ?, prices_include_tax = ?, net = ?, tax = ?, total = ?,
+           tax_rate_id = ?, tax_rate_ppm = ?,
            sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id = ?`,
         renumber ? nextNumber(type, tradingNameId) : number ?? existing.number, input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
-        clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status, id);
+        clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross,
+        rate.id, usSale ? rate.ppm : null, status, id);
       run(db, 'DELETE FROM invoice_lines WHERE invoice_id = ?', id);
       // Payments' GST share follows the new total.
       run(db, 'UPDATE entries SET tax_amount = CAST(ROUND(1.0 * amount * ? / ?) AS INTEGER) WHERE invoice_id = ?',
@@ -338,10 +352,11 @@ export function saveInvoice(input: InvoiceInput) {
     } else {
       id = one<{ id: number }>(db,
         `INSERT INTO invoices (doc_type, number, contact_id, issue_date, due_date, status, reference, notes, template_id,
-           trading_name_id, from_snapshot, prices_include_tax, net, tax, total, sent_at, source_id, schedule_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'sent' THEN datetime('now') END, ?, ?) RETURNING id`,
+           trading_name_id, from_snapshot, prices_include_tax, net, tax, total, tax_rate_id, tax_rate_ppm, sent_at, source_id, schedule_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'sent' THEN datetime('now') END, ?, ?) RETURNING id`,
         type, number ?? nextNumber(type, tradingNameId), input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
-        clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross, status,
+        clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross,
+        rate.id, usSale ? rate.ppm : null, status,
         sourceId, typeof input.scheduleId === 'number' ? input.scheduleId : null)!.id;
     }
     const ins = db.prepare(
@@ -418,6 +433,7 @@ function copyDocument(id: number, today: string, as?: DocType, link = false) {
     templateId: inv.templateId,
     tradingNameId: inv.tradingNameId,
     pricesIncludeTax: inv.pricesIncludeTax,
+    taxRateId: inv.taxRateId,
     lines: inv.lines,
     status: 'draft',
     sourceId: link ? inv.id : null,
@@ -445,7 +461,24 @@ export function creditInvoice(id: number, today: string) {
   return copyDocument(id, today, 'credit', true);
 }
 
-export function recordPayment(p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null }) {
+/**
+ * New Zealand: tax a client withheld from a payment (schedular payments) is
+ * settled through this account, so the invoice is paid in full and its income
+ * counts in full, and the account's balance is the year's tax credit for the
+ * IR3. Made the first time it's needed.
+ */
+export function withholdingAccount() {
+  const { db } = getBooks();
+  const id = Number(one<{ value: string }>(db, "SELECT value FROM meta WHERE key = 'wht_account_id'")?.value);
+  if (id && one(db, 'SELECT id FROM accounts WHERE id = ?', id)) return id;
+  const made = one<{ id: number }>(db,
+    `INSERT INTO accounts (name, kind, opening_date, sort)
+     VALUES ('Tax withheld by clients', 'cash', date('now'), (SELECT COALESCE(MAX(sort), 0) + 1 FROM accounts)) RETURNING id`)!.id;
+  run(db, "INSERT OR REPLACE INTO meta (key, value) VALUES ('wht_account_id', ?)", String(made));
+  return made;
+}
+
+export function recordPayment(p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null; withheld?: number | null }) {
   const { db } = getBooks();
   const inv = one<any>(db, 'SELECT * FROM invoices WHERE id = ?', p.invoiceId);
   if (!inv) throw new Error('That document no longer exists.');
@@ -457,7 +490,10 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
   const amount = Math.round(Number(p.amount));
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
   const balance = inv.total - settledOn(inv.id).settled;
-  if (amount > balance) {
+  const withheld = Math.round(Number(p.withheld ?? 0));
+  if (!Number.isFinite(withheld) || withheld < 0) throw new Error('Enter the tax withheld, or leave it empty.');
+  if (withheld && (type !== 'invoice' || getSettings().country !== 'NZ')) throw new Error('Tax withheld is only for New Zealand invoices.');
+  if (amount + withheld > balance) {
     throw new Error(`That's more than the ${money(balance)} ${type === 'credit' ? 'left on this credit note' : 'still owing'}.`);
   }
   const account = one<any>(db, 'SELECT * FROM accounts WHERE id = ?', p.accountId);
@@ -475,6 +511,12 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
       `INSERT INTO entries (date, kind, amount, account_id, contact_id, memo, invoice_id, tax_amount)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       p.date, kind, amount, account.id, inv.contact_id, clean(p.memo), inv.id, tax)!.id;
+    if (withheld) {
+      run(db,
+        `INSERT INTO entries (date, kind, amount, account_id, contact_id, memo, invoice_id, tax_amount)
+         VALUES (?, 'income', ?, ?, ?, 'Tax withheld', ?, ?)`,
+        p.date, withheld, withholdingAccount(), inv.contact_id, inv.id, Math.round((withheld * inv.tax) / inv.total));
+    }
   })();
   return id!;
 }

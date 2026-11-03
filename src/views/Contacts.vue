@@ -15,7 +15,9 @@ import {
   toast,
   type DataTableColumnType,
 } from '@octans/ui';
-import { api, errorMessage, type Contact, type ContactKind, type TradingName } from '../lib/api';
+import { api, errorMessage, type Contact, type ContactKind, type TaxRate, type TradingName } from '../lib/api';
+import { ratePercent } from '../lib/money';
+import { US_STATE_OPTIONS } from '../shared/usStates';
 import { formatDay } from '../lib/dates';
 import { useFillHeight } from '../lib/fillHeight';
 import { useBooksVersion } from '../lib/live';
@@ -60,6 +62,20 @@ const columns = computed<DataTableColumnType[]>(() => [
   { key: 'lastDate', label: 'Last activity', width: 140, formatFunc: (v) => (v ? formatDay(v) : '') },
 ]);
 
+const us = computed(() => session.books?.country === 'US');
+const au = computed(() => session.books?.country === 'AU');
+const nz = computed(() => session.books?.country === 'NZ');
+const taxRates = ref<TaxRate[]>([]);
+const rateOptions = computed(() => [
+  { label: `${session.books?.taxRateName || 'Your rate'} (${ratePercent(session.books?.taxRatePpm ?? 0)}%)`, value: null },
+  ...taxRates.value
+    .filter((r) => !r.archived || r.id === form.value.taxRateId)
+    .map((r) => ({ label: `${r.name} (${ratePercent(r.ratePpm)}%)`, value: r.id })),
+]);
+const stateOptions = [{ label: 'Not set', value: null }, ...US_STATE_OPTIONS];
+/** Only show the TIN in full while it's being edited. */
+const showTin = ref(false);
+
 const tradingNames = ref<TradingName[]>([]);
 /** Only worth asking when there's a choice. */
 const defaultTradingName = computed(() => tradingNames.value.find((t) => t.isDefault)?.name ?? '');
@@ -71,7 +87,11 @@ const tradingNameOptions = computed(() => [
 async function load() {
   loading.value = true;
   try {
-    [contacts.value, tradingNames.value] = await Promise.all([api.listContacts(), api.listTradingNames()]);
+    [contacts.value, tradingNames.value, taxRates.value] = await Promise.all([
+      api.listContacts(),
+      api.listTradingNames(),
+      us.value ? api.listTaxRates() : Promise.resolve([]),
+    ]);
   } finally {
     loading.value = false;
   }
@@ -88,14 +108,28 @@ const blank = () => ({
   address: '',
   notes: '',
   tradingNameId: null as number | null,
+  state: null as string | null,
+  taxRateId: null as number | null,
+  exempt: false,
+  taxExempt: '',
+  is1099: false,
+  legalName: '',
+  tin: '',
+  whtPct: '',
 });
 const form = ref(blank());
 const nameError = ref<string | null>(null);
 
 function openEditor(c?: Contact) {
   nameError.value = null;
+  showTin.value = false;
   form.value = c
-    ? { id: c.id, kind: c.kind, name: c.name, email: c.email ?? '', phone: c.phone ?? '', address: c.address ?? '', notes: c.notes ?? '', tradingNameId: c.tradingNameId }
+    ? {
+        id: c.id, kind: c.kind, name: c.name, email: c.email ?? '', phone: c.phone ?? '', address: c.address ?? '', notes: c.notes ?? '',
+        tradingNameId: c.tradingNameId, state: c.state, taxRateId: c.taxRateId, exempt: !!c.taxExempt, taxExempt: c.taxExempt ?? '',
+        is1099: c.is1099, legalName: c.legalName ?? '', tin: c.tin ?? '',
+        whtPct: c.whtRatePpm ? String(c.whtRatePpm / 10_000) : '',
+      }
     : blank();
   editing.value = true;
 }
@@ -107,7 +141,17 @@ async function save() {
   }
   saving.value = true;
   try {
-    await api.saveContact(form.value);
+    const { exempt, whtPct, ...rest } = form.value;
+    const pct = whtPct.trim() ? Number(whtPct.replace('%', '')) : null;
+    if (pct != null && (!Number.isFinite(pct) || pct < 0 || pct > 100)) {
+      toast({ title: 'Check the withholding rate', content: 'Enter it as a percent, like 20.', tone: 'error' });
+      return;
+    }
+    if (exempt && !rest.taxExempt.trim()) {
+      toast({ title: 'Add the certificate', content: 'Enter the resale or exemption certificate number, so there is a record of why no tax was charged.', tone: 'error' });
+      return;
+    }
+    await api.saveContact({ ...rest, taxExempt: exempt ? rest.taxExempt : null, whtRatePpm: pct == null ? null : Math.round(pct * 10_000) });
     editing.value = false;
     toast({ title: form.value.id ? 'Contact updated' : 'Contact added', tone: 'success' });
     await load();
@@ -192,6 +236,64 @@ const maxHeight = useFillHeight(tableBox);
             :placeholder="`Default (${defaultTradingName})`"
             help-text="New invoices and quotes for them start from this trading name."
           />
+          <Select v-if="us" v-model="form.state" label="State" :options="stateOptions" :help-text="form.kind === 'customer' ? 'Where you deliver to. Counts towards that state\'s sales tax threshold.' : ''" />
+          <template v-if="us && form.kind === 'customer' && session.books?.taxEnabled">
+            <Select
+              v-model="form.taxRateId"
+              label="Sales tax rate"
+              :options="rateOptions"
+              help-text="New invoices for them start at this rate. Add rates in Settings."
+            />
+            <ToggleSwitch v-model="form.exempt" label="Doesn't pay sales tax (resale or exempt)" />
+            <TextField
+              v-if="form.exempt"
+              v-model="form.taxExempt"
+              label="Certificate"
+              placeholder="e.g. Resale certificate 12-3456789, expires 2028"
+              help-text="Keep a copy of the certificate. New invoices for them start with no sales tax."
+            />
+          </template>
+          <template v-if="us && form.kind === 'vendor'">
+            <ToggleSwitch v-model="form.is1099" label="Gets a Form 1099-NEC" />
+            <p class="subdued Hint">
+              For people and partnerships you pay for services, not goods. Corporations usually don't get one, except
+              for legal services. Payments by card or a payment app are left out: those are reported on a 1099-K.
+            </p>
+            <template v-if="form.is1099">
+              <FormLayoutGroup>
+                <TextField v-model="form.legalName" label="Legal name (from their W-9)" :placeholder="form.name" />
+                <TextField
+                  v-model="form.tin"
+                  label="TIN (SSN or EIN)"
+                  :type="showTin ? 'text' : 'password'"
+                  placeholder="123-45-6789"
+                  @focus="showTin = true"
+                  @blur="showTin = false"
+                />
+              </FormLayoutGroup>
+              <p class="subdued Hint">The 1099 goes to the address above. Ask for a Form W-9 before you pay them.</p>
+            </template>
+          </template>
+          <template v-if="au && form.kind === 'vendor'">
+            <FormLayoutGroup>
+              <TextField v-model="form.tin" label="ABN" placeholder="12 345 678 901" help-text="Without one, payments over $75 (before GST) need 47% withheld." />
+              <TextField v-if="form.is1099" v-model="form.legalName" label="Legal name" :placeholder="form.name" />
+            </FormLayoutGroup>
+            <ToggleSwitch v-model="form.is1099" label="On my taxable payments annual report (TPAR)" />
+            <p class="subdued Hint">
+              For contractors you pay for services, if your business is in building and construction, cleaning,
+              courier or road freight, IT, or security, investigation or surveillance. The TPAR is due 28 August.
+            </p>
+          </template>
+          <template v-if="nz && form.kind === 'customer'">
+            <TextField
+              v-model="form.whtPct"
+              label="Tax they withhold"
+              suffix="%"
+              placeholder="None"
+              help-text="If they deduct withholding tax from what they pay you (schedular payments), the rate on the IR330C you gave them. Payments start with it worked out."
+            />
+          </template>
           <TextField v-model="form.notes" label="Notes" multiline="2" />
         </FormLayout>
       </ModalSection>
@@ -213,5 +315,10 @@ const maxHeight = useFillHeight(tableBox);
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.Hint {
+  margin: -4px 0 0;
+  font-size: 12px;
 }
 </style>

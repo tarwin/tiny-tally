@@ -80,6 +80,60 @@ const reports = computed(() => [
         icon: 'mdi:file-document-outline',
         title: 'Schedule C',
         body: 'Profit & Loss by Schedule C line for the tax year, for your return or your tax preparer.',
+      }, {
+        to: '/reports/estimated-tax',
+        icon: 'mdi:calendar-clock',
+        title: 'Estimated tax',
+        body: 'What to set aside and pay each quarter (Form 1040-ES), and what you have paid so far.',
+      }, {
+        to: '/reports/1099-nec',
+        icon: 'mdi:account-tie-outline',
+        title: '1099-NEC',
+        body: 'Contractors you paid enough to send a 1099-NEC, with their W-9 details and anything missing.',
+      }, {
+        to: '/reports/tax-pack',
+        icon: 'mdi:folder-zip-outline',
+        title: 'Year-end tax pack',
+        body: 'Everything your tax preparer needs for the year, printed together or saved as files in one folder.',
+      }]
+    : []),
+  ...(books.value.country === 'AU' || books.value.country === 'NZ'
+    ? [{
+        to: '/reports/income-tax-return',
+        icon: 'mdi:file-document-outline',
+        title: books.value.country === 'AU' ? 'Business schedule' : 'IR10 summary',
+        body: books.value.country === 'AU'
+          ? 'Profit & Loss by label for item P8 of your tax return, with your car and working from home.'
+          : 'Profit & Loss by IR10 box, to go with your IR3, with your vehicle and home office.',
+      }, {
+        to: '/reports/income-tax',
+        icon: 'mdi:calendar-clock',
+        title: books.value.country === 'AU' ? 'PAYG instalments' : 'Provisional tax',
+        body: books.value.country === 'AU'
+          ? 'Each quarter’s PAYG instalment for your BAS, and what you have paid.'
+          : 'Your three provisional tax instalments, less tax clients withheld, and what you have paid.',
+      },
+      ...(books.value.country === 'AU'
+        ? [{
+            to: '/reports/tpar',
+            icon: 'mdi:account-tie-outline',
+            title: 'Taxable payments (TPAR)',
+            body: 'What you paid each contractor in the year, with GST, for the report due 28 August.',
+          }]
+        : []),
+      {
+        to: '/reports/year-end',
+        icon: 'mdi:folder-zip-outline',
+        title: 'Year-end pack',
+        body: 'Everything your accountant needs for the year, printed together or saved as files in one folder.',
+      }]
+    : []),
+  ...(books.value.country === 'US'
+    ? [{
+        to: '/reports/sales-by-state',
+        icon: 'mdi:map-outline',
+        title: 'Sales by state',
+        body: "Sales into each state against its sales tax threshold, so you know when to register there.",
       }]
     : []),
   {

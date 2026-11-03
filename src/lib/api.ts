@@ -43,6 +43,10 @@ export interface BooksSettings {
   color: string;
   logo: string;
   lockDate: string | null;
+  /** US: the business's state ('NY'), or ''. */
+  homeState: string;
+  /** US: what the books' own sales tax rate is called. */
+  taxRateName: string;
 }
 
 export interface Books extends BooksSettings {
@@ -131,6 +135,8 @@ export interface Entry {
   taxCode: TaxCode | null;
   /** GST included in amount, cents */
   taxAmount: number;
+  /** US sales: the sales tax rate (null = the books' own). */
+  taxRateId: number | null;
   invoiceId: number | null;
   invoiceNumber: string | null;
   invoiceType: DocType | null;
@@ -158,6 +164,7 @@ export interface EntryInput {
   memo?: string | null;
   taxCode?: TaxCode | null;
   taxAmount?: number | null;
+  taxRateId?: number | null;
 }
 
 export interface EntryQuery {
@@ -225,10 +232,324 @@ export interface Contact {
   lastDate: string | null;
   /** Customers: the trading name to invoice them as (null = the default). */
   tradingNameId: number | null;
+  /** US: the state they're in ('NY'), for sales tax nexus. */
+  state: string | null;
+  /** US customers: the sales tax rate their invoices start with (null = the books' own). */
+  taxRateId: number | null;
+  /** US customers: resale or exemption certificate; null when they pay sales tax. */
+  taxExempt: string | null;
+  /** US vendors: gets a Form 1099-NEC. */
+  is1099: boolean;
+  legalName: string | null;
+  /** SSN or EIN from their W-9. */
+  tin: string | null;
+  /** NZ customers: tax they withhold from payments, ppm. */
+  whtRatePpm: number | null;
 }
 
 export type ContactInput = Pick<Contact, 'kind' | 'name'> &
-  Partial<Pick<Contact, 'email' | 'phone' | 'address' | 'notes' | 'tradingNameId'>> & { id?: number };
+  Partial<Pick<Contact, 'email' | 'phone' | 'address' | 'notes' | 'tradingNameId' | 'state' | 'taxRateId' | 'taxExempt' | 'is1099' | 'legalName' | 'tin' | 'whtRatePpm'>> & { id?: number };
+
+export interface TaxRate {
+  id: number;
+  name: string;
+  state: string | null;
+  ratePpm: number;
+  archived: boolean;
+  uses: number;
+}
+
+export interface Trip {
+  id: number;
+  date: string;
+  /** Tenths of a mile (US) or km. */
+  distanceTenths: number;
+  purpose: string;
+  fromPlace: string | null;
+  toPlace: string | null;
+  vehicle: string | null;
+  /** The rate for the day, tenths of a cent a mile or km (NZ: the Tier 1 rate). */
+  rate: number;
+  /** The trip at that rate. */
+  value: number;
+}
+
+export type TripInput = Pick<Trip, 'date' | 'distanceTenths' | 'purpose'> & Partial<Pick<Trip, 'fromPlace' | 'toPlace' | 'vehicle'>> & { id?: number };
+
+export interface TripList {
+  unit: 'mi' | 'km';
+  trips: Trip[];
+  distanceTenths: number;
+  value: number;
+  vehicles: string[];
+}
+
+export type Fuel = 'petrol' | 'diesel' | 'hybrid' | 'electric';
+
+/** What's typed in once an income year (backend/taxYear.ts). */
+export interface YearInputs {
+  vehicleMethod?: 'rate' | 'actual';
+  vehicleTotalTenths?: number;
+  vehicleBusinessPct?: number;
+  vehicleFuel?: Fuel;
+  homeOfficeSqFt?: number;
+  homeOfficeHours?: number;
+  homeOfficeArea?: number;
+  homeArea?: number;
+  premisesCosts?: number;
+  incomeTaxPct?: number;
+  priorYearTax?: number;
+  twoYearsAgoTax?: number;
+  priorYearHighIncome?: boolean;
+  wages?: number;
+  provisionalMethod?: 'standard' | 'estimation';
+  estimate?: number;
+  paygOption?: 'amount' | 'rate';
+  paygRatePct?: number;
+  paygAmount?: number;
+}
+/** @deprecated the old name */
+export type UsYearInputs = YearInputs;
+
+export interface CarClaim {
+  /** What the logged distance is worth at the rate (after Australia's 5,000 km cap). */
+  deduction: number;
+  /** The distance the rate was paid on, tenths. */
+  claimedTenths: number;
+  /** Australia: over the 5,000 km cap. */
+  capped: boolean;
+  /** NZ: the split between the tiers. */
+  tier1Tenths?: number;
+  tier2Tenths?: number;
+  rates: { label: string; tenthsOfCent: number }[];
+  status: RuleStatus;
+  checked: string;
+}
+
+export interface CarYear {
+  year: number;
+  from: string;
+  to: string;
+  unit: 'mi' | 'km';
+  trips: Trip[];
+  distanceTenths: number;
+  claim: CarClaim;
+  method: 'rate' | 'actual';
+  businessPct: number | null;
+  loggedPct: number | null;
+  inputs: YearInputs;
+}
+
+export interface Nec1099Payee {
+  id: number;
+  name: string;
+  legalName: string | null;
+  tin: string | null;
+  address: string | null;
+  state: string | null;
+  email: string | null;
+  paid: number;
+  byCard: number;
+  payments: number;
+  needsForm: boolean;
+  missing: string[];
+}
+
+export interface Nec1099Report {
+  year: number;
+  threshold: number;
+  due: string;
+  status: RuleStatus;
+  checked: string;
+  payer: { name: string; tin: string };
+  payees: Nec1099Payee[];
+  suggested: { id: number; name: string; paid: number; forServices: number }[];
+}
+
+export interface EstimatedTaxInstallment {
+  number: number;
+  due: string;
+  cumulativeTarget: number;
+  paidByDue: number;
+  short: number;
+  state: 'paid' | 'upcoming' | 'overdue';
+}
+
+export interface EstimatedTaxReport {
+  year: number;
+  status: RuleStatus;
+  checked: string;
+  through: string;
+  projected: boolean;
+  profitSoFar: number;
+  profit: number;
+  selfEmployment: { netEarnings: number; tax: number; halfDeduction: number; wageBase: number };
+  incomeTaxPct: number;
+  incomeTax: number;
+  projectedTax: number;
+  safeHarbor: number | null;
+  target: number;
+  inputs: UsYearInputs;
+  payments: { id: number; date: string; amount: number; memo: string | null }[];
+  totalPaid: number;
+  hasCategory: boolean;
+  installments: EstimatedTaxInstallment[];
+  next: EstimatedTaxInstallment | null;
+}
+
+// ---- Australia and New Zealand ----------------------------------------------------
+
+export interface IncomeReturnLine {
+  key: string;
+  code: string;
+  label: string;
+  kind: 'income' | 'expense';
+  costOfSales: boolean;
+  total: number;
+  categories: { id: number; name: string; total: number }[];
+  notes: string[];
+}
+
+export interface IncomeReturnReport {
+  country: 'AU' | 'NZ';
+  title: string;
+  source: string;
+  checked: string;
+  year: number;
+  lines: IncomeReturnLine[];
+  unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[];
+  stock: { opening: number; closing: number; openingDate: string; purchases: number; costOfSales: number };
+  car: { method: 'rate' | 'actual'; distanceTenths: number; claim: CarClaim; businessPct: number | null; costs: number; notDeducted: { id: number; name: string; total: number }[]; total: number };
+  homeOffice: number;
+  totals: { income: number; costOfSales: number; grossProfit: number; expenses: number; net: number };
+}
+
+export interface TparPayee {
+  id: number;
+  name: string;
+  legalName: string | null;
+  abn: string | null;
+  address: string | null;
+  email: string | null;
+  phone: string | null;
+  gross: number;
+  gst: number;
+  payments: number;
+  missing: string[];
+}
+
+export interface TparReport {
+  year: number;
+  from: string;
+  to: string;
+  due: string;
+  payer: { name: string; abn: string };
+  payees: TparPayee[];
+  totals: { gross: number; gst: number };
+}
+
+export interface Instalment {
+  number: number;
+  due: string;
+  amount: number;
+  cumulativeTarget: number;
+  paidByDue: number;
+  short: number;
+  state: 'paid' | 'upcoming' | 'overdue';
+}
+
+interface InstalmentYear {
+  year: number;
+  from: string;
+  to: string;
+  status: RuleStatus;
+  checked: string;
+  inputs: YearInputs;
+  through: string;
+  projected: boolean;
+  incomeSoFar: number;
+  profitSoFar: number;
+  income: number;
+  profit: number;
+  payments: { id: number; date: string; amount: number; memo: string | null }[];
+  totalPaid: number;
+  hasCategory: boolean;
+  installments: Instalment[];
+  next: Instalment | null;
+}
+
+export interface PaygReport extends InstalmentYear {
+  option: 'amount' | 'rate';
+  quarters: { from: string; to: string; income: number; amount: number; due: string }[];
+  total: number;
+  estimatedTax: number;
+}
+
+export interface ProvisionalReport extends InstalmentYear {
+  method: 'standard' | 'estimation';
+  basis: 'last-year' | 'two-years' | 'estimate' | 'none';
+  threshold: number;
+  incomeTax: number;
+  withheld: { total: number; byClient: { id: number; name: string; amount: number }[] };
+  residual: number;
+  provisional: number;
+  terminalDue: string;
+}
+
+export interface GstThreshold {
+  registered: boolean;
+  threshold: number;
+  from: string;
+  to: string;
+  turnover: number;
+  projected: number;
+  share: number;
+  level: 'over' | 'near' | 'under';
+}
+
+export interface AssetBought {
+  entryId: number | null;
+  invoiceId: number | null;
+  date: string;
+  category: string;
+  contact: string | null;
+  memo: string | null;
+  gross: number;
+  tax: number;
+  cost: number;
+  writeOff: boolean;
+}
+
+export interface Deadline {
+  key: string;
+  title: string;
+  due: string;
+  amount?: number;
+  route: string;
+}
+
+export interface NexusState {
+  code: string;
+  name: string;
+  sales: number;
+  transactions: number | null;
+  both: boolean;
+  measured: string;
+  source: string;
+  note?: string;
+  thisYear: { sales: number; transactions: number };
+  lastYear: { sales: number; transactions: number };
+  share: number;
+  level: 'home' | 'none' | 'over' | 'near' | 'under';
+}
+
+export interface NexusReport {
+  year: number;
+  home: string;
+  states: NexusState[];
+  unknown: { sales: number; transactions: number };
+  customersWithoutState: number;
+}
 
 export interface TradingName {
   id: number;
@@ -332,6 +653,13 @@ export interface Invoice extends InvoiceRow {
   scheduleId: number | null;
   /** null on bills */
   sender: Sender | null;
+  /** US sales: the rate it was worked out at (id null = the books' own). */
+  taxRateId: number | null;
+  taxRatePpm: number | null;
+  taxRateName: string | null;
+  contactTaxExempt: string | null;
+  /** NZ: the customer withholds tax from payments at this rate, ppm. */
+  contactWhtRatePpm?: number | null;
 }
 
 export interface InvoiceInput {
@@ -349,6 +677,7 @@ export interface InvoiceInput {
   templateId?: number | null;
   tradingNameId?: number | null;
   pricesIncludeTax: boolean;
+  taxRateId?: number | null;
   lines: InvoiceLine[];
   status?: 'draft' | 'sent';
 }
@@ -462,14 +791,19 @@ export interface TaxReturnReport {
 
 export interface SalesTaxReport {
   totals: { taxableSales: number; nonTaxableSales: number; totalSales: number; taxCollected: number };
-  detail: Omit<TaxReturnDetailRow, 'kind' | 'labels'>[];
+  /** Taxable sales and tax per rate (id null = the books' own). */
+  byRate: { id: number | null; name: string; state: string | null; ratePpm: number; taxableSales: number; taxCollected: number }[];
+  detail: (Omit<TaxReturnDetailRow, 'kind' | 'labels'> & { contactState: string | null; taxRateId: number | null; taxRateName?: string })[];
   untagged: number;
 }
 
 export interface ScheduleCRow {
+  key: string;
   line: string;
   label: string;
   kind: 'income' | 'expense';
+  /** Part I income, Part II expenses, Part III cost of goods sold. */
+  part: 'I' | 'II' | 'III';
   total: number;
   /** After the 50% limit on meals; the total elsewhere. */
   deductible: number;
@@ -480,7 +814,15 @@ export interface ScheduleCReport {
   lines: ScheduleCRow[];
   /** Categories with no Schedule C line (left out of the totals). */
   unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[];
-  totals: { grossIncome: number; totalExpenses: number; netProfit: number };
+  /** Lines 1 to 5: line 2 is credit notes on gross receipts, line 4 comes from Part III. */
+  partI: { grossReceipts: number; returns: number; netReceipts: number; costOfGoodsSold: number; grossProfit: number };
+  /** Inventory on hand (lines 35 and 41); used when there are cost of goods sold lines or inventory. */
+  partIII: { used: boolean; openingInventory: number; closingInventory: number; openingDate: string };
+  /** Line 9: standard mileage rate (from the mileage log) or actual costs. Actual car costs aren't deducted with the mileage rate. */
+  vehicle: { method: 'mileage' | 'actual'; milesTenths: number; mileageDeduction: number; notDeducted: { id: number; name: string; total: number }[] };
+  /** Line 30, simplified method. `limited`: cut back so it doesn't make a loss. */
+  homeOffice: { sqFt: number; full: number; deduction: number; limited: boolean };
+  totals: { grossIncome: number; totalExpenses: number; tentativeProfit: number; homeOffice: number; netProfit: number };
   /** Which tax year's line numbers it used, and whether this version has checked them. */
   rules: { id: string; name: string; checkedAgainst: string; checkedUntil: string; status: RuleStatus };
 }
@@ -828,7 +1170,7 @@ export const api = {
   creditInvoice: (id: number, today: string) => call<number>('invoices.credit', { id, today }),
   applyCredit: (p: { creditId: number; invoiceId: number; amount: number; date: string }) => call<number>('invoices.applyCredit', p),
   removeAllocation: (id: number) => call<true>('invoices.removeAllocation', { id }),
-  recordPayment: (p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null }) =>
+  recordPayment: (p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null; withheld?: number | null }) =>
     call<number>('invoices.recordPayment', p),
   deletePayment: (entryId: number) => call<true>('invoices.deletePayment', { entryId }),
 
@@ -853,6 +1195,28 @@ export const api = {
   taxReturnReport: (p: { from: string; to: string; basis: Basis }) => call<TaxReturnReport>('reports.taxReturn', p),
   salesTaxReport: (p: { from: string; to: string; basis: Basis }) => call<SalesTaxReport>('reports.salesTax', p),
   scheduleCReport: (p: { from: string; to: string; basis: Basis }) => call<ScheduleCReport>('reports.scheduleC', p),
+  /** Inventory on hand at the end of `date`, in cents; null clears it. */
+  setInventory: (p: { date: string; amount: number | null }) => call<boolean>('scheduleC.setInventory', p),
+  nec1099Report: (year: number) => call<Nec1099Report>('reports.nec1099', { year }),
+  estimatedTaxReport: (p: { year: number; today: string; project?: boolean }) => call<EstimatedTaxReport>('reports.estimatedTax', p),
+  nexusReport: (year: number) => call<NexusReport>('reports.nexus', { year }),
+  yearInputs: (year: number) => call<YearInputs>('taxYear.get', { year }),
+  setYearInputs: (p: { year: number } & { [K in keyof YearInputs]?: YearInputs[K] | null }) => call<YearInputs>('taxYear.set', p),
+  carYear: (year: number) => call<CarYear>('reports.carYear', { year }),
+  incomeReturnReport: (p: { from: string; to: string; basis?: 'cash' | 'accrual' }) => call<IncomeReturnReport>('reports.incomeReturn', p),
+  tparReport: (year: number) => call<TparReport>('reports.tpar', { year }),
+  noAbnPayments: (p: { from: string; to: string }) => call<{ id: number; name: string; payments: number; gross: number }[]>('reports.noAbn', p),
+  paygReport: (p: { year: number; today: string }) => call<PaygReport>('reports.payg', p),
+  provisionalReport: (p: { year: number; today: string }) => call<ProvisionalReport>('reports.provisionalTax', p),
+  gstThreshold: (today: string) => call<GstThreshold>('reports.gstThreshold', { today }),
+  assetsBought: (p: { from: string; to: string }) => call<{ limit: number; year: number; assets: AssetBought[]; writeOff: number; depreciate: number }>('reports.assetsBought', p),
+  deadlines: (p: { today: string; days?: number }) => call<Deadline[]>('reports.deadlines', p),
+  listTrips: (p: { from: string; to: string }) => call<TripList>('trips.list', p),
+  saveTrip: (t: TripInput) => call<number>('trips.save', t),
+  deleteTrip: (id: number) => call<boolean>('trips.delete', { id }),
+  listTaxRates: () => call<TaxRate[]>('taxRates.list'),
+  saveTaxRate: (r: { id?: number; name: string; state: string | null; ratePpm: number }) => call<number>('taxRates.save', r),
+  archiveTaxRate: (id: number, archived: boolean) => call<boolean>('taxRates.archive', { id, archived }),
   agedReceivables: (asOf: string) => call<AgedContact[]>('reports.agedReceivables', { asOf }),
   agedPayables: (asOf: string) => call<AgedContact[]>('reports.agedPayables', { asOf }),
   statement: (p: { contactId: number; from: string; to: string; tradingNameId?: number | null }) => call<Statement>('reports.statement', p),
@@ -919,6 +1283,7 @@ export const api = {
   deleteTaxReturn: (id: number) => call<true>('taxReturns.delete', { id }),
 
   writeText: (path: string, text: string) => call<string>('file.writeText', { path, text }),
+  makeDir: (path: string) => call<string>('file.makeDir', { path }),
 };
 
 /** Backend errors arrive as rejected promises; pull out something readable. */

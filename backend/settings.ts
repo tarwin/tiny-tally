@@ -41,6 +41,10 @@ export interface BooksSettings {
   logo: string;
   /** Entries dated on or before this can't change (set by lodging a tax return). */
   lockDate: string | null;
+  /** US: the state the business is in ('NY'), or ''. Sales into other states count towards their nexus thresholds. */
+  homeState: string;
+  /** US: what the books' own sales tax rate is called on documents and reports ('Brooklyn, NY'). */
+  taxRateName: string;
 }
 
 type Field = { key: string; parse: (v: string | null) => any; write: (v: any) => string | null };
@@ -126,6 +130,16 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
       return c;
     },
   },
+  homeState: {
+    key: 'home_state',
+    parse: (v) => v ?? '',
+    write: (v) => {
+      const st = String(v ?? '').trim().toUpperCase();
+      if (st && !/^[A-Z]{2}$/.test(st)) throw new Error('Pick a state.');
+      return st;
+    },
+  },
+  taxRateName: { key: 'tax_rate_name', ...str() },
   lockDate: {
     key: 'lock_date',
     parse: (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null),

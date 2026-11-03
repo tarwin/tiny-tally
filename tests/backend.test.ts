@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { makeBooks } from './support/books.ts';
 import { one, getBooks } from '../backend/db.ts';
 import { saveContact, saveEntry } from '../backend/entries.ts';
-import { getInvoice, recordPayment, saveInvoice } from '../backend/invoices.ts';
+import { creditInvoice, getInvoice, recordPayment, saveInvoice, setInvoiceStatus } from '../backend/invoices.ts';
 import { saveItem } from '../backend/items.ts';
 import { balanceSheet, trialBalance } from '../backend/ledger.ts';
 import {
@@ -19,6 +19,7 @@ import {
   salesTaxReport,
   saveTaxReturn,
   scheduleCReport,
+  setInventory,
 } from '../backend/reports.ts';
 import { getSettings } from '../backend/settings.ts';
 
@@ -179,9 +180,48 @@ test('US sales tax at 8.875% and Schedule C with half of meals deductible', asyn
     assert.deepEqual(st.totals, { taxableSales: 100000, nonTaxableSales: 5000, taxCollected: 8875, totalSales: 105000 });
 
     const sc = scheduleCReport(year);
-    assert.deepEqual(sc.totals, { grossIncome: 105000, totalExpenses: 110000, netProfit: -5000 });
+    assert.deepEqual(sc.totals, { grossIncome: 105000, totalExpenses: 110000, tentativeProfit: -5000, homeOffice: 0, netProfit: -5000 });
     assert.equal(sc.lines.find((l) => l.label.toLowerCase().includes('meals'))!.deductible, 10000);
     assert.deepEqual(sc.unmapped, []);
+  });
+  b.close();
+});
+
+test('Schedule C: credit notes are returns (line 2), inventory works out cost of goods sold, other expenses list in Part V', async () => {
+  const b = await makeBooks({ country: 'US', fiscalYearStart: '01-01', taxEnabled: false });
+  b.run(() => {
+    const client = saveContact({ kind: 'customer', name: 'Client' });
+    const inv = saveInvoice({
+      contactId: client,
+      issueDate: '2025-03-01',
+      dueDate: '2025-03-31',
+      pricesIncludeTax: false,
+      status: 'sent',
+      lines: [{ description: 'Goods', qtyMilli: 1000, unitPrice: 100000, categoryId: cat('Sales') }],
+    } as any);
+    const credit = creditInvoice(inv, '2025-03-10');
+    // Only part of it is credited.
+    saveInvoice({ ...(getInvoice(credit) as any), id: credit, lines: [{ description: 'Damaged', qtyMilli: 1000, unitPrice: 20000, categoryId: cat('Sales') }] });
+    setInvoiceStatus(credit, 'sent');
+    money('2025-04-01', 'expense', 30000, 'Cost of Goods Sold');
+    money('2025-04-02', 'expense', 1500, 'Bank Fees');
+    money('2025-04-03', 'expense', 2500, 'Merchant Fees');
+    setInventory({ date: '2024-12-31', amount: 10000 });
+    setInventory({ date: '2025-12-31', amount: 15000 });
+
+    const sc = scheduleCReport({ from: '2025-01-01', to: '2025-12-31', basis: 'accrual' });
+    // 1,000 sold, 200 credited; 100 + 300 - 150 = 250 cost of goods sold.
+    assert.deepEqual(sc.partI, { grossReceipts: 100000, returns: 20000, netReceipts: 80000, costOfGoodsSold: 25000, grossProfit: 55000 });
+    assert.equal(sc.partIII.used, true);
+    assert.equal(sc.totals.grossIncome, 55000);
+    assert.equal(sc.totals.totalExpenses, 4000);
+    assert.equal(sc.lines.find((l) => l.key === 'commissions')!.total, 2500);
+    assert.deepEqual(sc.lines.find((l) => l.key === 'other-expenses')!.categories.map((c) => c.name), ['Bank Fees']);
+    assert.deepEqual(sc.unmapped, []);
+
+    // Clearing the closing inventory puts it all through.
+    setInventory({ date: '2025-12-31', amount: null });
+    assert.equal(scheduleCReport({ from: '2025-01-01', to: '2025-12-31', basis: 'accrual' }).partI.costOfGoodsSold, 40000);
   });
   b.close();
 });

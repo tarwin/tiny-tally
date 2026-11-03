@@ -54,6 +54,12 @@ const ACTIONS: Record<string, string> = {
   'taxReturns.save': 'Saved a tax return',
   'taxReturns.reopen': 'Reopened a tax return',
   'taxReturns.delete': 'Deleted a tax return',
+  'scheduleC.setInventory': 'Changed inventory on hand (Schedule C)',
+  'taxYear.set': 'Changed a tax year’s figures',
+  'trips.save': 'Saved a trip',
+  'trips.delete': 'Deleted a trip',
+  'taxRates.save': 'Saved a sales tax rate',
+  'taxRates.archive': 'Archived or restored a sales tax rate',
 };
 
 export function batchLabel(b: Pick<ChangeBatch, 'action'>) {
@@ -90,6 +96,8 @@ export const TABLES: Record<string, string> = {
   attachments: 'Attachment',
   budgets: 'Budget',
   meta: 'Setting',
+  tax_rates: 'Sales tax rate',
+  trips: 'Trip',
 };
 
 /** Cents columns, shown as money. */
@@ -109,6 +117,8 @@ const FIELD_NAMES: Record<string, string> = {
   show_tax_column: 'GST column', import_ref: 'import id', schedule_id: 'schedule', journal_id: 'journal',
   trading_name_id: 'trading name', from_snapshot: 'sender details', is_default: 'default', template_id: 'template',
   period_start: 'from', period_end: 'to', lodged_at: 'lodged', sent_at: 'sent', completed_at: 'completed',
+  tax_rate_id: 'sales tax rate', tax_rate_ppm: 'rate', rate_ppm: 'rate', is_1099: 'gets a 1099', legal_name: 'legal name',
+  tin: 'TIN', tax_exempt: 'tax exempt', distance_tenths: 'distance', from_place: 'from', to_place: 'to',
 };
 
 export function fieldName(key: string) {

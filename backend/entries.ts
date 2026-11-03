@@ -3,6 +3,7 @@ import { all, getBooks, one, run } from './db';
 import { assertUnlocked, getSettings } from './settings';
 import { TAX_CODE_MAP, isTaxCode, taxCodeOr, taxFromInclusive, type TaxCode } from '../src/shared/tax';
 import { countryProfile } from '../src/shared/countries';
+import { resolveTaxRate } from './usTax';
 
 type EntryKind = 'income' | 'expense' | 'transfer';
 
@@ -23,6 +24,8 @@ export interface EntryInput {
   taxCode?: TaxCode | null;
   /** GST included in amount; computed from the code when omitted. */
   taxAmount?: number | null;
+  /** US sales: the sales tax rate (null = the books' own). */
+  taxRateId?: number | null;
 }
 
 export interface EntryQuery {
@@ -52,7 +55,7 @@ const SELECT_COLUMNS = `
   e.to_account_id AS toAccountId, ta.name AS toAccountName,
   e.category_id AS categoryId, c.name AS categoryName,
   e.contact_id AS contactId, ct.name AS contactName,
-  e.tax_code AS taxCode, e.tax_amount AS taxAmount,
+  e.tax_code AS taxCode, e.tax_amount AS taxAmount, e.tax_rate_id AS taxRateId,
   e.invoice_id AS invoiceId, inv.number AS invoiceNumber, inv.doc_type AS invoiceType,
   c.class AS categoryClass, e.rec_id AS recId, e.to_rec_id AS toRecId, e.schedule_id AS scheduleId,
   (SELECT COUNT(*) FROM attachments x WHERE x.entry_id = e.id) AS attachments, e.updated_at AS updatedAt`;
@@ -204,6 +207,7 @@ export function saveEntry(input: EntryInput) {
   let categoryId: number | null = null;
   let taxCode: TaxCode | null = null;
   let taxAmount = 0;
+  let taxRateId: number | null = null;
   if (kind === 'transfer') {
     const to = requireRow('accounts', input.toAccountId, 'the account the money goes to');
     if (to.id === account.id) throw new Error('Pick two different accounts for a transfer.');
@@ -228,7 +232,12 @@ export function saveEntry(input: EntryInput) {
       else if (typeof override === 'number' && Number.isFinite(override)) {
         taxAmount = Math.round(override);
         if (taxAmount < 0 || taxAmount > amount) throw new Error("Tax can't be more than the amount.");
-      } else taxAmount = taxFromInclusive(amount, code, settings.taxRatePpm);
+      } else {
+        // US sales can be at one of several rates; everything else is at the books' rate.
+        const rate = settings.country === 'US' && kind === 'income' ? resolveTaxRate(input.taxRateId ?? null) : { id: null, ppm: settings.taxRatePpm };
+        taxAmount = taxFromInclusive(amount, code, rate.ppm);
+      }
+      if (settings.country === 'US' && kind === 'income' && TAX_CODE_MAP[code].taxable) taxRateId = resolveTaxRate(input.taxRateId ?? null).id;
     }
   }
 
@@ -240,14 +249,14 @@ export function saveEntry(input: EntryInput) {
   if (existing) {
     run(db,
       `UPDATE entries SET date = ?, kind = ?, amount = ?, account_id = ?, to_account_id = ?, category_id = ?,
-         contact_id = ?, memo = ?, tax_code = ?, tax_amount = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
-      input.date, kind, amount, account.id, toAccountId, categoryId, contactId, memo, taxCode, taxAmount, existing.id);
+         contact_id = ?, memo = ?, tax_code = ?, tax_amount = ?, tax_rate_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
+      input.date, kind, amount, account.id, toAccountId, categoryId, contactId, memo, taxCode, taxAmount, taxRateId, existing.id);
     return existing.id as number;
   }
   return one<{ id: number }>(db,
-    `INSERT INTO entries (date, kind, amount, account_id, to_account_id, category_id, contact_id, memo, tax_code, tax_amount)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-    input.date, kind, amount, account.id, toAccountId, categoryId, contactId, memo, taxCode, taxAmount)!.id;
+    `INSERT INTO entries (date, kind, amount, account_id, to_account_id, category_id, contact_id, memo, tax_code, tax_amount, tax_rate_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    input.date, kind, amount, account.id, toAccountId, categoryId, contactId, memo, taxCode, taxAmount, taxRateId)!.id;
 }
 
 export function deleteEntry(id: number) {
@@ -297,12 +306,56 @@ export interface ContactInput {
   notes?: string | null;
   /** Customers: the trading name to invoice them as (null = the default). */
   tradingNameId?: number | null;
+  /** US: the state they're in, for sales tax nexus ('NY'). */
+  state?: string | null;
+  /** US customers: the sales tax rate their invoices start with (null = the books' own). */
+  taxRateId?: number | null;
+  /** US customers: why they don't pay sales tax (resale or exemption certificate number); null when they do. */
+  taxExempt?: string | null;
+  /** Vendors whose payments are reported: Form 1099-NEC (US, with the W-9 details) or the TPAR (Australia, with their ABN). */
+  is1099?: boolean;
+  legalName?: string | null;
+  /** US: SSN or EIN. Australia: ABN. */
+  tin?: string | null;
+  /** New Zealand customers who withhold tax from what they pay you (schedular payments): the rate, ppm. */
+  whtRatePpm?: number | null;
+}
+
+/** An ABN is 11 digits that pass the ATO's check: take 1 from the first digit, weight, and the sum divides by 89. */
+export function abnError(abn: string | null) {
+  if (!abn) return null;
+  const d = abn.replace(/\s/g, '');
+  if (!/^\d{11}$/.test(d)) return 'An ABN is 11 digits.';
+  const w = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
+  const sum = [...d].reduce((s, c, i) => s + (Number(c) - (i === 0 ? 1 : 0)) * w[i], 0);
+  return sum % 89 === 0 ? null : "That ABN doesn't check out. Look it up on ABN Lookup.";
+}
+
+/** 12 345 678 901, the way the ABR shows it. */
+const tidyAbn = (abn: string | null) => {
+  const d = abn?.replace(/\s/g, '') ?? '';
+  return /^\d{11}$/.test(d) ? `${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 8)} ${d.slice(8)}` : abn;
+};
+
+/** An SSN (123-45-6789) or EIN (12-3456789): 9 digits either way. */
+export function tinError(tin: string | null) {
+  if (!tin) return null;
+  return /^\d{9}$/.test(tin.replace(/[\s-]/g, '')) ? null : 'A TIN (SSN or EIN) is 9 digits.';
+}
+
+/** Kept as typed, but tidied to the usual dashes when it's plainly an SSN or EIN. */
+function tidyTin(tin: string | null) {
+  if (!tin) return null;
+  const d = tin.replace(/[\s-]/g, '');
+  if (!/^\d{9}$/.test(d)) return tin;
+  return /^\d{3}-\d{2}-\d{4}$/.test(tin.trim()) ? tin.trim() : /^\d{2}-\d{7}$/.test(tin.trim()) ? tin.trim() : d;
 }
 
 export function listContacts() {
   return all(getBooks().db,
     `SELECT ct.id, ct.kind, ct.name, ct.email, ct.phone, ct.address, ct.notes, ct.is_archived AS archived,
-       ct.trading_name_id AS tradingNameId,
+       ct.trading_name_id AS tradingNameId, ct.state, ct.tax_rate_id AS taxRateId, ct.tax_exempt AS taxExempt,
+       ct.is_1099 AS is1099, ct.legal_name AS legalName, ct.tin, ct.wht_rate_ppm AS whtRatePpm,
        COUNT(e.id) AS uses,
        COALESCE(SUM(CASE WHEN e.kind = 'income' THEN e.amount END), 0) AS received,
        COALESCE(SUM(CASE WHEN e.kind = 'expense' THEN e.amount END), 0) AS paid,
@@ -310,7 +363,7 @@ export function listContacts() {
      FROM contacts ct LEFT JOIN entries e ON e.contact_id = ct.id
      GROUP BY ct.id
      ORDER BY ct.is_archived, ct.name COLLATE NOCASE`,
-  ).map((r: any) => ({ ...r, archived: !!r.archived }));
+  ).map((r: any) => ({ ...r, archived: !!r.archived, is1099: !!r.is1099 }));
 }
 
 const clean = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -322,14 +375,35 @@ export function saveContact(input: ContactInput) {
   if (input.kind !== 'customer' && input.kind !== 'vendor') throw new Error('Choose customer or vendor.');
   const tradingNameId = input.kind === 'customer' && typeof input.tradingNameId === 'number'
     && one(db, 'SELECT id FROM trading_names WHERE id = ?', input.tradingNameId) ? input.tradingNameId : null;
-  const fields = [input.kind, name, clean(input.email), clean(input.phone), clean(input.address), clean(input.notes), tradingNameId];
+  const country = getSettings().country;
+  const us = country === 'US';
+  const au = country === 'AU';
+  const customer = input.kind === 'customer';
+  const state = us ? clean(input.state)?.toUpperCase() ?? null : null;
+  if (state && !/^[A-Z]{2}$/.test(state)) throw new Error('Pick a state.');
+  const taxRateId = us && customer && typeof input.taxRateId === 'number'
+    && one(db, 'SELECT id FROM tax_rates WHERE id = ?', input.taxRateId) ? input.taxRateId : null;
+  const reports = (us || au) && !customer;
+  const tin = reports ? clean(input.tin) : null;
+  const problem = us ? tinError(tin) : abnError(tin);
+  if (problem) throw new Error(problem);
+  let wht: number | null = null;
+  if (country === 'NZ' && customer && input.whtRatePpm != null && (input.whtRatePpm as unknown) !== '') {
+    wht = Math.round(Number(input.whtRatePpm));
+    if (!Number.isFinite(wht) || wht < 0 || wht > 1_000_000) throw new Error('Enter the withholding rate as a percent.');
+  }
+  const fields = [
+    input.kind, name, clean(input.email), clean(input.phone), clean(input.address), clean(input.notes), tradingNameId,
+    state, taxRateId, us && customer ? clean(input.taxExempt) : null,
+    reports && input.is1099 ? 1 : 0, reports ? clean(input.legalName) : null, us ? tidyTin(tin) : tidyAbn(tin), wht || null,
+  ];
+  const cols = 'kind, name, email, phone, address, notes, trading_name_id, state, tax_rate_id, tax_exempt, is_1099, legal_name, tin, wht_rate_ppm';
   if (input.id) {
-    run(db, 'UPDATE contacts SET kind = ?, name = ?, email = ?, phone = ?, address = ?, notes = ?, trading_name_id = ? WHERE id = ?',
-      ...fields, input.id);
+    run(db, `UPDATE contacts SET ${cols.split(', ').map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, ...fields, input.id);
     return input.id;
   }
   return one<{ id: number }>(db,
-    'INSERT INTO contacts (kind, name, email, phone, address, notes, trading_name_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+    `INSERT INTO contacts (${cols}) VALUES (${fields.map(() => '?').join(', ')}) RETURNING id`,
     ...fields)!.id;
 }
 

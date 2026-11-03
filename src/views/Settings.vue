@@ -26,6 +26,8 @@ import { countryProfile } from '../shared/countries';
 import { CURRENCY_DISPLAYS, formatMoney, parseRate, ratePercent } from '../lib/money';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import TradingNames from '../components/TradingNames.vue';
+import SalesTaxRates from '../components/SalesTaxRates.vue';
+import { US_STATE_OPTIONS } from '../shared/usStates';
 
 type Form = Omit<
   Books,
@@ -64,6 +66,8 @@ function fromBooks(c: Books): Form {
     taxRate: ratePercent(c.taxRatePpm),
     color: c.color,
     logo: c.logo,
+    homeState: c.homeState,
+    taxRateName: c.taxRateName,
   };
 }
 
@@ -196,6 +200,13 @@ async function setLock(date: string | null) {
               :error="taxIdProblem ?? undefined"
               help-text="Shown on your invoices."
             />
+            <Select
+              v-if="books.country === 'US'"
+              v-model="form.homeState"
+              label="State"
+              :options="[{ label: 'Not set', value: '' }, ...US_STATE_OPTIONS]"
+              help-text="Where the business is. Sales into other states are checked against their sales tax thresholds."
+            />
             <div>
               <div class="Label">Logo</div>
               <div class="Logo">
@@ -255,6 +266,13 @@ async function setLock(date: string | null) {
                 :error="rateError"
                 help-text="Your combined state and local rate. Charged on taxable sales."
               />
+              <TextField
+                v-if="books.country === 'US'"
+                v-model="form.taxRateName"
+                label="Name of this rate"
+                placeholder="e.g. Brooklyn, NY"
+                help-text="Shown beside other rates you add below, and on the Sales tax report."
+              />
               <div>
                 <div class="Label">Accounting basis</div>
                 <SegmentedControl
@@ -277,6 +295,8 @@ async function setLock(date: string | null) {
           </FormLayout>
         </CardSection>
       </Card>
+
+      <SalesTaxRates v-if="books.country === 'US' && books.taxEnabled" />
 
       <Card title="Invoices">
         <CardSection>

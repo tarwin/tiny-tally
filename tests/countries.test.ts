@@ -63,7 +63,8 @@ test('every US P&L category is on a Schedule C line of its own kind', () => {
   for (const kind of ['income', 'expense'] as const) {
     for (const c of COUNTRIES.US.categories[kind]) {
       if (c.class) {
-        assert.equal(c.reportLine, undefined, c.name);
+        // Only the estimated tax payments category carries a marker.
+        assert.equal(c.reportLine, c.name === 'Income Tax Payment' ? 'estimated-tax' : undefined, c.name);
         continue;
       }
       assert.ok(isScheduleCKey(c.reportLine), c.name);
@@ -71,6 +72,17 @@ test('every US P&L category is on a Schedule C line of its own kind', () => {
     }
   }
   assert.equal(COUNTRIES.US.categories.expense.find((c) => c.name === 'Meals & Entertainment')?.reportLine, 'meals');
+  const us = (name: string) => COUNTRIES.US.categories.expense.find((c) => c.name === name);
+  // Equipment is expensed as supplies or bought as an asset, never "other expenses".
+  assert.equal(us('Equipment'), undefined);
+  assert.equal(us('Small Equipment')?.reportLine, 'supplies');
+  assert.equal(us('Equipment & Assets')?.class, 'asset');
+  assert.equal(us('Merchant Fees')?.reportLine, 'commissions');
+  // The owner's own health insurance and retirement plan go on Schedule 1.
+  assert.equal(us("Owner's Health Insurance")?.class, 'owner');
+  assert.equal(us("Owner's Retirement Contributions")?.class, 'owner');
+  // Australia keeps Equipment.
+  assert.ok(COUNTRIES.AU.categories.expense.some((c) => c.name === 'Equipment'));
   assert.equal(SCHEDULE_C_MAP.meals.deductiblePct, 50);
 });
 

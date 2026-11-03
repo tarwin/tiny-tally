@@ -16,7 +16,7 @@ import {
   toast,
 } from '@octans/ui';
 import Attachments from './Attachments.vue';
-import { api, errorMessage, type Account, type AttachmentFile, type Category, type Contact, type EntryKind, type Frequency, type TaxCode } from '../lib/api';
+import { api, errorMessage, type Account, type AttachmentFile, type Category, type Contact, type EntryKind, type Frequency, type TaxCode, type TaxRate } from '../lib/api';
 import { CLASS_INFO } from '../lib/categoryClass';
 import { FREQUENCY_OPTIONS, nextOccurrence } from '../lib/schedule';
 import { today } from '../lib/dates';
@@ -43,6 +43,8 @@ const form = ref({
   taxCode: null as TaxCode | null,
   /** null = work it out from the amount */
   taxAmount: null as string | null,
+  /** US sales: null is the books' own rate. */
+  taxRateId: null as number | null,
 });
 const errors = ref<Record<string, string | undefined>>({});
 /** Receipts picked before a new transaction is saved. */
@@ -122,9 +124,21 @@ const taxOptions = computed(() =>
     description: t.help,
   })),
 );
+// US sales can be at one of several rates (Settings → Other sales tax rates).
+const taxRates = ref<TaxRate[]>([]);
+const usSale = computed(() => session.books?.country === 'US' && form.value.kind === 'income' && taxOn.value);
+const rateOptions = computed(() => [
+  { label: `${session.books?.taxRateName || 'Your rate'} (${ratePercent(session.books?.taxRatePpm ?? 0)}%)`, value: null },
+  ...taxRates.value
+    .filter((r) => !r.archived || r.id === form.value.taxRateId)
+    .map((r) => ({ label: `${r.name} (${ratePercent(r.ratePpm)}%)`, value: r.id })),
+]);
+const ratePpm = computed(() =>
+  usSale.value ? taxRates.value.find((r) => r.id === form.value.taxRateId)?.ratePpm ?? session.books?.taxRatePpm : session.books?.taxRatePpm,
+);
 const autoTax = computed(() => {
   const amount = parseMoney(form.value.amount, currency.value) ?? 0;
-  return taxFromInclusive(amount, form.value.taxCode, session.books?.taxRatePpm);
+  return taxFromInclusive(amount, form.value.taxCode, ratePpm.value);
 });
 const taxable = computed(() => !!form.value.taxCode && TAX_CODE_MAP[form.value.taxCode].taxable);
 const taxDisplay = computed({
@@ -139,9 +153,24 @@ watch(
     if (id === prev || !id) return;
     const cat = categories.value.find((c) => c.id === id);
     if (cat?.taxCode) {
-      form.value.taxCode = taxCodeOr(booksProfile().tax, taxKind.value, cat.taxCode);
+      const code = taxCodeOr(booksProfile().tax, taxKind.value, cat.taxCode);
+      // An exempt customer isn't charged sales tax.
+      form.value.taxCode = code === 'TAX' && usSale.value && customer()?.taxExempt ? 'NON' : code;
       form.value.taxAmount = null;
     }
+  },
+);
+
+const customer = () => contacts.value.find((c) => c.id === form.value.contactId);
+// A customer brings their usual rate, and no tax when they're exempt (new sales only).
+watch(
+  () => form.value.contactId,
+  (id, prev) => {
+    if (id === prev || editing.value || !usSale.value) return;
+    const c = customer();
+    form.value.taxRateId = c?.taxRateId ?? null;
+    if (c?.taxExempt && form.value.taxCode === 'TAX') form.value.taxCode = 'NON';
+    form.value.taxAmount = null;
   },
 );
 
@@ -195,10 +224,11 @@ const repeat = ref({ on: false, frequency: 'monthly' as Frequency });
 const canRepeat = computed(() => !editing.value?.scheduleId);
 
 async function loadLists() {
-  [accounts.value, categories.value, contacts.value] = await Promise.all([
+  [accounts.value, categories.value, contacts.value, taxRates.value] = await Promise.all([
     api.listAccounts(),
     api.listCategories(),
     api.listContacts(),
+    session.books?.country === 'US' && session.books.taxEnabled ? api.listTaxRates() : Promise.resolve([]),
   ]);
 }
 
@@ -230,6 +260,7 @@ function reset() {
       memo: e.memo ?? '',
       taxCode: e.taxCode,
       taxAmount: null,
+      taxRateId: e.taxRateId ?? null,
     };
     // Keep a hand-entered GST amount if it differs from the calculated one.
     void nextTick(() => {
@@ -245,11 +276,12 @@ function reset() {
     date: draft?.date ?? lastUsed[kind]?.date ?? today(),
     accountId: entryEditor.accountId ?? defaultAccount(kind),
     toAccountId: entryEditor.toAccountId,
-    categoryId: null,
+    categoryId: draft?.categoryId ?? null,
     contactId: null,
     memo: draft?.memo ?? '',
     taxCode: null,
     taxAmount: null,
+    taxRateId: null,
   };
 }
 
@@ -333,6 +365,7 @@ async function save(andNew = false) {
         ? {
             taxCode: f.taxCode,
             taxAmount: f.taxAmount !== null && taxable.value ? parseMoney(f.taxAmount, currency.value) : null,
+            ...(usSale.value ? { taxRateId: f.taxRateId } : {}),
           }
         : {}),
     });
@@ -361,6 +394,7 @@ async function save(andNew = false) {
           contactId: isTransfer.value ? null : f.contactId,
           memo: f.memo || null,
           ...(taxOn.value ? { taxCode: f.taxCode } : {}),
+          ...(usSale.value ? { taxRateId: f.taxRateId } : {}),
         },
       });
       repeated = ` Repeats ${FREQUENCY_OPTIONS.find((o) => o.value === repeat.value.frequency)!.label.toLowerCase()}.`;
@@ -495,9 +529,16 @@ async function addContact() {
             align="right"
             :disabled="!taxable"
             :error="errors.taxAmount"
-            :help-text="form.taxAmount !== null ? 'Entered by hand' : taxable ? `Worked out at ${ratePercent(session.books?.taxRatePpm ?? 0)}%` : ''"
+            :help-text="form.taxAmount !== null ? 'Entered by hand' : taxable ? `Worked out at ${ratePercent(ratePpm ?? 0)}%` : ''"
           />
         </FormLayoutGroup>
+        <Select
+          v-if="usSale && taxable && (taxRates.length || form.taxRateId !== null)"
+          v-model="form.taxRateId"
+          label="Sales tax rate"
+          :options="rateOptions"
+          @update:model-value="form.taxAmount = null"
+        />
 
         <div v-if="!isTransfer" class="Contact">
           <div v-if="newContact" class="Contact__new">

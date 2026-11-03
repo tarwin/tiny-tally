@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { Button, Card, CardSection, Icon, Page } from '@octans/ui';
+import { Banner, Button, Card, CardSection, Icon, Page } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
 import MonthlyChart from '../components/MonthlyChart.vue';
-import { api, type Account, type Entry, type InvoiceList, type Summary } from '../lib/api';
+import { api, type Account, type Deadline, type EstimatedTaxInstallment, type Entry, type GstThreshold, type InvoiceList, type Summary } from '../lib/api';
+import { daysUntil, formatDay, today } from '../lib/dates';
 import { newEntry } from '../lib/entryEditor';
 import { useBooksVersion } from '../lib/live';
 import { formatMoney } from '../lib/money';
@@ -88,6 +89,35 @@ async function load() {
   recent.value = r.rows;
   totalEntries.value = r.total;
   loaded.value = true;
+  void loadEstimated();
+  void loadDeadlines();
+}
+
+// Australia and New Zealand: returns and instalments coming up or overdue, and the GST threshold when not registered.
+const due = ref<Deadline[]>([]);
+const gst = ref<GstThreshold | null>(null);
+async function loadDeadlines() {
+  const c = session.books?.country;
+  if (c !== 'AU' && c !== 'NZ') {
+    due.value = [];
+    gst.value = null;
+    return;
+  }
+  due.value = await api.deadlines({ today: today() }).catch(() => []);
+  gst.value = session.books?.taxEnabled ? null : await api.gstThreshold(today()).catch(() => null);
+}
+
+// US: the next estimated tax payment, once it's within a month (or late).
+const estimated = ref<(EstimatedTaxInstallment & { year: number }) | null>(null);
+async function loadEstimated() {
+  if (session.books?.country !== 'US') return (estimated.value = null);
+  const y = new Date().getFullYear();
+  // Mid-January's payment belongs to last year.
+  const reports = await Promise.all([y - 1, y].map((year) => api.estimatedTaxReport({ year, today: today() }).catch(() => null)));
+  const next = reports
+    .flatMap((r) => (r?.hasCategory && r.profit > 0 ? r.installments.filter((i) => i.short > 0 && i.state !== 'paid').map((i) => ({ ...i, year: r.year })) : []))
+    .find((i) => daysUntil(i.due) <= 30 && daysUntil(i.due) >= -45);
+  estimated.value = next ?? null;
 }
 
 watch(dataVersion, load);
@@ -102,6 +132,41 @@ onMounted(load);
       <Button icon="mdi:swap-horizontal" @click="newEntry('transfer')">Transfer</Button>
       <Button icon="mdi:file-document-plus-outline" @click="router.push('/invoices/new')">Invoice</Button>
     </div>
+
+    <Banner
+      v-if="estimated"
+      :status="daysUntil(estimated.due) < 0 ? 'critical' : 'info'"
+      :title="daysUntil(estimated.due) < 0 ? `Estimated tax payment ${estimated.number} was due ${formatDay(estimated.due)}` : `Estimated tax payment ${estimated.number} is due ${formatDay(estimated.due)}`"
+      class="Estimated"
+    >
+      <p>About {{ formatMoney(estimated.short, session.books!.currency) }} for {{ estimated.year }}, worked out from your profit.</p>
+      <Button @click="router.push('/reports/estimated-tax')">Estimated tax</Button>
+    </Banner>
+
+    <Banner
+      v-for="d in due"
+      :key="d.key"
+      :status="daysUntil(d.due) < 0 ? 'critical' : 'info'"
+      :title="`${d.title} ${daysUntil(d.due) < 0 ? 'was due' : 'is due'} ${formatDay(d.due)}`"
+      class="Estimated"
+    >
+      <p v-if="d.amount">About {{ formatMoney(d.amount, session.books!.currency) }} still to pay.</p>
+      <Button @click="router.push(d.route)">Open</Button>
+    </Banner>
+
+    <Banner
+      v-if="gst && gst.level !== 'under'"
+      :status="gst.level === 'over' ? 'warning' : 'info'"
+      :title="gst.level === 'over' ? 'You may need to register for GST' : 'Getting close to the GST threshold'"
+      class="Estimated"
+    >
+      <p>
+        Sales of {{ formatMoney(gst.turnover, session.books!.currency) }} in the last 12 months{{ gst.projected > gst.turnover ? `, and about ${formatMoney(gst.projected, session.books!.currency)} a year at the last three months' pace` : '' }},
+        against the {{ formatMoney(gst.threshold, session.books!.currency) }} threshold.
+        {{ gst.level === 'over' ? 'Once over (or expecting to be over in the next 12 months), you have 21 days to register.' : '' }}
+      </p>
+      <Button @click="router.push('/settings')">Settings</Button>
+    </Banner>
 
     <div class="Tiles">
       <Card>
@@ -220,6 +285,14 @@ onMounted(load);
 </template>
 
 <style scoped>
+.Estimated {
+  margin-bottom: 16px;
+}
+
+.Estimated p {
+  margin: 0 0 8px;
+}
+
 .Tile--link {
   cursor: pointer;
 }

@@ -76,6 +76,8 @@ import {
   monthlyTotals,
   salesTaxReport,
   scheduleCReport,
+  incomeReturnReport,
+  setInventory,
   deleteTaxReturn,
   listTaxReturns,
   profitAndLoss,
@@ -114,7 +116,18 @@ import { COUNTRIES, countryProfile, isCountry, type Country } from '../src/share
 import type { ImportPlan } from '../src/shared/import';
 import { moveOldData } from './movedData';
 import { taxCodeOr, type TaxCode } from '../src/shared/tax';
-import { SCHEDULE_C_MAP, isScheduleCKey } from '../src/shared/scheduleC';
+import { archiveTaxRate, estimatedTax, listTaxRates, nec1099Report, nexusReport, saveTaxRate, type TaxRateInput } from './usTax';
+import { carYear, deleteTrip, listTrips, saveTrip, type TripInput } from './trips';
+import { setYearInputs, yearInputs } from './taxYear';
+import { assetsBought, deadlines, gstThreshold, noAbnPayments, paygInstalments, provisionalTax, taxWithheld, tparReport } from './auNzTax';
+
+/** Business income and profit for a date range, on the books' tax basis (for income tax instalments). */
+function plProfit(from: string, to: string) {
+  const r = profitAndLoss({ from, to, basis: getSettings().taxBasis });
+  return { income: r.totals.income, net: r.totals.net };
+}
+import { ESTIMATED_TAX_KEY, SCHEDULE_C_MAP, isScheduleCKey } from '../src/shared/scheduleC';
+import { isReturnLine } from '../src/shared/incomeReturnLines';
 
 interface RecentBooks {
   path: string;
@@ -626,7 +639,12 @@ export const api: Record<string, TinyApiHandler> = {
     const country = getSettings().country;
     const code = ['tax', 'owner', 'loan'].includes(klass) ? (countryProfile(country).tax ? 'NTR' : null) : taxCodeOr(countryProfile(country).tax, kind, taxCode);
     // Only P&L categories land on Schedule C.
-    const line = klass === 'pnl' && country === 'US' && isScheduleCKey(reportLine) && SCHEDULE_C_MAP[reportLine].kind === kind ? reportLine : null;
+    const line =
+      // A tax payment category can be where income tax instalments go (US estimated tax, PAYG, provisional tax).
+      klass === 'tax' ? (kind === 'expense' && reportLine === ESTIMATED_TAX_KEY ? reportLine : null)
+      : klass !== 'pnl' ? null
+      : country === 'US' ? (isScheduleCKey(reportLine) && SCHEDULE_C_MAP[reportLine].kind === kind ? reportLine : null)
+      : isReturnLine(country, reportLine, kind) ? reportLine : null;
     name = String(blankToNull(name) ?? '').trim();
     if (!name) throw new Error('Give the category a name.');
     const { db } = getBooks();
@@ -757,6 +775,30 @@ Object.assign(api, {
   'reports.bas': async (p: Parameters<typeof basReport>[0]) => basReport(p),
   'reports.salesTax': async (p: Parameters<typeof salesTaxReport>[0]) => salesTaxReport(p),
   'reports.scheduleC': async (p: Parameters<typeof scheduleCReport>[0]) => scheduleCReport(p),
+  'scheduleC.setInventory': async (p: Parameters<typeof setInventory>[0]) => setInventory(p),
+  'reports.nec1099': async (p: Parameters<typeof nec1099Report>[0]) => nec1099Report(p),
+  'reports.estimatedTax': async (p: { year: number; today: string; project?: boolean }) =>
+    estimatedTax(p, (from, to) => scheduleCReport({ from, to, basis: getSettings().taxBasis }).totals.netProfit),
+  'reports.nexus': async (p: Parameters<typeof nexusReport>[0]) => nexusReport(p),
+  'taxYear.get': async ({ year }: { year: number }) => yearInputs(year),
+  'taxYear.set': async (p: Parameters<typeof setYearInputs>[0]) => setYearInputs(p),
+  'reports.carYear': async ({ year }: { year: number }) => carYear(year),
+  'reports.incomeReturn': async (p: { from: string; to: string; basis?: 'cash' | 'accrual' }) =>
+    incomeReturnReport({ from: p.from, to: p.to, basis: p.basis ?? getSettings().taxBasis }),
+  'reports.tpar': async (p: { year: number }) => tparReport(p),
+  'reports.noAbn': async (p: { from: string; to: string }) => noAbnPayments(p),
+  'reports.payg': async (p: { year: number; today: string }) => paygInstalments(p, plProfit),
+  'reports.provisionalTax': async (p: { year: number; today: string }) => provisionalTax(p, plProfit),
+  'reports.taxWithheld': async (p: { from: string; to: string }) => taxWithheld(p.from, p.to),
+  'reports.gstThreshold': async (p: { today: string }) => gstThreshold(p),
+  'reports.assetsBought': async (p: { from: string; to: string }) => assetsBought(p),
+  'reports.deadlines': async (p: { today: string; days?: number }) => deadlines(p, plProfit),
+  'trips.list': async (p: Parameters<typeof listTrips>[0]) => listTrips(p),
+  'trips.save': async (t: TripInput) => saveTrip(t),
+  'trips.delete': async ({ id }: { id: number }) => deleteTrip(id),
+  'taxRates.list': async () => listTaxRates(),
+  'taxRates.save': async (r: TaxRateInput) => saveTaxRate(r),
+  'taxRates.archive': async ({ id, archived }: { id: number; archived: boolean }) => archiveTaxRate(id, archived),
   'reports.agedReceivables': async ({ asOf }: { asOf: string }) => agedReceivables(asOf),
   'reports.taxReturn': async (p: Parameters<typeof taxReturnReport>[0]) => taxReturnReport(p),
   'taxReturns.list': async () => listTaxReturns(),
@@ -771,6 +813,17 @@ Object.assign(api, {
   'taxReturns.delete': async ({ id }: { id: number }) => deleteTaxReturn(id),
 
   /** Write a text file the user chose with a save dialog (CSV exports). */
+  /** Makes a folder (and any missing parents) to save files into; fine if it's already there. */
+  'file.makeDir': async ({ path }: { path: string }) => {
+    if (typeof path !== 'string' || !path.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(path)) throw new Error('Choose where to save.');
+    try {
+      await tjs.makeDir(path, { recursive: true });
+    } catch (e) {
+      // Already there is fine.
+      if (!(await tjs.stat(path).then((st) => st.isDirectory, () => false))) throw e;
+    }
+    return path;
+  },
   'file.writeText': async ({ path, text }: { path: string; text: string }) => {
     if (typeof path !== 'string' || !path.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(path)) throw new Error('Choose where to save.');
     await tjs.writeFile(path, new TextEncoder().encode(String(text ?? '')));
