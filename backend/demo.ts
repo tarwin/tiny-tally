@@ -1,6 +1,15 @@
-// A sample Australian business: a small design studio, GST registered, with
-// activity from the start of last financial year up to "today". Everything
-// goes through the same save functions the app uses, so it's valid data.
+// Sample businesses, one per country: a small design studio with activity
+// from the start of last financial year up to "today". Everything goes
+// through the same save functions the app uses, so it's valid data.
+//
+//   AU  Harbour & Pine Studio, Sydney: GST, quarterly BAS, PAYG instalments
+//   NZ  Kōwhai Lane Design, Wellington: GST two-monthly, provisional tax, a
+//       client that withholds tax (schedular payments)
+//   US  Cedar & Finch Studio, Portland: no sales tax (Oregon has none),
+//       quarterly estimated tax, a 1099 contractor
+//
+// Each also has car trips, an asset register with depreciation posted, and
+// returns lodged for the last full year.
 import { all, getBooks, one, run } from './db';
 import { saveContact, saveEntry } from './entries';
 import {
@@ -13,14 +22,141 @@ import {
   setInvoiceStatus,
 } from './invoices';
 import { finishReconcile, startReconcile, tick } from './reconcile';
-import { basReport, saveTaxReturn } from './reports';
+import { saveTaxReturn, taxReturnReport } from './reports';
 import { saveItem } from './items';
 import { saveRule } from './rules';
 import { saveSchedule } from './schedules';
 import { updateSettings } from './settings';
 import { defaultTradingNameId, saveTradingName } from './tradingNames';
+import { saveTrip } from './trips';
+import { setYearInputs } from './taxYear';
+import { postDepreciation, saveAsset } from './assets';
+import { RETURN_FORMS } from '../src/shared/taxReturns';
+import { basDue, nzGstDue, provisionalDue } from '../src/shared/dueDates';
+import { incomeYearOf, incomeYearRange } from '../src/shared/incomeYear';
+import type { Country } from '../src/shared/countries';
 
-export const DEMO_NAME = 'Harbour & Pine Studio (Demo)';
+export const DEMO_NAMES: Record<Country, string> = {
+  AU: 'Harbour & Pine Studio (Demo)',
+  NZ: 'Kōwhai Lane Design (Demo)',
+  US: 'Cedar & Finch Studio (Demo)',
+};
+export const DEMO_NAME = DEMO_NAMES.AU;
+
+/** How each demo's books are made (createBooks). */
+export const DEMO_SETUP: Record<Country, { country: Country; fiscalYearStart: string; taxEnabled: boolean }> = {
+  AU: { country: 'AU', fiscalYearStart: '07-01', taxEnabled: true },
+  NZ: { country: 'NZ', fiscalYearStart: '04-01', taxEnabled: true },
+  US: { country: 'US', fiscalYearStart: '01-01', taxEnabled: false },
+};
+
+interface Spec {
+  /** Month the financial year starts. */
+  fyMonth: number;
+  settings: Record<string, unknown>;
+  /** Tax codes: sales, exports, equipment bought. null where there's no tax. */
+  sale: string | null;
+  exportCode: string | null;
+  equipmentCode: string | null;
+  equipment: string;
+  taxPayment: string | null;
+  taxRefund: string | null;
+  template: { accent: string; title: string; showTaxColumn: boolean };
+  customers: Record<'bakery' | 'physio' | 'wines' | 'arch' | 'festival' | 'abroad', [string, string, string]>;
+  vendors: Record<'cowork' | 'pixel' | 'cloud' | 'telco' | 'office' | 'insure' | 'illo' | 'cafe' | 'print' | 'tech' | 'accountant' | 'air', string>;
+  tradingName: { name: string; address: string; email: string; phone: string; bank: string };
+  sideLine: { name: string; email: string; bank: string };
+  abroadWork: string;
+  trip: { places: string[]; distance: [number, number]; vehicle: string };
+  asset: { name: string; cost: number; method: 'pool' | 'dv' | 'macrs5'; lifeYears?: number; ratePct?: number };
+}
+
+const SPECS: Record<Country, Spec> = {
+  AU: {
+    fyMonth: 7,
+    settings: { taxId: '51 824 753 556', invoicePrefix: 'HP-', pricesIncludeTax: false, taxPeriod: 'quarterly' }, // the ATO's published example ABN
+    sale: 'GST', exportCode: 'EXP', equipmentCode: 'CAP', equipment: 'Equipment',
+    taxPayment: 'GST / BAS Payment', taxRefund: 'GST Refund',
+    template: { accent: '#0f766e', title: 'Tax Invoice', showTaxColumn: true },
+    customers: {
+      bakery: ['Wattle & Co Bakery', 'accounts@wattleco.example', '4 Crumb St\nMarrickville NSW 2204'],
+      physio: ['Northshore Physio', 'admin@northshorephysio.example', '120 Pacific Hwy\nSt Leonards NSW 2065'],
+      wines: ['Saltbush Wines', 'hello@saltbush.example', '9 Vine Rd\nMudgee NSW 2850'],
+      arch: ['Lumen Architecture', 'studio@lumenarch.example', 'Suite 5, 77 Light St\nNewcastle NSW 2300'],
+      festival: ['Brightside Festival', 'finance@brightside.example', 'PO Box 123\nWollongong NSW 2500'],
+      abroad: ['Kiwi Trails Ltd', 'ap@kiwitrails.example', '22 Fern Ave\nQueenstown 9300\nNew Zealand'],
+    },
+    vendors: {
+      cowork: 'Surry Hills Coworking', pixel: 'Pixelworks Software', cloud: 'Cloudnest Hosting', telco: 'Telcoz Mobile',
+      office: 'Office Hub Supplies', insure: 'Greenline Insurance', illo: 'Sam Rivera Illustration', cafe: 'Corner Cafe',
+      print: 'Inkwell Printers', tech: 'Tech Barn', accountant: 'Ledger & Co Accountants', air: 'Skyway Airlines',
+    },
+    tradingName: {
+      name: 'Harbour & Pine Studio', address: 'Level 2, 18 Example Lane\nSurry Hills NSW 2010', email: 'hello@harbourpine.example',
+      phone: '02 9000 0000', bank: 'Harbour & Pine Studio · BSB 000-000 · Account 12345678',
+    },
+    sideLine: { name: 'Pine Trail Maps', email: 'maps@harbourpine.example', bank: 'Pine Trail Maps · BSB 000-000 · Account 87654321' },
+    abroadWork: 'Trail map illustration (export)',
+    trip: { places: ['Marrickville', 'St Leonards', 'Newcastle', 'Wollongong', 'Mudgee'], distance: [120, 1650], vehicle: 'Corolla' },
+    asset: { name: 'Large-format printer', cost: 2_400_000, method: 'pool' },
+  },
+  NZ: {
+    fyMonth: 4,
+    settings: { taxId: '49-091-850', invoicePrefix: 'KL-', pricesIncludeTax: false, taxPeriod: 'two-monthly' }, // IRD's example number
+    sale: 'GST', exportCode: 'ZER', equipmentCode: 'GST', equipment: 'Equipment',
+    taxPayment: 'GST Payment', taxRefund: 'GST Refund',
+    template: { accent: '#b45309', title: 'Tax Invoice', showTaxColumn: true },
+    customers: {
+      bakery: ['Rimu Street Bakery', 'accounts@rimubakery.example', '14 Rimu St\nPetone, Lower Hutt 5012'],
+      physio: ['Harbourside Physio', 'admin@harbourphysio.example', '200 Lambton Quay\nWellington 6011'],
+      wines: ['Tītī Ridge Wines', 'hello@titiridge.example', '8 Vineyard Rd\nMartinborough 5711'],
+      arch: ['Whare Studio Architects', 'studio@whare.example', 'Level 3, 50 Cuba St\nWellington 6011'],
+      festival: ['Aro Valley Productions', 'finance@aroprod.example', 'PO Box 4021\nWellington 6140'],
+      abroad: ['Bondi Trails Pty Ltd', 'ap@bonditrails.example', '22 Campbell Pde\nBondi Beach NSW 2026\nAustralia'],
+    },
+    vendors: {
+      cowork: 'Cuba St Coworking', pixel: 'Pixelworks Software', cloud: 'Cloudnest Hosting', telco: 'Kererū Mobile',
+      office: 'Warehouse Office Supplies', insure: 'Tōtara Insurance', illo: 'Mere Tane Illustration', cafe: 'Fidel’s Corner',
+      print: 'Inkwell Print Wellington', tech: 'Tech Barn NZ', accountant: 'Ledger & Co Chartered Accountants', air: 'Air Aotearoa',
+    },
+    tradingName: {
+      name: 'Kōwhai Lane Design', address: 'Level 1, 9 Example Lane\nTe Aro, Wellington 6011', email: 'kia.ora@kowhailane.example',
+      phone: '04 000 0000', bank: 'Kōwhai Lane Design · 00-0000-0000000-00',
+    },
+    sideLine: { name: 'Kōwhai Maps', email: 'maps@kowhailane.example', bank: 'Kōwhai Maps · 00-0000-0000001-00' },
+    abroadWork: 'Trail map illustration (zero-rated export)',
+    trip: { places: ['Petone', 'Lambton Quay', 'Martinborough', 'Porirua', 'Upper Hutt'], distance: [90, 1400], vehicle: 'Prius' },
+    asset: { name: 'MacBook Pro', cost: 459_000, method: 'dv', ratePct: 50 },
+  },
+  US: {
+    fyMonth: 1,
+    settings: { taxId: '12-3456789', invoicePrefix: 'CF-', pricesIncludeTax: false, homeState: 'OR' },
+    sale: null, exportCode: null, equipmentCode: null, equipment: 'Equipment & Assets',
+    taxPayment: null, taxRefund: null,
+    template: { accent: '#1d4ed8', title: 'Invoice', showTaxColumn: false },
+    customers: {
+      bakery: ['Fern & Flour Bakery', 'accounts@fernflour.example', '412 SE Division St\nPortland, OR 97202'],
+      physio: ['Riverside Physical Therapy', 'admin@riversidept.example', '1200 NW Everett St\nPortland, OR 97209'],
+      wines: ['Willamette Hills Winery', 'hello@willamettehills.example', '9 Vineyard Rd\nDundee, OR 97115'],
+      arch: ['Lumen Architecture', 'studio@lumenarch.example', 'Suite 500, 77 SW Yamhill St\nPortland, OR 97204'],
+      festival: ['Brightside Festival', 'finance@brightside.example', 'PO Box 123\nEugene, OR 97401'],
+      abroad: ['Coastline Trails Ltd', 'ap@coastlinetrails.example', '22 Water St\nVancouver, BC V6B 1A1\nCanada'],
+    },
+    vendors: {
+      cowork: 'Pearl District Coworking', pixel: 'Pixelworks Software', cloud: 'Cloudnest Hosting', telco: 'Cascade Mobile',
+      office: 'Office Hub Supplies', insure: 'Greenline Insurance', illo: 'Sam Rivera Illustration', cafe: 'Corner Coffee',
+      print: 'Inkwell Printers', tech: 'Tech Barn', accountant: 'Ledger & Co CPAs', air: 'Skyway Airlines',
+    },
+    tradingName: {
+      name: 'Cedar & Finch Studio', address: '18 Example Lane, Suite 2\nPortland, OR 97209', email: 'hello@cedarfinch.example',
+      phone: '(503) 555-0100', bank: 'Cedar & Finch Studio · Routing 000000000 · Account 12345678',
+    },
+    sideLine: { name: 'Finch Trail Maps', email: 'maps@cedarfinch.example', bank: 'Finch Trail Maps · Routing 000000000 · Account 87654321' },
+    abroadWork: 'Trail map illustration',
+    trip: { places: ['Division St', 'NW Everett', 'Dundee', 'Downtown', 'Beaverton'], distance: [40, 900], vehicle: 'RAV4' },
+    asset: { name: 'MacBook Pro', cost: 349_900, method: 'macrs5' },
+  },
+};
 
 // Small deterministic PRNG so the demo is the same every time.
 function rng(seed: number) {
@@ -44,30 +180,25 @@ const addDays = (date: string, n: number) => {
 };
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
-export function seedDemo(today: string) {
+export function seedDemo(today: string, country: Country = 'AU') {
   const { db } = getBooks();
+  const S = SPECS[country];
   const r = rng(20250701);
   const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)];
   const between = (lo: number, hi: number) => Math.round(lo + r() * (hi - lo));
+  const fyStart = `${pad(S.fyMonth)}-01`;
 
   const [ty, tm] = today.split('-').map(Number);
-  // Start of the previous Australian financial year.
-  const startYear = tm >= 7 ? ty - 1 : ty - 2;
-  const start = ymd(startYear, 7, 1);
+  // Start of the previous financial year.
+  const startYear = (tm >= S.fyMonth ? ty : ty - 1) - 1;
+  const start = ymd(startYear, S.fyMonth, 1);
 
-  updateSettings({
-    taxId: '51 824 753 556', // the ATO's published example ABN (passes the checksum)
-    invoicePrefix: 'HP-',
-    invoiceNext: 1001,
-    paymentTermsDays: 14,
-    pricesIncludeTax: false,
-    taxBasis: 'cash',
-    taxPeriod: 'quarterly',
-  });
+  updateSettings({ invoiceNext: 1001, paymentTermsDays: 14, taxBasis: 'cash', ...S.settings } as any);
 
   // ---- accounts --------------------------------------------------------------
   const first = one<{ id: number }>(db, 'SELECT id FROM accounts ORDER BY id LIMIT 1')!;
-  run(db, "UPDATE accounts SET name = 'Everyday Business', opening_balance = 1845000, opening_date = ? WHERE id = ?", start, first.id);
+  run(db, 'UPDATE accounts SET name = ?, opening_balance = 1845000, opening_date = ? WHERE id = ?',
+    country === 'US' ? 'Business Checking' : 'Everyday Business', start, first.id);
   const bank = first.id;
   const savings = one<{ id: number }>(db,
     "INSERT INTO accounts (name, kind, opening_balance, opening_date, sort) VALUES ('Tax Savings', 'bank', 600000, ?, 1) RETURNING id", start)!.id;
@@ -75,22 +206,27 @@ export function seedDemo(today: string) {
     "INSERT INTO accounts (name, kind, opening_balance, opening_date, sort) VALUES ('Business Visa', 'credit_card', -124000, ?, 2) RETURNING id", start)!.id;
 
   // ---- categories ------------------------------------------------------------
-  const cat = (name: string) => one<{ id: number }>(db, 'SELECT id FROM categories WHERE name = ?', name)!.id;
-  run(db, "INSERT INTO categories (name, kind, tax_code) VALUES ('Design Services', 'income', 'GST')");
-  run(db, "INSERT INTO categories (name, kind, tax_code) VALUES ('Printing & Production', 'expense', 'GST')");
+  const cat = (name: string) => one<{ id: number }>(db, 'SELECT id FROM categories WHERE name = ?', name)?.id ?? 0;
+  const lineFor = (kind: 'income' | 'expense') =>
+    country === 'AU' ? (kind === 'income' ? 'au-other-income' : 'au-purchases')
+    : country === 'NZ' ? (kind === 'income' ? 'nz-sales' : 'nz-purchases')
+    : (kind === 'income' ? 'gross-receipts' : 'supplies');
+  run(db, 'INSERT INTO categories (name, kind, tax_code, report_line) VALUES (?, ?, ?, ?)', 'Design Services', 'income', S.sale ?? 'NON', lineFor('income'));
+  run(db, 'INSERT INTO categories (name, kind, tax_code, report_line) VALUES (?, ?, ?, ?)', 'Printing & Production', 'expense', S.sale ?? 'NTR', lineFor('expense'));
   const C = {
     design: cat('Design Services'), services: cat('Services'), interest: cat('Interest Income'),
     rent: cat('Rent'), software: cat('Software & Subscriptions'), utilities: cat('Utilities'),
     insurance: cat('Insurance'), bankFees: cat('Bank Fees'), meals: cat('Meals & Entertainment'),
     office: cat('Office Supplies'), contractors: cat('Contractors'), advertising: cat('Advertising & Marketing'),
-    equipment: cat('Equipment'), travel: cat('Travel'), licences: cat('Taxes & Licences'),
+    equipment: cat(S.equipment), travel: cat('Travel'), licences: cat('Taxes & Licences'),
     printing: cat('Printing & Production'), professional: cat('Professional Fees'),
-    basPayment: cat('GST / BAS Payment'), gstRefund: cat('GST Refund'), drawings: cat('Owner Drawings'),
+    taxPayment: S.taxPayment ? cat(S.taxPayment) : 0, taxRefund: S.taxRefund ? cat(S.taxRefund) : 0,
+    drawings: cat('Owner Drawings'), incomeTax: cat('Income Tax Payment'),
   };
 
   // ---- products and services ----------------------------------------------------
   const item = (kind: 'income' | 'expense', name: string, unitPrice: number, categoryId: number, description?: string) =>
-    saveItem({ kind, name, description, unitPrice, priceIncludesTax: kind === 'expense', categoryId, taxCode: 'GST' });
+    saveItem({ kind, name, description, unitPrice, priceIncludesTax: kind === 'expense' && !!S.sale, categoryId, taxCode: (S.sale ?? (kind === 'income' ? 'NON' : 'NTR')) as any });
   item('income', 'Design work (per hour)', 15000, C.design, 'Design and artwork, per hour');
   item('income', 'Logo & brand identity', 320000, C.design, 'Logo design and brand identity: concepts, two rounds of changes, final files');
   item('income', 'Social media design (monthly)', 90000, C.design, 'Monthly social media design');
@@ -100,59 +236,60 @@ export function seedDemo(today: string) {
   item('expense', 'Illustration (per hour)', 11000, C.contractors);
 
   // ---- contacts ----------------------------------------------------------------
-  const customer = (name: string, email: string, address: string) =>
-    saveContact({ kind: 'customer', name, email, address });
-  const vendor = (name: string) => saveContact({ kind: 'vendor', name });
+  const customer = ([name, email, address]: [string, string, string], extra: Record<string, unknown> = {}) =>
+    saveContact({ kind: 'customer', name, email, address, ...extra });
+  const vendor = (name: string, extra: Record<string, unknown> = {}) => saveContact({ kind: 'vendor', name, ...extra });
   const customers = {
-    bakery: customer('Wattle & Co Bakery', 'accounts@wattleco.example', '4 Crumb St\nMarrickville NSW 2204'),
-    physio: customer('Northshore Physio', 'admin@northshorephysio.example', '120 Pacific Hwy\nSt Leonards NSW 2065'),
-    wines: customer('Saltbush Wines', 'hello@saltbush.example', '9 Vine Rd\nMudgee NSW 2850'),
-    arch: customer('Lumen Architecture', 'studio@lumenarch.example', 'Suite 5, 77 Light St\nNewcastle NSW 2300'),
-    festival: customer('Brightside Festival', 'finance@brightside.example', 'PO Box 123\nWollongong NSW 2500'),
-    kiwi: customer('Kiwi Trails Ltd', 'ap@kiwitrails.example', '22 Fern Ave\nQueenstown 9300\nNew Zealand'),
+    bakery: customer(S.customers.bakery),
+    physio: customer(S.customers.physio),
+    wines: customer(S.customers.wines),
+    arch: customer(S.customers.arch),
+    // NZ: a production company that takes 20% withholding tax off what it pays (schedular payments).
+    festival: customer(S.customers.festival, country === 'NZ' ? { whtRatePpm: 200_000 } : {}),
+    abroad: customer(S.customers.abroad),
   };
-  const V = {
-    cowork: vendor('Surry Hills Coworking'), pixel: vendor('Pixelworks Software'), cloud: vendor('Cloudnest Hosting'),
-    telco: vendor('Telcoz Mobile'), office: vendor('Office Hub Supplies'), insure: vendor('Greenline Insurance'),
-    illo: vendor('Sam Rivera Illustration'), cafe: vendor('Corner Cafe'), print: vendor('Inkwell Printers'),
-    tech: vendor('Tech Barn'), accountant: vendor('Ledger & Co Accountants'), air: vendor('Skyway Airlines'),
-  };
+  const V = Object.fromEntries(Object.entries(S.vendors).map(([k, name]) => [k,
+    // US: the illustrator gets a 1099-NEC.
+    k === 'illo' && country === 'US'
+      ? vendor(name, { is1099: true, legalName: 'Samuel Rivera', tin: '98-7654321', address: '77 N Mississippi Ave\nPortland, OR 97227', email: 'sam@riveraillustration.example' })
+      : vendor(name)])) as Record<keyof Spec['vendors'], number>;
 
   // ---- invoice templates -----------------------------------------------------------
   const tpl = saveTemplate({
     name: 'Studio (modern)',
     style: 'modern',
-    accent: '#0f766e',
-    title: 'Tax Invoice',
+    accent: S.template.accent,
+    title: S.template.title,
     footer: 'Thanks for working with us!',
-    showTaxColumn: true,
+    showTaxColumn: S.template.showTaxColumn,
   });
   setDefaultTemplate(tpl);
 
   // ---- trading names ---------------------------------------------------------------
-  // The studio is the default. Map work for the NZ customer goes out as a side line.
+  // The studio is the default. Map work for the overseas customer goes out as a side line.
+  const T = S.tradingName;
   saveTradingName({
     id: defaultTradingNameId(),
-    name: 'Harbour & Pine Studio',
-    address: 'Level 2, 18 Example Lane\nSurry Hills NSW 2010',
-    email: 'hello@harbourpine.example',
-    phone: '02 9000 0000',
-    paymentDetails: 'Pay by bank transfer\nHarbour & Pine Studio · BSB 000-000 · Account 12345678\nUse the invoice number as the reference.',
+    name: T.name,
+    address: T.address,
+    email: T.email,
+    phone: T.phone,
+    paymentDetails: `Pay by bank transfer\n${T.bank}\nUse the invoice number as the reference.`,
   });
   const maps = saveTradingName({
-    name: 'Pine Trail Maps',
-    address: 'Level 2, 18 Example Lane\nSurry Hills NSW 2010',
-    email: 'maps@harbourpine.example',
-    paymentDetails: 'Pay by bank transfer\nPine Trail Maps · BSB 000-000 · Account 87654321\nUse the invoice number as the reference.',
+    name: S.sideLine.name,
+    address: T.address,
+    email: S.sideLine.email,
+    paymentDetails: `Pay by bank transfer\n${S.sideLine.bank}\nUse the invoice number as the reference.`,
   });
-  run(db, 'UPDATE contacts SET trading_name_id = ? WHERE id = ?', maps, customers.kiwi);
+  run(db, 'UPDATE contacts SET trading_name_id = ? WHERE id = ?', maps, customers.abroad);
 
   const spend = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; taxCode?: any } = {}) => {
-    if (date > today) return;
-    saveEntry({ date, kind: 'expense', amount, accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null, taxCode: opts.taxCode ?? null });
+    if (date > today || !categoryId) return 0;
+    return saveEntry({ date, kind: 'expense', amount, accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null, taxCode: opts.taxCode ?? null });
   };
   const earn = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string } = {}) => {
-    if (date > today) return;
+    if (date > today || !categoryId) return;
     saveEntry({ date, kind: 'income', amount, accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null });
   };
   const transfer = (date: string, amount: number, from: number, to: number, memo: string) => {
@@ -161,6 +298,7 @@ export function seedDemo(today: string) {
   };
 
   // ---- month by month -------------------------------------------------------------
+  const sale = S.sale as any;
   const jobs = [
     { c: customers.bakery, items: [['Packaging refresh', 1, 180000], ['Shelf wobblers & signage', 1, 65000]] },
     { c: customers.physio, items: [['Website design: home + 4 pages', 1, 320000]] },
@@ -173,10 +311,13 @@ export function seedDemo(today: string) {
   ];
 
   let cardSpend = 124000; // the opening balance owed
-  const invoiceIds: { id: number; issue: string; total: number }[] = [];
-  for (let y = startYear, m = 7; ymd(y, m, 1) <= today; m === 12 ? ((m = 1), y++) : m++) {
+  let assetEntry: { id: number; date: string; amount: number } | null = null;
+  const invoiceIds: { id: number; issue: string; total: number; contactId: number }[] = [];
+  for (let y = startYear, m = S.fyMonth; ymd(y, m, 1) <= today; m === 12 ? ((m = 1), y++) : m++) {
     const dim = daysInMonth(y, m);
     const day = (d: number) => ymd(y, m, Math.min(d, dim));
+    const monthOfYear = ((m - S.fyMonth + 12) % 12) + 1;
+    const firstYear = ymd(y, m, 1) < ymd(startYear + 1, S.fyMonth, 1);
 
     // Fixed costs
     spend(day(1), 165000, C.rent, { contactId: V.cowork, memo: 'Desk membership' });
@@ -187,11 +328,17 @@ export function seedDemo(today: string) {
     cardSpend += 8999 + 4500;
 
     // Yearly
-    if (m === 7) spend(day(8), 132000, C.insurance, { contactId: V.insure, memo: 'Professional indemnity + public liability' });
-    if (m === 8) spend(day(14), 4400, C.licences, { memo: 'Business name renewal' });
-    if (m === 9 && y === startYear) spend(day(18), 329900, C.equipment, { account: card, contactId: V.tech, memo: 'Laptop', taxCode: 'CAP' }), (cardSpend += 329900);
-    if (m === 3) spend(day(9), 64900, C.equipment, { account: card, contactId: V.tech, memo: 'Second monitor', taxCode: 'CAP' }), (cardSpend += 64900);
-    if (m === 10) spend(day(20), 198000, C.professional, { contactId: V.accountant, memo: 'Annual tax return' });
+    if (monthOfYear === 1) spend(day(8), 132000, C.insurance, { contactId: V.insure, memo: 'Professional indemnity + public liability' });
+    if (monthOfYear === 2) spend(day(14), 4400, C.licences, { memo: 'Business name renewal' });
+    if (monthOfYear === 3 && firstYear) {
+      // The big purchase of the year, which goes in the asset register.
+      const amount = S.sale ? Math.round(S.asset.cost * (country === 'AU' ? 1.1 : 1.15)) : S.asset.cost;
+      const id = spend(day(18), amount, C.equipment, { account: card, contactId: V.tech, memo: S.asset.name, taxCode: S.equipmentCode });
+      if (id) assetEntry = { id, date: day(18), amount };
+      cardSpend += amount;
+    }
+    if (monthOfYear === 9) spend(day(9), 64900, C.equipment, { account: card, contactId: V.tech, memo: 'Second monitor', taxCode: S.equipmentCode }), (cardSpend += 64900);
+    if (monthOfYear === 4) spend(day(20), 198000, C.professional, { contactId: V.accountant, memo: 'Annual tax return' });
 
     // Variable costs
     for (let i = 0, n = between(2, 4); i < n; i++) {
@@ -217,10 +364,22 @@ export function seedDemo(today: string) {
       cardSpend += amt;
     }
 
+    // Car trips to clients: a few a month.
+    for (let i = 0, n = between(2, 5); i < n; i++) {
+      const date = day(between(2, 27));
+      if (date > today) continue;
+      const to = pick(S.trip.places);
+      saveTrip({
+        date, distanceTenths: between(S.trip.distance[0], S.trip.distance[1]), vehicle: S.trip.vehicle,
+        purpose: pick(['Client meeting', 'Press check at the printer', 'Photo shoot', 'Delivering proofs', 'Brand workshop']),
+        fromPlace: 'Studio', toPlace: to,
+      });
+    }
+
     // The owner pays themselves (drawings aren't an expense).
     spend(day(15), 300000, C.drawings, { memo: 'Owner drawings' });
 
-    // Savings interest (input taxed) and sweep to tax savings
+    // Savings interest and sweep to tax savings
     earn(day(dim), between(900, 2400), C.interest, { account: savings, memo: 'Interest' });
     transfer(day(28), 100000, bank, savings, 'Set aside for tax');
 
@@ -246,26 +405,26 @@ export function seedDemo(today: string) {
           qtyMilli: (qty as number) * 1000,
           unitPrice: Math.round((price as number) * (0.9 + r() * 0.3)),
           categoryId: C.design,
-          taxCode: 'GST',
+          taxCode: sale,
         })),
         status: 'sent',
       });
       const total = one<{ total: number }>(db, 'SELECT total FROM invoices WHERE id = ?', id)!.total;
-      invoiceIds.push({ id, issue, total });
+      invoiceIds.push({ id, issue, total, contactId: job.c });
     }
     if (m % 3 === 1) {
       const issue = day(between(5, 20));
       if (issue <= today) {
         const id = saveInvoice({
-          contactId: customers.kiwi,
+          contactId: customers.abroad,
           issueDate: issue,
           dueDate: addDays(issue, 30),
           pricesIncludeTax: false,
           templateId: tpl,
-          lines: [{ description: 'Trail map illustration (export)', qtyMilli: 1000, unitPrice: between(180000, 260000), categoryId: C.design, taxCode: 'EXP' }],
+          lines: [{ description: S.abroadWork, qtyMilli: 1000, unitPrice: between(180000, 260000), categoryId: C.design, taxCode: S.exportCode as any }],
           status: 'sent',
         });
-        invoiceIds.push({ id, issue, total: one<{ total: number }>(db, 'SELECT total FROM invoices WHERE id = ?', id)!.total });
+        invoiceIds.push({ id, issue, total: one<{ total: number }>(db, 'SELECT total FROM invoices WHERE id = ?', id)!.total, contactId: customers.abroad });
       }
     }
     // A little non-invoiced income now and then
@@ -273,7 +432,8 @@ export function seedDemo(today: string) {
   }
 
   // Payments: most invoices paid 3–30 days after issue. Recent ones are still
-  // open, a couple are overdue, and one is part-paid.
+  // open, a couple are overdue, and one is part-paid. In New Zealand the
+  // production company keeps back 20% of the amount before GST.
   const overdueCutoff = addDays(today, -45);
   invoiceIds.forEach((inv, i) => {
     const paidOn = addDays(inv.issue, between(3, 30));
@@ -282,6 +442,12 @@ export function seedDemo(today: string) {
     if (recent || unluckyOverdue || paidOn > today) return;
     if (i % 17 === 5) {
       recordPayment({ invoiceId: inv.id, date: paidOn, amount: Math.round(inv.total / 2), accountId: bank, memo: 'Part payment' });
+      return;
+    }
+    if (country === 'NZ' && inv.contactId === customers.festival) {
+      const tax = one<{ tax: number }>(db, 'SELECT tax FROM invoices WHERE id = ?', inv.id)!.tax;
+      const withheld = Math.round((inv.total - tax) * 0.2);
+      recordPayment({ invoiceId: inv.id, date: paidOn, amount: inv.total - withheld, withheld, accountId: bank });
       return;
     }
     recordPayment({ invoiceId: inv.id, date: paidOn, amount: inv.total, accountId: bank });
@@ -296,9 +462,9 @@ export function seedDemo(today: string) {
     dueDate: addDays(today, 14),
     pricesIncludeTax: false,
     templateId: tpl,
-    notes: 'Deposit invoice: 50% upfront for the 2027 festival campaign.',
+    notes: 'Deposit invoice: 50% upfront for next year’s festival campaign.',
     lines: [
-      { description: 'Campaign concept & key visual (50% deposit)', qtyMilli: 1000, unitPrice: 275000, categoryId: C.design, taxCode: 'GST' },
+      { description: 'Campaign concept & key visual (50% deposit)', qtyMilli: 1000, unitPrice: 275000, categoryId: C.design, taxCode: sale },
     ],
     status: 'draft',
   });
@@ -315,8 +481,8 @@ export function seedDemo(today: string) {
       issueDate: issue,
       dueDate: addDays(issue, 30),
       reference: `INK-${between(20000, 29999)}`,
-      pricesIncludeTax: true,
-      lines: [{ description: pick(['Brochure print run', 'Poster printing', 'Business cards', 'Label proofs']), qtyMilli: 1000, unitPrice: amount, categoryId: C.printing, taxCode: 'GST' }],
+      pricesIncludeTax: !!S.sale,
+      lines: [{ description: pick(['Brochure print run', 'Poster printing', 'Business cards', 'Label proofs']), qtyMilli: 1000, unitPrice: amount, categoryId: C.printing, taxCode: (S.sale ?? 'NTR') as any }],
       status: 'sent',
     });
     // Older bills are paid on the due date; the latest two are still open.
@@ -333,7 +499,7 @@ export function seedDemo(today: string) {
       dueDate: addDays(issue, 30),
       pricesIncludeTax: false,
       templateId: tpl,
-      lines: lines.map(([description, qty, price]) => ({ description, qtyMilli: qty * 1000, unitPrice: price, categoryId: C.design, taxCode: 'GST' })),
+      lines: lines.map(([description, qty, price]) => ({ description, qtyMilli: qty * 1000, unitPrice: price, categoryId: C.design, taxCode: sale })),
       status: 'sent',
     });
   const accepted = quote(customers.wines, addDays(today, -12), [['Cellar door signage package', 1, 380000], ['Install supervision (hours)', 6, 12000]]);
@@ -357,10 +523,11 @@ export function seedDemo(today: string) {
       pricesIncludeTax: false,
       templateId: tpl,
       notes: 'Goodwill discount agreed while chasing this overdue invoice.',
-      lines: [{ description: 'Discount on late proofs', qtyMilli: 1000, unitPrice: 20000, categoryId: C.design, taxCode: 'GST' }],
+      lines: [{ description: 'Discount on late proofs', qtyMilli: 1000, unitPrice: 20000, categoryId: C.design, taxCode: sale }],
       status: 'sent',
     });
-    applyCredit({ creditId: credit, invoiceId: unpaid.id, amount: 22000, date: addDays(today, -2) });
+    const total = one<{ total: number }>(db, 'SELECT total FROM invoices WHERE id = ?', credit)!.total;
+    applyCredit({ creditId: credit, invoiceId: unpaid.id, amount: total, date: addDays(today, -2) });
   }
 
   // ---- recurring: rent and a monthly retainer invoice --------------------------------
@@ -375,7 +542,7 @@ export function seedDemo(today: string) {
   });
   saveSchedule({
     kind: 'invoice',
-    name: 'Northshore Physio retainer',
+    name: `${S.customers.physio[0]} retainer`,
     frequency: 'monthly',
     startDate: nextMonth(1),
     autoApprove: false,
@@ -384,55 +551,109 @@ export function seedDemo(today: string) {
       dueDays: 14,
       pricesIncludeTax: false,
       templateId: tpl,
-      lines: [{ description: 'Monthly social media design', qtyMilli: 1000, unitPrice: 90000, categoryId: C.design, taxCode: 'GST' }],
+      lines: [{ description: 'Monthly social media design', qtyMilli: 1000, unitPrice: 90000, categoryId: C.design, taxCode: sale }],
     },
   });
 
   // ---- import rules ------------------------------------------------------------------
   saveRule({ pattern: 'Social ads', categoryId: C.advertising });
-  saveRule({ pattern: 'Corner Cafe', categoryId: C.meals, contactId: V.cafe });
+  saveRule({ pattern: S.vendors.cafe, categoryId: C.meals, contactId: V.cafe });
 
-  // Lodge the BAS quarters of the last full financial year; leave the most
-  // recent finished quarter as a draft to review.
-  const quarters: [string, string][] = [];
-  for (let q = 0; q < 8; q++) {
-    const qs = ymd(startYear, 7 + q * 3, 1);
-    const [qy, qm] = qs.split('-').map(Number);
-    const qe = ymd(qy, qm + 3, 0);
-    if (qe < today) quarters.push([qs, qe]);
+  // ---- income tax through the year ---------------------------------------------------
+  // AU PAYG instalments (with each BAS), NZ provisional tax (standard method),
+  // US estimated tax (Form 1040-ES): paid from tax savings on their due dates.
+  const thisYear = incomeYearOf(today, fyStart);
+  const lastYear = thisYear - 1;
+  const instalments: { date: string; amount: number; memo: string }[] = [];
+  for (const y of [lastYear, thisYear]) {
+    if (country === 'AU') {
+      setYearInputs({ year: y, paygOption: 'amount', paygAmount: 125000 });
+      // With each quarter's BAS: 28 Oct, 28 Feb, 28 Apr, 28 Jul.
+      const { from } = incomeYearRange(y, fyStart);
+      const fy = Number(from.slice(0, 4));
+      for (const [i, d] of [`${fy}-10-28`, `${fy + 1}-02-28`, `${fy + 1}-04-28`, `${fy + 1}-07-28`].entries()) {
+        instalments.push({ date: d, amount: 125000, memo: `PAYG instalment Q${i + 1}` });
+      }
+    } else if (country === 'NZ') {
+      setYearInputs({ year: y, provisionalMethod: 'standard', priorYearTax: 1_140_000 });
+      const each = Math.round((1_140_000 * 1.05) / 3);
+      provisionalDue(y).forEach((d, i) => instalments.push({ date: d, amount: each, memo: `Provisional tax instalment ${i + 1}` }));
+    } else {
+      setYearInputs({ year: y, incomeTaxPct: 12, priorYearTax: 1_480_000 });
+      for (const [i, d] of [`${y}-04-15`, `${y}-06-15`, `${y}-09-15`, `${y + 1}-01-15`].entries()) {
+        instalments.push({ date: d, amount: 370000, memo: `Estimated tax Q${i + 1}` });
+      }
+    }
   }
-  const lodgeUntil = ymd(startYear + 1, 6, 30);
-  // Pay each lodged quarter from tax savings on the 28th of the second month
-  // after it ends (the usual quarterly due date). Done before lodging, which
-  // locks the books.
-  for (const [qs, qe] of quarters) {
-    if (qe > lodgeUntil) continue;
-    const { figures } = basReport({ from: qs, to: qe, basis: 'cash' });
-    const owed = Math.trunc(figures['1A'] / 100) * 100 - Math.trunc(figures['1B'] / 100) * 100 + 125000;
-    const [qy, qm] = qe.split('-').map(Number);
-    const payDay = ymd(qy, qm + 2, 28);
-    if (payDay > today) continue;
-    if (owed > 0) spend(payDay, owed, C.basPayment, { account: savings, memo: `BAS ${qs.slice(0, 7)} to ${qe.slice(0, 7)}` });
-    else if (owed < 0) earn(payDay, -owed, C.gstRefund, { account: savings, memo: `BAS refund ${qs.slice(0, 7)} to ${qe.slice(0, 7)}` });
+  for (const p of instalments) if (p.date >= start) spend(p.date, p.amount, C.incomeTax, { account: savings, memo: p.memo });
+
+  // ---- the asset register --------------------------------------------------------------
+  // The big purchase, in the register; depreciation posted for the year that's finished.
+  if (assetEntry) {
+    const e = one<{ amount: number; tax_amount: number | null }>(db, 'SELECT amount, tax_amount FROM entries WHERE id = ?', assetEntry.id)!;
+    saveAsset({
+      name: S.asset.name,
+      bought: assetEntry.date,
+      cost: e.amount - (S.sale ? (e.tax_amount ?? 0) : 0),
+      method: S.asset.method,
+      lifeYears: S.asset.lifeYears ?? null,
+      ratePct: S.asset.ratePct ?? null,
+      categoryId: C.equipment,
+      entryId: assetEntry.id,
+      notes: 'Serial no. DEMO-0001',
+    });
+    postDepreciation(lastYear);
+  }
+
+  // ---- tax returns -------------------------------------------------------------------
+  // Lodge the last full financial year's GST periods; leave the most recent
+  // finished period as a draft to review. Each lodged one is paid from tax
+  // savings on its due date, before lodging (which locks the books).
+  if (S.sale) {
+    const months = country === 'AU' ? 3 : 2;
+    const periods: [string, string][] = [];
+    for (let q = 0; q < 24 / months; q++) {
+      const ps = ymd(startYear, S.fyMonth + q * months, 1);
+      const [py, pm] = ps.split('-').map(Number);
+      const pe = ymd(py, pm + months, 0);
+      if (pe < today) periods.push([ps, pe]);
+    }
+    const lodgeUntil = incomeYearRange(lastYear, fyStart).to;
+    const kind = country === 'AU' ? 'bas' : 'nz-gst';
+    const inputs = (): Record<string, number> => (country === 'AU' ? { t7: 125000 } : {});
+    for (const [ps, pe] of periods) {
+      if (pe > lodgeUntil) continue;
+      const report = taxReturnReport({ from: ps, to: pe, basis: 'cash' });
+      // PAYG (T7) is paid with the BAS but recorded on its own above, so only the GST here.
+      const owed = RETURN_FORMS[kind].net(report.figures, {});
+      const payDay = country === 'AU' ? basDue(ps, pe) : nzGstDue(pe);
+      if (payDay > today) continue;
+      if (owed > 0) spend(payDay, owed, C.taxPayment, { account: savings, memo: `GST ${ps.slice(0, 7)} to ${pe.slice(0, 7)}` });
+      else if (owed < 0) earn(payDay, -owed, C.taxRefund, { account: savings, memo: `GST refund ${ps.slice(0, 7)} to ${pe.slice(0, 7)}` });
+    }
+    reconcile();
+    for (const [ps, pe] of periods) {
+      saveTaxReturn({ periodStart: ps, periodEnd: pe, basis: 'cash', inputs: inputs(), lodge: pe <= lodgeUntil });
+    }
+  } else {
+    reconcile();
   }
 
   // Reconcile the everyday account up to the end of last month.
-  const recTo = ymd(ny, nm, 0);
-  const balanceAt = one<{ b: number }>(db,
-    `SELECT a.opening_balance
-       + COALESCE((SELECT SUM(CASE WHEN e.to_account_id = a.id THEN e.amount WHEN e.kind = 'income' THEN e.amount ELSE -e.amount END)
-                   FROM entries e WHERE (e.account_id = a.id OR e.to_account_id = a.id) AND e.date <= ?), 0) AS b
-     FROM accounts a WHERE a.id = ?`, recTo, bank)!.b;
-  const rec = startReconcile({ accountId: bank, statementDate: recTo, statementBalance: balanceAt });
-  tick({
-    recId: rec,
-    entryIds: all<{ id: number }>(db, 'SELECT id FROM entries WHERE (account_id = ?1 OR to_account_id = ?1) AND date <= ?2', bank, recTo).map((e) => e.id),
-    cleared: true,
-  });
-  finishReconcile(rec);
-
-  for (const [qs, qe] of quarters) {
-    saveTaxReturn({ periodStart: qs, periodEnd: qe, basis: 'cash', inputs: { t7: 125000 }, lodge: qe <= lodgeUntil });
+  function reconcile() {
+    const recTo = ymd(ny, nm, 0);
+    const balanceAt = one<{ b: number }>(db,
+      `SELECT a.opening_balance
+         + COALESCE((SELECT SUM(CASE WHEN e.to_account_id = a.id THEN e.amount WHEN e.kind = 'income' THEN e.amount ELSE -e.amount END)
+                     FROM entries e WHERE (e.account_id = a.id OR e.to_account_id = a.id) AND e.date <= ?), 0) AS b
+       FROM accounts a WHERE a.id = ?`, recTo, bank)!.b;
+    const rec = startReconcile({ accountId: bank, statementDate: recTo, statementBalance: balanceAt });
+    tick({
+      recId: rec,
+      entryIds: all<{ id: number }>(db, 'SELECT id FROM entries WHERE (account_id = ?1 OR to_account_id = ?1) AND date <= ?2', bank, recTo).map((e) => e.id),
+      cleared: true,
+    });
+    finishReconcile(rec);
   }
 
   return all(db, 'SELECT COUNT(*) AS n FROM entries')[0];

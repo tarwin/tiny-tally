@@ -332,6 +332,8 @@ export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
   const lines = new Map<string, Row>();
   const unmapped: { id: number; name: string; kind: 'income' | 'expense'; total: number }[] = [];
   for (const r of byCategory as any[]) {
+    // Gains on business property sold (the asset register) go on Form 4797.
+    if (lineOf.get(r.id) === 'form-4797') continue;
     const def = keyed.get(lineOf.get(r.id) ?? '');
     if (!def || def.kind !== r.kind) {
       unmapped.push({ id: r.id, name: r.name, kind: r.kind, total: r.total });

@@ -245,6 +245,9 @@ const carTotal = computed(() =>
                 : `Low-value assets: ${money(assets.limit)} or less. New assets first used from 22 May 2025 may also get Investment Boost (20%).` }}
             </p>
           </template>
+          <p class="subdued Small no-print">
+            Depreciation on everything you own is worked out in the <a href="#" @click.prevent="router.push('/assets')">asset register</a>.
+          </p>
 
           <p class="subdued Note">
             <template v-if="au">Your agent may also ask for: bank statements, PAYG payment summaries, receipts for assets, your logbook, super contributions, private health insurance and last year's notice of assessment.</template>

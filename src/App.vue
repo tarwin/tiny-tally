@@ -11,6 +11,8 @@ import UpdateBanner from './components/UpdateBanner.vue';
 import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
 import { api } from './lib/api';
+import { DOCS } from './lib/documents';
+import { HANDOFF_EXT } from './shared/invoiceHandoff';
 import { dropAttachments } from './lib/attachments';
 import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density, stepZoom } from './lib/appSettings';
 import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
@@ -80,6 +82,7 @@ const sections = computed<NavigationSectionType[]>(() => [
       { id: 'budget', label: 'Budget', icon: 'mdi:target', url: '/budget' },
       { id: 'recurring', label: 'Recurring', icon: 'mdi:repeat', url: '/recurring' },
       { id: 'mileage', label: session.books?.country === 'US' ? 'Mileage' : 'Car trips', icon: 'mdi:car-outline', url: '/mileage' },
+      { id: 'assets', label: 'Assets', icon: 'mdi:laptop', url: '/assets' },
       { id: 'journals', label: 'Journal entries', icon: 'mdi:book-edit-outline', url: '/journals' },
     ],
   },
@@ -339,11 +342,35 @@ const offs: Array<() => void> = [];
 function openFiles(paths: string[]) {
   const file = paths.find((p) => p.endsWith('.tally'));
   if (file) void openBooksAt(file);
+  const handoff = paths.find(isHandoff);
+  if (handoff) openHandoff(handoff);
 }
+
+// A draft invoice from Tiny Time (a .tallyinvoice file) opens in the invoice
+// editor, filled in. With no books open yet it waits until there are.
+const isHandoff = (p: string) => p.toLowerCase().endsWith(HANDOFF_EXT);
+let pendingHandoff: string | null = null;
+function openHandoff(path: string) {
+  if (session.books) {
+    void router.push({ path: `${DOCS.invoice.base}/new`, query: { handoff: path } });
+    return;
+  }
+  pendingHandoff = path;
+  toast({ title: 'Open your books to finish the invoice', content: 'The invoice opens as soon as a set of books is open.' });
+}
+watch(
+  () => session.books?.path,
+  (p) => {
+    if (!p || !pendingHandoff) return;
+    const path = pendingHandoff;
+    pendingHandoff = null;
+    openHandoff(path);
+  },
+);
 
 // Drop a books file to open it, a receipt onto what's open, or anything else to import it.
 function onDropped(paths: string[]) {
-  if (paths.some((p) => p.endsWith('.tally'))) openFiles(paths);
+  if (paths.some((p) => p.endsWith('.tally') || isHandoff(p))) openFiles(paths);
   // Receipts go to the open transaction or document, if one is showing.
   else if (session.books && dropAttachments(paths)) return;
   else if (paths[0] && session.books) void router.push({ path: '/import', query: { file: paths[0] } });

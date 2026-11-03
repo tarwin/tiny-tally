@@ -662,4 +662,29 @@ export const migrations: string[] = [
       OR ((SELECT value FROM meta WHERE key = 'country') = 'NZ' AND report_line IN ('nz-other-income', 'nz-other-expenses')
         AND name NOT IN ('Other Income','Advertising & Marketing','Bank Fees','Meals & Entertainment','Office Supplies','Software & Subscriptions','Taxes & Licences','Travel','Utilities','Uncategorised Expense')));
   `,
+  // v22: the asset register. Depreciation is worked out from these
+  // (src/shared/depreciation.ts) and posted as a journal for each income year
+  // (meta depreciation_journals). entry_id is the purchase, sale_entry_id the
+  // money received when it was sold.
+  `
+  CREATE TABLE assets (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    category_id INTEGER REFERENCES categories(id),
+    entry_id INTEGER REFERENCES entries(id) ON DELETE SET NULL,
+    bought TEXT NOT NULL,
+    cost INTEGER NOT NULL CHECK (cost >= 0),
+    business_pct REAL NOT NULL DEFAULT 100,
+    method TEXT NOT NULL,
+    life_years REAL,
+    rate_pct REAL,
+    opening_year INTEGER,
+    opening_value INTEGER,
+    sold TEXT,
+    proceeds INTEGER,
+    sale_entry_id INTEGER REFERENCES entries(id) ON DELETE SET NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  `,
 ];

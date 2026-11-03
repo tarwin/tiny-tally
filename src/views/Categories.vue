@@ -66,17 +66,23 @@ const returnName = computed(() => (usesScheduleC.value ? 'Schedule C' : otherRet
 const usesReturn = computed(() => usesScheduleC.value || !!otherReturn.value);
 const otherMap = computed(() => new Map((otherReturn.value?.lines ?? []).map((l) => [l.key, l])));
 function lineText(v: string | null) {
+  if (usesScheduleC.value && v === 'form-4797') return FORM_4797.label;
   if (usesScheduleC.value) return v && SCHEDULE_C_MAP[v] ? `${SCHEDULE_C_MAP[v].line} ${SCHEDULE_C_MAP[v].label}` : 'Not mapped';
   const l = v ? otherMap.value.get(v) : null;
   return l ? `${l.code} ${l.label}` : 'Not mapped';
 }
-const lineHelp = (v: string | null) => (v ? (usesScheduleC.value ? SCHEDULE_C_MAP[v]?.help : otherMap.value.get(v)?.help) : undefined);
+const lineHelp = (v: string | null) => (v === 'form-4797' ? FORM_4797.description : v ? (usesScheduleC.value ? SCHEDULE_C_MAP[v]?.help : otherMap.value.get(v)?.help) : undefined);
 const instalmentWord = computed(() => ({ US: 'Estimated tax payments (Form 1040-ES)', AU: 'PAYG instalments', NZ: 'Provisional tax payments' } as Record<string, string>)[session.books?.country ?? 'US']);
 
+/** US: gains on business property sold go on Form 4797, not Schedule C. */
+const FORM_4797 = { label: 'Form 4797 (not Schedule C)', value: 'form-4797', description: 'Gains on equipment and other business property sold.' };
 const lineOptions = computed(() => [
   { label: 'Not mapped', value: null },
   ...(usesScheduleC.value
-    ? SCHEDULE_C_LINES.filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.line} ${l.label}`, value: l.key, description: l.help }))
+    ? [
+        ...SCHEDULE_C_LINES.filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.line} ${l.label}`, value: l.key, description: l.help })),
+        ...(form.value.kind === 'income' ? [FORM_4797] : []),
+      ]
     : (otherReturn.value?.lines ?? []).filter((l) => l.kind === form.value.kind).map((l) => ({ label: `${l.code} ${l.label}`, value: l.key, description: l.help }))),
 ]);
 

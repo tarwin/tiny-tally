@@ -66,6 +66,7 @@ export const router = createRouter({
     { path: '/reports/tpar', name: 'tpar', component: () => import('./views/Tpar.vue') },
     { path: '/reports/year-end', name: 'year-end', component: () => import('./views/YearEnd.vue') },
     { path: '/mileage', name: 'mileage', component: () => import('./views/Mileage.vue') },
+    { path: '/assets', name: 'assets', component: () => import('./views/Assets.vue') },
     { path: '/reports/receivables', name: 'receivables', component: () => import('./views/Receivables.vue') },
     { path: '/categories', name: 'categories', component: () => import('./views/Categories.vue') },
     { path: '/settings', name: 'settings', component: () => import('./views/Settings.vue') },

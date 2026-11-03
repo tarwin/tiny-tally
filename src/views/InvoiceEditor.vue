@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
+  Banner,
   Button,
   Card,
   CardSection,
@@ -29,7 +30,7 @@ import {
 import { addDays, today } from '../lib/dates';
 import { DOCS } from '../lib/documents';
 
-import { formatMoney, parseMoney, ratePercent, toInput } from '../lib/money';
+import { formatMoney, minorDigits, parseMoney, ratePercent, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { useTabTitle } from '../lib/tabs';
 import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
@@ -100,6 +101,8 @@ const form = ref({
 });
 
 const newCustomer = ref<string | null>(null);
+/** From a hand-off file: saved with the new customer if they add it. */
+const newCustomerAddress = ref('');
 
 function defaultCategory() {
   const usable = categories.value.filter((c) => c.kind === doc.value.categoryKind && !c.archived && c.class === 'pnl');
@@ -341,10 +344,11 @@ async function addCustomer() {
   const name = newCustomer.value?.trim();
   if (!name) return;
   try {
-    const id = await api.saveContact({ kind: doc.value.contactKind, name });
+    const id = await api.saveContact({ kind: doc.value.contactKind, name, address: newCustomerAddress.value || null });
     customers.value = await api.listContacts();
     form.value.contactId = id;
     newCustomer.value = null;
+    newCustomerAddress.value = '';
   } catch (e) {
     toast({ title: `Couldn't add ${doc.value.contactLabel.toLowerCase()}`, content: errorMessage(e), tone: 'error' });
   }
@@ -445,8 +449,70 @@ onMounted(async () => {
     form.value.lines = [blankLine()];
   }
   form.value.terms = existing.value ? form.value.terms : startTerms();
+  if (!editingId.value && typeof route.query.handoff === 'string') await applyHandoff(route.query.handoff);
   loading.value = false;
 });
+
+// ---- a draft handed over by another app (Tiny Time) -------------------------------
+
+/** "Filled in from Tiny Time…", shown until the invoice is saved. */
+const handoffNote = ref<{ source: string; detail: string; warning: string | null } | null>(null);
+
+/** Fill the new invoice from a .tallyinvoice file. Nothing is saved until they save. */
+async function applyHandoff(path: string) {
+  try {
+    const h = await api.readInvoiceHandoff(path);
+    const name = h.customer.name.toLowerCase();
+    const same = customers.value.filter((c) => c.name.trim().toLowerCase() === name);
+    const match = same.find((c) => !c.archived && c.kind === doc.value.contactKind) ?? same.find((c) => !c.archived) ?? same[0];
+    if (match) form.value.contactId = match.id;
+    else {
+      newCustomer.value = h.customer.name;
+      newCustomerAddress.value = h.customer.address;
+    }
+    useTradingName(tradingNameFor(form.value.contactId));
+    suggested.value = await api.suggestInvoiceNumber(doc.value.type, form.value.tradingNameId);
+    if (usSale.value) form.value.taxRateId = contactOf(form.value.contactId)?.taxRateId ?? null;
+    if (h.number) form.value.number = h.number;
+    if (h.issueDate) form.value.issueDate = h.issueDate;
+    if (h.dueDays !== null) {
+      if (termOptions.value.some((o) => o.value === h.dueDays)) form.value.terms = h.dueDays;
+      else {
+        form.value.terms = 'custom';
+        form.value.dueDate = addDays(form.value.issueDate, h.dueDays);
+      }
+    }
+    form.value.reference = h.reference;
+    form.value.notes = h.notes;
+    const digits = minorDigits(currency.value);
+    form.value.lines = h.lines.map((l) => ({
+      ...blankLine(),
+      description: l.description,
+      qty: String(l.quantity),
+      price: toInput(Math.round(l.unitPrice * 10 ** digits), currency.value),
+    }));
+    const hours = h.lines.reduce((a, l) => a + l.quantity, 0);
+    handoffNote.value = {
+      source: h.source,
+      detail: `${h.lines.length} ${h.lines.length === 1 ? 'line' : 'lines'}, ${hours.toFixed(2).replace(/\.?0+$/, '')} hours for ${h.customer.name}.`
+        + (match ? '' : ` ${h.customer.name} isn't a customer yet: add them above.`)
+        + ' Check it over, then save.',
+      warning: h.currency && h.currency !== currency.value
+        ? `${h.source} priced this in ${h.currency}, but these books are in ${currency.value}. The amounts haven't been converted.`
+        : null,
+    };
+  } catch (e) {
+    toast({ title: "Couldn't open the invoice file", content: errorMessage(e), tone: 'error' });
+  }
+}
+
+// A second hand-off while this editor is already open (kept alive in its tab).
+watch(
+  () => route.query.handoff,
+  (path) => {
+    if (!loading.value && !editingId.value && typeof path === 'string') void applyHandoff(path);
+  },
+);
 
 const title = computed(() => (existing.value ? `Edit ${existing.value.number}` : `New ${doc.value.word}`));
 useTabTitle(() => title.value);
@@ -468,6 +534,12 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
     size="fullWidth"
     :loading="loading"
   >
+    <Banner v-if="handoffNote" status="info" :title="`Filled in from ${handoffNote.source}`" class="Handoff">
+      {{ handoffNote.detail }}
+    </Banner>
+    <Banner v-if="handoffNote?.warning" status="warning" title="Different currency" class="Handoff">
+      {{ handoffNote.warning }}
+    </Banner>
     <div class="Grid">
       <div class="Main">
         <Card>
@@ -476,7 +548,7 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
               <div v-if="newCustomer !== null" class="Inline">
                 <TextField v-model="newCustomer" :label="`New ${doc.contactLabel.toLowerCase()}`" placeholder="Business or person's name" @keydown.enter.prevent="addCustomer" />
                 <Button type="primary" @click="addCustomer">Add</Button>
-                <Button type="plain" @click="newCustomer = null">Cancel</Button>
+                <Button type="plain" @click="newCustomer = null; newCustomerAddress = ''">Cancel</Button>
               </div>
               <div v-else class="Inline">
                 <Select
@@ -644,6 +716,9 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
 </template>
 
 <style scoped>
+.Handoff {
+  margin-bottom: 16px;
+}
 .Grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;

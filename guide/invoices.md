@@ -18,6 +18,12 @@
 
 **Approve & save** makes it real: it gets its number and counts in your reports. **Save as draft** keeps it to finish later. Drafts don't count anywhere.
 
+## From Tiny Time
+
+[Tiny Time](https://apps.tarwin.art/tiny-time/), the time tracker, can hand an invoice over: choose **Save & Open in Tiny Tally** there, or **Tiny Tally** on an invoice it has recorded. Tiny Tally opens a new invoice already filled in: the customer, the number and date, one line per project and task with its hours and rate, and any discount. If the customer isn't in your books yet, their name is ready to add. Nothing is saved until you check it and save it.
+
+You can also open a `.tallyinvoice` file yourself, or drop it on the window. If no books are open, it waits until you open some.
+
 ## Sending it
 
 ![An invoice, with its payments beside it](/shots/invoice.webp)

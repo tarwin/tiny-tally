@@ -12,9 +12,13 @@ Find it in **Reports**. Only your own country's return is shown.
 
 Fill in wages (W1, W2) and any PAYG instalment (T7) if they apply. Switch between **Cash** and **Accrual** accounting. Add **GST adjustments** for anything that needs one.
 
-**Business schedule** sets out your Profit & Loss by the labels on item P8 of your tax return (business and professional items). Each category maps to a label (new books start mapped; change it on the category). Type your stock on hand if you sell goods, and the hours you worked from home for the fixed rate method.
+**Business schedule** sets out your Profit & Loss by the labels on item P8 of your tax return (business and professional items). Each category maps to a label (new books start mapped; change it on the category). Type your stock on hand if you sell goods, and the hours you worked from home for the fixed rate method. Depreciation comes from the [asset register](./assets).
+
+![The business schedule from the demo books](/shots/income-tax-return.webp)
 
 - **Car trips**: log business trips in km. With **cents per km**, motor vehicle expenses are your km at the ATO rate (up to 5,000 km) and the car's running costs are left out. With a **logbook**, enter the year's total km and your business-use percentage, and it claims that share of the car's costs. Give each trip a vehicle name if you have more than one car: each gets its own 5,000 km, total km and logbook percentage.
+
+![Car trips, each at the year's cents per km](/shots/car-trips.webp)
 
 **PAYG instalments** works out each quarter's instalment, either the amount on the ATO's notice or your instalment rate times the quarter's income before GST, and checks it against the payments in your Income Tax Payment category. The dashboard reminds you as each BAS and instalment comes due.
 

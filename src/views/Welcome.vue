@@ -62,6 +62,8 @@ const taxRate = ref('');
 const rateError = ref<string | null>(null);
 const taxId = ref('');
 const demoing = ref(false);
+/** The selected country first, so its demo is the obvious one. */
+const DEMO_COUNTRIES = computed(() => [...COUNTRY_OPTIONS].sort((a, b) => Number(b.value === country.value) - Number(a.value === country.value)));
 
 watch(country, (c) => {
   if (c) fiscalYearStart.value = COUNTRIES[c].fiscalYearStart;
@@ -145,10 +147,10 @@ async function create() {
   }
 }
 
-async function tryDemo() {
+async function tryDemo(demoCountry: Country) {
   demoing.value = true;
   try {
-    await api.createDemo(null, today());
+    await api.createDemo(null, today(), demoCountry);
     await refreshSession();
     toast({ title: 'Demo books ready', content: 'Explore freely. They live in their own file and is separate from your real books.' });
   } catch (e) {
@@ -278,8 +280,15 @@ function shortPath(path: string) {
       </Card>
 
       <div class="Demo">
-        <span class="subdued">Just looking?</span>
-        <Button type="plain" icon="mdi:storefront-outline" :loading="demoing" @click="tryDemo">Try demo books with sample data</Button>
+        <span class="subdued">Just looking? Try demo books with sample data:</span>
+        <Button
+          v-for="c in DEMO_COUNTRIES"
+          :key="c.value"
+          type="plain"
+          icon="mdi:storefront-outline"
+          :disabled="demoing"
+          @click="tryDemo(c.value)"
+        >{{ c.label }}</Button>
       </div>
     </div>
   </div>

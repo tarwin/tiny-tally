@@ -76,6 +76,8 @@ test('Australia: cents per km up to 5,000 km, the business schedule and working 
     assert.equal(car.unit, 'km');
     assert.equal(car.distanceTenths, 60_000);
     assert.equal(car.claim.capped, true);
+    // Each trip carries its rate and value for the log.
+    assert.ok(car.trips.length && car.trips.every((t: any) => t.rate > 0 && t.value === Math.round((t.distanceTenths * t.rate) / 100)));
     assert.equal(car.claim.deduction, 440_000); // 5,000 km at 88c
 
     setYearInputs({ year: 2026, homeOfficeHours: 1000 });

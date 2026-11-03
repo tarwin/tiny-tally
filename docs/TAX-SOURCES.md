@@ -99,3 +99,23 @@ app uses 2025-26's and says so); the provisional tax dates for 6-monthly GST
 filers (not used); the 2024-25 composite tax rates (the app uses the new
 brackets for that year, so its estimate is a little high); the 21-day GST
 registration rule is in the Act but not on IRD's current page.
+
+## Depreciation (the asset register)
+
+Added 3 November 2026, from what's in the Acts and the authorities' published
+guides. These rules rarely change; the limits are in the year tables above.
+
+| What | Figure / rule | Source |
+|---|---|---|
+| AU small business pool | 15% the year an asset goes in, 30% a year after; balance under the instant asset write-off threshold at year end (before that year's depreciation) is deducted in full | [ATO: simpler depreciation for small business](https://www.ato.gov.au/businesses-and-organisations/income-deductions-and-concessions/depreciation-and-capital-expenses-and-allowances/simpler-depreciation-for-small-business); ITAA 1997 Subdiv 328-D |
+| AU diminishing value / prime cost | DV: base value × days held ÷ 365 × 200% ÷ effective life. PC: cost × days held ÷ 365 × 100% ÷ effective life. Balancing adjustment on disposal | [ATO: general depreciation rules](https://www.ato.gov.au/businesses-and-organisations/income-deductions-and-concessions/depreciation-and-capital-expenses-and-allowances/general-depreciation-rules-capital-allowances); ITAA 1997 Div 40; effective lives in TR 2022/1 |
+| NZ DV and SL | IRD's rate for the asset class, × months owned in the year ÷ 12 (the month bought counts); none in the year of disposal; depreciation recovered on sale is income, capped at the depreciation claimed | [IRD: claiming depreciation](https://www.ird.govt.nz/income-tax/income-tax-for-businesses-and-organisations/types-of-business-expenses/depreciation/claiming-depreciation); Income Tax Act 2007 subpart EE |
+| US MACRS | Pub 946 Table A-1 (200% DB, half-year): 5-year 20, 32, 19.2, 11.52, 11.52, 5.76%; 7-year 14.29, 24.49, 17.49, 12.49, 8.93, 8.92, 8.93, 4.46%. Half the year's percentage in the year sold | [IRS Publication 946](https://www.irs.gov/publications/p946) |
+| US de minimis safe harbor | $2,500 an item (no applicable financial statement) | [IRS: tangible property regulations FAQ](https://www.irs.gov/businesses/small-businesses-self-employed/tangible-property-final-regulations) |
+| US section 179 and bonus | Not limit-checked in the app: section 179's limit is far above a small business's purchases, and 100% bonus depreciation is back for property acquired after 19 January 2025 | [IRS Publication 946](https://www.irs.gov/publications/p946); One Big Beautiful Bill Act (2025) |
+| US gain on sale | Form 4797, not Schedule C | [Instructions for Form 4797](https://www.irs.gov/instructions/i4797) |
+
+Simplified: AU pool disposals are treated as a balancing adjustment on the
+asset rather than reducing the pool; NZ's Investment Boost isn't applied (add
+it to the cost basis by hand); AU low-cost asset pools and US mid-quarter
+convention, listed property limits and luxury car caps aren't covered.

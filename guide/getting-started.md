@@ -12,7 +12,13 @@ macOS (Apple Silicon and Intel), Windows and Linux. Free, and it updates itself.
 
 ## Try the demo first
 
-On the welcome screen, **Try demo books with sample data** opens *Harbour & Pine Studio (Demo)*: a year of transactions, invoices, bills and a BAS for a small Australian design studio. It's a separate file, so poke at anything. When you're ready for your own, close it and start new books.
+On the welcome screen, **Try demo books with sample data** has one for each country, each a small design studio with over a year of transactions, invoices, bills, car trips and an asset register:
+
+- **Australia**: *Harbour & Pine Studio*, with quarterly BAS lodged and PAYG instalments.
+- **New Zealand**: *Kōwhai Lane Design*, with two-monthly GST returns, provisional tax, and a client that withholds tax.
+- **United States**: *Cedar & Finch Studio*, in Oregon (no sales tax), with estimated tax and a contractor on a 1099-NEC.
+
+Each is a separate file, so poke at anything. When you're ready for your own, close it and start new books.
 
 ## Start your own books
 

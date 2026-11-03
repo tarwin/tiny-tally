@@ -541,6 +541,57 @@ export interface AssetBought {
   writeOff: boolean;
 }
 
+export type DepreciationMethod = 'writeoff' | 'pool' | 'dv' | 'pc' | 'sl' | 'expense' | 'macrs5' | 'macrs7';
+
+export interface Asset {
+  id: number;
+  name: string;
+  bought: string;
+  cost: number;
+  businessPct: number;
+  method: DepreciationMethod;
+  lifeYears: number | null;
+  ratePct: number | null;
+  openingYear: number | null;
+  openingValue: number | null;
+  sold: string | null;
+  proceeds: number | null;
+  categoryId: number | null;
+  categoryName: string | null;
+  expensed: boolean;
+  entryId: number | null;
+  saleEntryId: number | null;
+  notes: string | null;
+}
+
+export interface AssetYearRow {
+  id: number;
+  name: string;
+  method: DepreciationMethod;
+  opening: number;
+  depreciation: number;
+  claimed: number;
+  closing: number;
+  disposal: null | { date: string; proceeds: number; value: number; adjustment: number; claimed: number };
+  isNew: boolean;
+  asset: Asset;
+}
+
+export interface AssetRegister {
+  year: number;
+  from: string;
+  to: string;
+  country: 'AU' | 'NZ' | 'US';
+  limit: number;
+  rows: AssetYearRow[];
+  others: Asset[];
+  totals: { depreciation: number; claimed: number; closing: number; adjustment: number };
+  journal: null | { id: number; upToDate: boolean };
+  journalLines: number;
+  unposted: number[];
+  purchases: { entryId: number; date: string; amount: number; tax: number; cost: number; memo: string | null; categoryId: number; category: string; contact: string | null }[];
+}
+
 export interface Deadline {
   key: string;
   title: string;
@@ -1133,6 +1184,8 @@ export interface RuleMatch {
 
 export type { ImportBatch, ImportPlan, ImportResult, ImportTarget } from '../shared/import';
 import type { ImportPlan, ImportResult } from '../shared/import';
+import type { InvoiceHandoff } from '../shared/invoiceHandoff';
+export type { InvoiceHandoff } from '../shared/invoiceHandoff';
 
 function call<T>(method: string, params?: unknown): Promise<T> {
   return tiny.api.call(method, params);
@@ -1140,6 +1193,8 @@ function call<T>(method: string, params?: unknown): Promise<T> {
 
 export const api = {
   /** Text files come back as text; Excel files (zips) as base64 bytes. */
+  /** A .tallyinvoice file from another app (Tiny Time), checked and tidied. */
+  readInvoiceHandoff: (path: string) => call<InvoiceHandoff>('file.invoiceHandoff', { path }),
   readImportFile: (path: string) => call<{ name: string; text: string; base64?: string }>('import.read', { path }),
   suggestCategories: (names: string[]) =>
     call<Record<string, { categoryId: number; kind: 'income' | 'expense' }>>('import.suggest', { names }),
@@ -1147,7 +1202,7 @@ export const api = {
   start: () => call<StartState>('app.start'),
   createBooks: (p: { name: string; tradingName?: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxRatePpm?: number; taxId?: string }) =>
     call<Books>('books.create', p),
-  createDemo: (dir: string | null, today: string) => call<Books>('books.createDemo', { dir, today }),
+  createDemo: (dir: string | null, today: string, country: Country = 'AU') => call<Books>('books.createDemo', { dir, today, country }),
   openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),
   openInNewWindow: (path: string) => call<{ focused: boolean }>('books.openInNewWindow', { path }),
   windowHidden: () => call<boolean>('app.windowHidden'),
@@ -1228,6 +1283,12 @@ export const api = {
   yearInputs: (year: number) => call<YearInputs>('taxYear.get', { year }),
   setYearInputs: (p: { year: number; vehicle?: string } & { [K in keyof YearInputs]?: YearInputs[K] | null }) => call<YearInputs>('taxYear.set', p),
   carYear: (year: number) => call<CarYear>('reports.carYear', { year }),
+  listAssets: () => call<Asset[]>('assets.list'),
+  assetRegister: (year: number) => call<AssetRegister>('reports.assetRegister', { year }),
+  saveAsset: (p: Partial<Omit<Asset, 'id'>> & { id?: number; name: string; bought: string; cost: number; method: DepreciationMethod }) => call<number>('assets.save', p),
+  deleteAsset: (id: number) => call<boolean>('assets.delete', { id }),
+  sellAsset: (p: { id: number; date: string | null; amount?: number; accountId?: number | null }) => call<boolean>('assets.sell', p),
+  postDepreciation: (year: number) => call<number | null>('assets.post', { year }),
   incomeReturnReport: (p: { from: string; to: string; basis?: 'cash' | 'accrual' }) => call<IncomeReturnReport>('reports.incomeReturn', p),
   tparReport: (year: number) => call<TparReport>('reports.tpar', { year }),
   noAbnPayments: (p: { from: string; to: string }) => call<{ id: number; name: string; payments: number; gross: number }[]>('reports.noAbn', p),

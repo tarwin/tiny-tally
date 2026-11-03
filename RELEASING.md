@@ -52,6 +52,31 @@
 
 ## Tax figures, once a year
 
+### The calendar
+
+When each one comes out, roughly. Put these in your own calendar; after each,
+update the file, run `pnpm test`, and do a release so apps pick it up.
+
+| When | What | File |
+|---|---|---|
+| Mid May | AU federal budget: brackets, instant asset write-off, anything announced | `auTaxYears.ts` |
+| Late June – July | ATO cents per km and working from home rates for the year starting 1 July | `auTaxYears.ts` |
+| June | IRD home office square metre rate | `nzTaxYears.ts` |
+| June – July | IRS mid-year mileage changes, if any | `usTaxYears.ts` |
+| June – July | ATO BAS and GST rules: move `checkedUntil` on | `taxReturns.ts` |
+| Late Sept – Nov | IRD kilometre rates for the year just ended (31 March) | `nzTaxYears.ts` |
+| October – November | IRS: Social Security wage base, 1099 threshold, new Schedule C instructions | `usTaxYears.ts`, `scheduleC.ts` |
+| December | IRS standard mileage rate for the next calendar year | `usTaxYears.ts` |
+| December | NZ: GST rules (IR375 / IR372): move `checkedUntil` on | `taxReturns.ts` |
+| Once a year | US state economic nexus thresholds | `usStates.ts` |
+| When set by law | NZ Matariki dates past 2034 | `holidays.ts` |
+| Any time | Depreciation figures: AU instant asset write-off, NZ low-value asset limit, US section 179 and bonus depreciation | `auTaxYears.ts`, `nzTaxYears.ts`, `depreciation.ts` |
+
+The app tells you as well: a year it has no checked figures for says so on
+the page that uses them.
+
+### What to change
+
 The figures change every tax year. When the IRS, ATO or IRD publishes them,
 add the next year and set `checked`, and record what you checked each figure
 against in `docs/TAX-SOURCES.md`:

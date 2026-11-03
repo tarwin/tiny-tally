@@ -95,7 +95,8 @@ export function carYear(year: number) {
       : Math.round(withPct.reduce((t, v) => t + v.businessPct!, 0) / withPct.length * 10) / 10;
   const loggedPct = vehicles.length === 1 ? vehicles[0].loggedPct : null;
   const method: 'rate' | 'actual' = inputs.vehicleMethod ?? (distanceTenths > 0 ? 'rate' : 'actual');
-  return { year, from, to, unit: distanceUnit(s.country), trips, distanceTenths, claim, method, businessPct, loggedPct, inputs, vehicles };
+  // Each trip with its rate and what it's worth, for the log.
+  return { year, from, to, unit: distanceUnit(s.country), trips: listTrips({ from, to }).trips, distanceTenths, claim, method, businessPct, loggedPct, inputs, vehicles };
 }
 
 export function listTrips(p: { from: string; to: string }) {

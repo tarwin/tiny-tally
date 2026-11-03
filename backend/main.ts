@@ -86,7 +86,7 @@ import {
   taxReturnReport,
 } from './reports';
 import { getSettings, isYearStart, updateSettings, type BooksSettings } from './settings';
-import { DEMO_NAME, seedDemo } from './demo';
+import { DEMO_NAME, DEMO_NAMES, DEMO_SETUP, seedDemo } from './demo';
 import {
   archiveTradingName,
   deleteTradingName,
@@ -116,8 +116,10 @@ import { COUNTRIES, countryProfile, isCountry, type Country } from '../src/share
 import type { ImportPlan } from '../src/shared/import';
 import { moveOldData } from './movedData';
 import { taxCodeOr, type TaxCode } from '../src/shared/tax';
+import { HANDOFF_EXT, parseInvoiceHandoff } from '../src/shared/invoiceHandoff';
 import { archiveTaxRate, estimatedTax, listTaxRates, nec1099Report, nexusReport, saveTaxRate, type TaxRateInput } from './usTax';
 import { carYear, deleteTrip, listTrips, saveTrip, type TripInput } from './trips';
+import { assetRegister, deleteAsset, listAssets, postDepreciation, saveAsset, sellAsset } from './assets';
 import { setYearInputs, yearInputs } from './taxYear';
 import { assetsBought, deadlines, gstThreshold, noAbnPayments, paygInstalments, provisionalTax, taxWithheld, tparReport } from './auNzTax';
 
@@ -438,15 +440,16 @@ export const api: Record<string, TinyApiHandler> = {
     return afterOpen(win);
   },
 
-  /** A sample Australian business with about 16 months of activity. */
-  'books.createDemo': async ({ dir, today }: { dir: string | null; today: string }, _app, { window: win }) => {
+  /** A sample business for the country, with about 16 months of activity. */
+  'books.createDemo': async ({ dir, today, country }: { dir: string | null; today: string; country?: string }, _app, { window: win }) => {
+    const c = isCountry(country) ? country : 'AU';
     const folder = dir ?? (await internalDir());
-    let name = DEMO_NAME;
-    for (let n = 2; await fileExists(folder + '/' + fileNameFor(name)); n++) name = `${DEMO_NAME} ${n}`;
+    let name = DEMO_NAMES[c];
+    for (let n = 2; await fileExists(folder + '/' + fileNameFor(name)); n++) name = `${DEMO_NAMES[c]} ${n}`;
     const path = folder.replace(/\/+$/, '') + '/' + fileNameFor(name);
-    await createBooks(win, path, dir === null, { name, country: 'AU', fiscalYearStart: '07-01', taxEnabled: true });
+    await createBooks(win, path, dir === null, { name, ...DEMO_SETUP[c] });
     inWindow(win, () => {
-      seedDemo(today);
+      seedDemo(today, c);
       startHistory('books.createDemo', JSON.stringify({ name }));
     });
     return afterOpen(win);
@@ -648,7 +651,7 @@ export const api: Record<string, TinyApiHandler> = {
       // A tax payment category can be where income tax instalments go (US estimated tax, PAYG, provisional tax).
       klass === 'tax' ? (kind === 'expense' && reportLine === ESTIMATED_TAX_KEY ? reportLine : null)
       : klass !== 'pnl' ? null
-      : country === 'US' ? (isScheduleCKey(reportLine) && SCHEDULE_C_MAP[reportLine].kind === kind ? reportLine : null)
+      : country === 'US' ? ((isScheduleCKey(reportLine) && SCHEDULE_C_MAP[reportLine].kind === kind) || (reportLine === 'form-4797' && kind === 'income') ? reportLine : null)
       : isReturnLine(country, reportLine, kind) ? reportLine : null;
     name = String(blankToNull(name) ?? '').trim();
     if (!name) throw new Error('Give the category a name.');
@@ -800,6 +803,14 @@ Object.assign(api, {
   'reports.deadlines': async (p: { today: string; days?: number }) => deadlines(p, plProfit),
   'trips.list': async (p: Parameters<typeof listTrips>[0]) => listTrips(p),
   'trips.save': async (t: TripInput) => saveTrip(t),
+
+  // ---- asset register ----
+  'assets.list': async () => listAssets(),
+  'reports.assetRegister': async ({ year }: { year: number }) => assetRegister(Number(year)),
+  'assets.save': async (p: Parameters<typeof saveAsset>[0]) => saveAsset(p),
+  'assets.delete': async ({ id }: { id: number }) => deleteAsset(Number(id)),
+  'assets.sell': async (p: Parameters<typeof sellAsset>[0]) => sellAsset(p),
+  'assets.post': async ({ year }: { year: number }) => postDepreciation(Number(year)),
   'trips.delete': async ({ id }: { id: number }) => deleteTrip(id),
   'taxRates.list': async () => listTaxRates(),
   'taxRates.save': async (r: TaxRateInput) => saveTaxRate(r),
@@ -833,6 +844,11 @@ Object.assign(api, {
     if (typeof path !== 'string' || !path.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(path)) throw new Error('Choose where to save.');
     await tjs.writeFile(path, new TextEncoder().encode(String(text ?? '')));
     return path;
+  },
+  /** A draft invoice handed over by another app (a .tallyinvoice file), for the invoice editor to fill in. */
+  'file.invoiceHandoff': async ({ path }: { path: string }) => {
+    if (typeof path !== 'string' || !path.toLowerCase().endsWith(HANDOFF_EXT)) throw new Error("That isn't an invoice file.");
+    return parseInvoiceHandoff(new TextDecoder().decode(await tjs.readFile(path)));
   },
   'import.read': async ({ path }: { path: string }) => readImportFile(path),
   'import.suggest': async ({ names }: { names: string[] }) => suggestCategories(Array.isArray(names) ? names.map(String) : []),

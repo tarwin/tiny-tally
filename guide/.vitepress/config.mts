@@ -64,6 +64,7 @@ export default defineConfig({
           { text: 'Reports', link: '/reports' },
           { text: 'Budget', link: '/budget' },
           { text: 'Tax returns', link: '/tax' },
+          { text: 'Assets', link: '/assets' },
         ],
       },
       {

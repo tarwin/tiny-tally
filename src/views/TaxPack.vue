@@ -208,6 +208,9 @@ async function saveFiles() {
               <tr class="Report__total"><td colspan="2">Total</td><td class="num">{{ money(est.totalPaid) }}</td></tr>
             </tbody>
           </table>
+          <p class="subdued Small no-print">
+            Depreciation for Form 4562 is worked out in the <a href="#" @click.prevent="router.push('/assets')">asset register</a>.
+          </p>
 
           <h3>1099-NEC</h3>
           <p v-if="!necNeeded.length" class="subdued">Nobody was paid enough for a 1099-NEC (from the vendors marked as 1099 payees).</p>

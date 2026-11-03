@@ -8,6 +8,8 @@ import { editEntry, entryEditor } from './entryEditor';
 import { router } from '../router';
 import { closeOtherTabs, openTab } from './tabs';
 import { themePreference } from './theme';
+import { session } from './session';
+import { incomeYearOf } from '../shared/incomeYear';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Long enough for Octans' toasts to close. */
@@ -104,6 +106,18 @@ export async function runTour() {
     await shot('cash-flow');
     await go('/reports/tax-return');
     await shot('tax-return');
+    await go('/reports/income-tax-return');
+    await shot('income-tax-return');
+    await go('/reports/income-tax');
+    await shot('income-tax');
+    await go('/reports/year-end');
+    await shot('year-end');
+    await go('/mileage');
+    await shot('car-trips');
+    // Last year's register: posted, with its first year's depreciation.
+    const ys = session.books?.fiscalYearStart ?? '07-01';
+    await go(`/assets?year=${incomeYearOf(new Date().toISOString().slice(0, 10), ys) - 1}`);
+    await shot('assets');
     await go('/recurring');
     await shot('recurring');
     await go('/activity');
