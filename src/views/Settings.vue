@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { IN_STATE_OPTIONS } from '../lib/worldOptions';
 import { computed, ref, watch } from 'vue';
 import {
   Button,
@@ -67,6 +68,7 @@ function fromBooks(c: Books): Form {
     color: c.color,
     logo: c.logo,
     homeState: c.homeState,
+    lutNumber: c.lutNumber,
     taxRateName: c.taxRateName,
     basOnline: c.basOnline,
   };
@@ -208,6 +210,13 @@ async function setLock(date: string | null) {
               :options="[{ label: 'Not set', value: '' }, ...US_STATE_OPTIONS]"
               help-text="Where the business is. Sales into other states are checked against their sales tax thresholds."
             />
+            <Select
+              v-if="books.country === 'IN'"
+              v-model="form.homeState"
+              label="State"
+              :options="[{ label: 'From your GSTIN', value: '' }, ...IN_STATE_OPTIONS]"
+              help-text="Sales here are charged CGST and SGST. Sales to other states are charged IGST."
+            />
             <div>
               <div class="Label">Logo</div>
               <div class="Logo">
@@ -265,7 +274,14 @@ async function setLock(date: string | null) {
                 suffix="%"
                 inputmode="decimal"
                 :error="rateError"
-                help-text="Your combined state and local rate. Charged on taxable sales."
+                :help-text="books.country === 'IN' ? 'Charged on taxable sales. Most professional services are 18%.' : 'Your combined state and local rate. Charged on taxable sales.'"
+              />
+              <TextField
+                v-if="books.country === 'IN'"
+                v-model="form.lutNumber"
+                label="Letter of Undertaking reference"
+                placeholder="ARN from Form RFD-11"
+                help-text="Printed on exports without GST. File a new one on the GST portal each financial year."
               />
               <TextField
                 v-if="books.country === 'US'"
@@ -274,7 +290,7 @@ async function setLock(date: string | null) {
                 placeholder="e.g. Brooklyn, NY"
                 help-text="Shown beside other rates you add below, and on the Sales tax report."
               />
-              <div>
+              <div v-if="books.country !== 'IN'">
                 <div class="Label">Accounting basis</div>
                 <SegmentedControl
                   v-model="form.taxBasis"

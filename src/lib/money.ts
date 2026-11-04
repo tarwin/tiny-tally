@@ -19,7 +19,8 @@ function formatter(currency: string, display: 'narrowSymbol' | 'code' = 'narrowS
   const key = `${currency}:${display}`;
   let f = formatters.get(key);
   if (!f) {
-    f = new Intl.NumberFormat(undefined, { style: 'currency', currency, currencyDisplay: display });
+    // Rupees group in lakhs and crores, whatever the system's language.
+    f = new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : undefined, { style: 'currency', currency, currencyDisplay: display });
     formatters.set(key, f);
   }
   return f;

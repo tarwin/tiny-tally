@@ -49,6 +49,8 @@ export interface BooksSettings {
   homeState: string;
   /** US: what the books' own sales tax rate is called. */
   taxRateName: string;
+  /** India: the Letter of Undertaking's reference. */
+  lutNumber: string;
 }
 
 export interface Books extends BooksSettings {
@@ -143,6 +145,8 @@ export interface Entry {
   taxAmount: number;
   /** US sales: the sales tax rate (null = the books' own). */
   taxRateId: number | null;
+  /** India: the GST rate. */
+  taxRatePpm?: number | null;
   invoiceId: number | null;
   invoiceNumber: string | null;
   invoiceType: DocType | null;
@@ -171,6 +175,7 @@ export interface EntryInput {
   taxCode?: TaxCode | null;
   taxAmount?: number | null;
   taxRateId?: number | null;
+  taxRatePpm?: number | null;
 }
 
 export interface EntryQuery {
@@ -238,8 +243,10 @@ export interface Contact {
   lastDate: string | null;
   /** Customers: the trading name to invoice them as (null = the default). */
   tradingNameId: number | null;
-  /** US: the state they're in ('NY'), for sales tax nexus. */
+  /** US: the state they're in ('NY'), for sales tax nexus. India: the GST state code ('27'). */
   state: string | null;
+  /** ISO code when they're abroad ('US'). */
+  country: string | null;
   /** US customers: the sales tax rate their invoices start with (null = the books' own). */
   taxRateId: number | null;
   /** US customers: resale or exemption certificate; null when they pay sales tax. */
@@ -663,6 +670,9 @@ export type InvoiceStatus =
   | 'open' | 'expired' | 'accepted';
 
 export interface InvoiceRow {
+  /** Set when it's in a foreign currency. */
+  currency: string | null;
+  fcTotal: number | null;
   id: number;
   docType: DocType;
   number: string;
@@ -696,6 +706,13 @@ export interface InvoiceLine {
   taxCode: TaxCode | null;
   net?: number;
   tax?: number;
+  /** India: the HSN or SAC code. */
+  hsn?: string | null;
+  /** India: the line's GST rate (null on older lines: the document's). */
+  taxRatePpm?: number | null;
+  /** Foreign-currency documents: in that currency (net and tax are in the books'). */
+  fcNet?: number | null;
+  fcTax?: number | null;
 }
 
 export interface InvoicePayment {
@@ -705,9 +722,19 @@ export interface InvoicePayment {
   memo: string | null;
   accountId: number;
   accountName: string;
+  /** The exchange gain beside it, or a loss when negative. */
+  fxGain: number;
 }
 
 export interface Invoice extends InvoiceRow {
+  fxRateMicro: number | null;
+  fcNet: number | null;
+  fcTax: number | null;
+  placeOfSupply: string | null;
+  reverseCharge: boolean;
+  exportMode: 'lut' | 'igst' | null;
+  contactState: string | null;
+  contactCountry: string | null;
   /** When it was last saved (refuses saves over a change made since). */
   updatedAt: string;
   notes: string | null;
@@ -753,6 +780,11 @@ export interface InvoiceInput {
   tradingNameId?: number | null;
   pricesIncludeTax: boolean;
   taxRateId?: number | null;
+  currency?: string | null;
+  fxRateMicro?: number | null;
+  placeOfSupply?: string | null;
+  reverseCharge?: boolean;
+  exportMode?: 'lut' | 'igst' | null;
   lines: InvoiceLine[];
   status?: 'draft' | 'sent';
 }
@@ -862,6 +894,8 @@ export interface TaxReturnReport {
   untagged: number;
   /** NZ: what percent adjustments are worked out from. */
   context: AdjustmentContext | null;
+  /** India: sales and purchases at each GST rate. */
+  byRate?: { ratePpm: number; sales: number; salesTax: number; purchases: number; credit: number }[];
 }
 
 export interface SalesTaxReport {
@@ -1159,6 +1193,9 @@ export interface Item {
   categoryId: number | null;
   categoryName: string | null;
   taxCode: TaxCode | null;
+  hsn: string | null;
+  /** India: its GST rate. */
+  taxRatePpm?: number | null;
   archived: boolean;
 }
 
@@ -1250,7 +1287,7 @@ export const api = {
   creditInvoice: (id: number, today: string) => call<number>('invoices.credit', { id, today }),
   applyCredit: (p: { creditId: number; invoiceId: number; amount: number; date: string }) => call<number>('invoices.applyCredit', p),
   removeAllocation: (id: number) => call<true>('invoices.removeAllocation', { id }),
-  recordPayment: (p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null; withheld?: number | null }) =>
+  recordPayment: (p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null; withheld?: number | null; received?: number | null }) =>
     call<number>('invoices.recordPayment', p),
   deletePayment: (entryId: number) => call<true>('invoices.deletePayment', { entryId }),
 

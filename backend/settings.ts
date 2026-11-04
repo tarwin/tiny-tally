@@ -43,8 +43,10 @@ export interface BooksSettings {
   logo: string;
   /** Entries dated on or before this can't change (set by lodging a tax return). */
   lockDate: string | null;
-  /** US: the state the business is in ('NY'), or ''. Sales into other states count towards their nexus thresholds. */
+  /** US: the state the business is in ('NY'), or ''. Sales into other states count towards their nexus thresholds. India: the GST state code ('27'). */
   homeState: string;
+  /** India: the Letter of Undertaking's reference, printed on exports without tax. Renewed each financial year. */
+  lutNumber: string;
   /** US: what the books' own sales tax rate is called on documents and reports ('Brooklyn, NY'). */
   taxRateName: string;
 }
@@ -132,12 +134,13 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
       return c;
     },
   },
+  lutNumber: { key: 'lut_number', ...str() },
   homeState: {
     key: 'home_state',
     parse: (v) => v ?? '',
     write: (v) => {
       const st = String(v ?? '').trim().toUpperCase();
-      if (st && !/^[A-Z]{2}$/.test(st)) throw new Error('Pick a state.');
+      if (st && !/^([A-Z]{2}|\d{2})$/.test(st)) throw new Error('Pick a state.');
       return st;
     },
   },

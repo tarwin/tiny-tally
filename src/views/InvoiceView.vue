@@ -18,6 +18,7 @@ import {
   toast,
 } from '@octans/ui';
 import Attachments from '../components/Attachments.vue';
+import { foreignBalance } from '../shared/currency';
 import InvoiceDocument from '../components/InvoiceDocument.vue';
 import PaperPreview from '../components/PaperPreview.vue';
 import ScheduleModal from '../components/ScheduleModal.vue';
@@ -54,7 +55,15 @@ const tax = computed(() => {
 const currency = computed(() => books.value.currency);
 const money = (v: number) => formatMoney(v, currency.value);
 /** For the email to the customer, which follows the documents setting. */
-const docMoney = (v: number) => formatMoney(v, currency.value, books.value.documentCurrencyDisplay);
+const docMoney = (v: number) => {
+  const inv = invoice.value;
+  return inv?.currency && inv.fcTotal != null && inv.total
+    ? formatMoney(Math.round((v * inv.fcTotal) / inv.total), inv.currency, books.value.documentCurrencyDisplay)
+    : formatMoney(v, currency.value, books.value.documentCurrencyDisplay);
+};
+/** A foreign-currency invoice takes payment in its currency, and asks what landed. */
+const fxPayment = computed(() => (invoice.value?.docType === 'invoice' && invoice.value.currency && invoice.value.fcTotal != null ? invoice.value.currency : null));
+const owingForeign = computed(() => (fxPayment.value ? foreignBalance({ total: invoice.value!.total, fcTotal: invoice.value!.fcTotal!, balance: invoice.value!.balance }) : 0));
 
 const template = computed(
   () => templates.value.find((t) => t.id === invoice.value?.templateId) ?? templates.value.find((t) => t.isDefault) ?? null,
@@ -188,11 +197,11 @@ const payWords = computed(() => {
 
 const paying = ref(false);
 const savingPayment = ref(false);
-const payment = ref({ date: today(), amount: '', withheld: '', accountId: null as number | null, memo: '' });
+const payment = ref({ date: today(), amount: '', received: '', withheld: '', accountId: null as number | null, memo: '' });
 // New Zealand: a client paying schedular payments keeps back tax at their rate, worked on the amount before GST.
 // Australia: a supplier who gives no ABN has 47% kept back (over $75 before GST), owed to the ATO.
-const withholds = computed(() =>
-  (session.books?.country === 'NZ' && invoice.value?.docType === 'invoice') || (session.books?.country === 'AU' && invoice.value?.docType === 'bill'));
+const withholds = computed(() => !fxPayment.value && (
+  ((session.books?.country === 'NZ' || session.books?.country === 'IN') && invoice.value?.docType === 'invoice') || (session.books?.country === 'AU' && invoice.value?.docType === 'bill')));
 const noAbnBill = computed(() => session.books?.country === 'AU' && invoice.value?.docType === 'bill');
 function withheldOn(balance: number) {
   const inv = invoice.value!;
@@ -215,7 +224,8 @@ function openPayment() {
   const held = withholds.value ? withheldOn(invoice.value!.balance) : 0;
   payment.value = {
     date: today(),
-    amount: toInput(invoice.value!.balance - held, currency.value),
+    amount: fxPayment.value ? toInput(owingForeign.value, fxPayment.value) : toInput(invoice.value!.balance - held, currency.value),
+    received: '',
     withheld: held ? toInput(held, currency.value) : '',
     accountId: accountOptions.value[0]?.value ?? null,
     memo: '',
@@ -224,9 +234,14 @@ function openPayment() {
 }
 
 async function savePayment() {
-  const amount = parseMoney(payment.value.amount, currency.value);
+  const amount = parseMoney(payment.value.amount, fxPayment.value ?? currency.value);
   if (!amount || amount <= 0) {
     paymentError.value = 'Enter the amount.';
+    return;
+  }
+  const received = fxPayment.value ? parseMoney(payment.value.received, currency.value) : null;
+  if (fxPayment.value && (!received || received <= 0)) {
+    paymentError.value = `Enter what landed in ${currency.value}.`;
     return;
   }
   savingPayment.value = true;
@@ -236,7 +251,7 @@ async function savePayment() {
       paymentError.value = 'Enter the tax withheld, or leave it empty.';
       return;
     }
-    await api.recordPayment({ invoiceId: id.value, date: payment.value.date, amount, withheld, accountId: payment.value.accountId!, memo: payment.value.memo });
+    await api.recordPayment({ invoiceId: id.value, date: payment.value.date, amount, received, withheld, accountId: payment.value.accountId!, memo: payment.value.memo });
     paying.value = false;
     toast({ title: invoice.value?.docType === 'credit' ? 'Refund recorded' : 'Payment recorded', tone: 'success' });
     await load();
@@ -344,7 +359,12 @@ const schedulePayload = computed(() => {
     templateId: inv.templateId,
     tradingNameId: inv.tradingNameId,
     pricesIncludeTax: inv.pricesIncludeTax,
-    lines: inv.lines.map((l) => ({ description: l.description, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, categoryId: l.categoryId, taxCode: l.taxCode })),
+    lines: inv.lines.map((l) => ({ description: l.description, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, categoryId: l.categoryId, taxCode: l.taxCode, taxRatePpm: l.taxRatePpm, hsn: l.hsn })),
+    currency: inv.currency,
+    fxRateMicro: inv.fxRateMicro,
+    placeOfSupply: inv.placeOfSupply,
+    reverseCharge: inv.reverseCharge,
+    exportMode: inv.exportMode,
   };
 });
 
@@ -492,6 +512,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
                 <li v-for="p in invoice.payments" :key="p.id">
                   <div>
                     <div class="money">{{ money(p.amount) }}</div>
+                    <div v-if="p.fxGain" class="subdued">Exchange {{ p.fxGain > 0 ? 'gain' : 'loss' }} {{ money(Math.abs(p.fxGain)) }}</div>
                     <div class="subdued Small">{{ formatDay(p.date) }} · {{ p.accountName }}{{ p.memo ? ` · ${p.memo}` : '' }}</div>
                   </div>
                   <span class="PaymentActions">
@@ -574,19 +595,28 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
           <TextField
             v-model="payment.amount"
             :label="payWords.amount"
-            :prefix="currency"
+            :prefix="fxPayment ?? currency"
             align="right"
             :error="paymentError"
-            :help-text="invoice ? `${money(invoice.balance)} ${payWords.left}` : ''"
+            :help-text="invoice ? `${fxPayment ? formatMoney(owingForeign, fxPayment) : money(invoice.balance)} ${payWords.left}` : ''"
+            @keydown.enter="savePayment"
+          />
+          <TextField
+            v-if="fxPayment"
+            v-model="payment.received"
+            :label="`What landed in ${currency}`"
+            :prefix="currency"
+            align="right"
+            :help-text="`From your bank statement. Any difference from ${money(invoice?.balance ?? 0)} at the invoice's rate is booked as an exchange gain or loss.`"
             @keydown.enter="savePayment"
           />
           <TextField
             v-if="withholds"
             v-model="payment.withheld"
-            :label="noAbnBill ? 'No-ABN tax withheld' : 'Tax withheld by the client'"
+            :label="noAbnBill ? 'No-ABN tax withheld' : books.country === 'IN' ? 'TDS deducted by the client' : 'Tax withheld by the client'"
             :prefix="currency"
             align="right"
-            :help-text="noAbnBill
+            :help-text="books.country === 'IN' ? 'It counts as paid, and as tax already paid. Check it against Form 26AS, and ask the client for a TDS certificate.' : noAbnBill
               ? 'They gave no ABN: keep back 47% (on supplies over $75 before GST) and pay it to the ATO with your BAS (W4). The bill counts as paid in full.'
               : 'Schedular payments: the tax they kept back and pay to IRD for you. It counts as paid, and as tax already paid on your IR3.'"
           />

@@ -72,14 +72,18 @@ export interface LineTotals {
   gross: number;
 }
 
-export function lineTotals(line: LineInput, pricesIncludeTax: boolean, taxEnabled: boolean, ratePpm = DEFAULT_TAX_RATE_PPM): LineTotals {
+/** Tax that halves exactly, for GST charged half and half as CGST and SGST. */
+export const evenTax = (tax: number) => 2 * Math.round(tax / 2);
+
+export function lineTotals(line: LineInput, pricesIncludeTax: boolean, taxEnabled: boolean, ratePpm = DEFAULT_TAX_RATE_PPM, even = false): LineTotals {
   const amount = Math.round((line.qtyMilli * line.unitPrice) / 1000);
   const code = taxEnabled ? line.taxCode : null;
+  const round = (t: number) => (even ? evenTax(t) : t);
   if (pricesIncludeTax) {
-    const tax = taxFromInclusive(amount, code, ratePpm);
+    const tax = round(taxFromInclusive(amount, code, ratePpm));
     return { net: amount - tax, tax, gross: amount };
   }
-  const tax = taxOnExclusive(amount, code, ratePpm);
+  const tax = round(taxOnExclusive(amount, code, ratePpm));
   return { net: amount, tax, gross: amount + tax };
 }
 

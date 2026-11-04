@@ -13,6 +13,7 @@ import {
   SegmentedControl,
   Select,
   TextField,
+  ToggleSwitch,
   toast,
 } from '@octans/ui';
 import {
@@ -33,6 +34,9 @@ import { DOCS } from '../lib/documents';
 import { formatMoney, minorDigits, parseMoney, ratePercent, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { useTabTitle } from '../lib/tabs';
+import { INVOICE_CURRENCIES, fxRateText, parseFxRate, toBooks } from '../shared/currency';
+import { EXPORT_PLACE, GST_RATE_OPTIONS, gstSplit, gstinState, placeFor } from '../shared/india';
+import { IN_STATE_OPTIONS } from '../lib/worldOptions';
 import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
 
 const route = useRoute();
@@ -45,12 +49,20 @@ interface LineForm {
   price: string;
   categoryId: number | null;
   taxCode: TaxCode | null;
+  hsn: string;
+  /** India: the line's GST rate. Null elsewhere. */
+  taxRatePpm: number | null;
 }
 
 const doc = computed(() => DOCS[route.meta.docType ?? 'invoice']);
 const isBill = computed(() => doc.value.type === 'bill');
 const books = computed(() => session.books!);
-const currency = computed(() => books.value.currency);
+// What prices are in: the books' currency unless this sale is in another.
+const currency = computed(() => form.value.currency || books.value.currency);
+const foreign = computed(() => !isBill.value && form.value.currency !== books.value.currency);
+const fxRate = computed(() => parseFxRate(form.value.fxRate));
+const currencyOptions = computed(() =>
+  [...new Set([books.value.currency, ...INVOICE_CURRENCIES, form.value.currency])].map((c) => ({ label: c, value: c })));
 const tax = computed(() => booksTax());
 const taxKind = computed(() => (isBill.value ? 'expense' : 'income'));
 // No tax on the bills side where it isn't claimed (US).
@@ -70,6 +82,8 @@ const items = ref<Item[]>([]);
 const suggested = ref('');
 
 let lineKey = 0;
+/** India: what a new line starts at. Null elsewhere, where the document has one rate. */
+const booksGstRate = () => (books.value.country === 'IN' && taxOn.value ? books.value.taxRatePpm : null);
 const blankLine = (): LineForm => ({
   key: ++lineKey,
   description: '',
@@ -77,6 +91,8 @@ const blankLine = (): LineForm => ({
   price: '',
   categoryId: defaultCategory(),
   taxCode: taxOn.value ? defaultTaxFor(defaultCategory()) : null,
+  hsn: '',
+  taxRatePpm: booksGstRate(),
 });
 
 const startTerms = (): number | 'custom' =>
@@ -96,13 +112,30 @@ const form = ref({
   pricesIncludeTax: isBill.value ? true : books.value.pricesIncludeTax,
   /** US sales: null is the books' own rate. */
   taxRateId: null as number | null,
+  currency: session.books!.currency,
+  fxRate: '',
+  /** India: a state code or EXPORT; null follows the customer. */
+  placeOfSupply: null as string | null,
+  reverseCharge: false,
+  exportMode: 'lut' as 'lut' | 'igst',
   notes: '',
   lines: [] as LineForm[],
 });
 
+// ---- India: place of supply ---------------------------------------------------------
+
+const india = computed(() => books.value.country === 'IN' && taxOn.value && !isBill.value);
+const placeOptions = [{ label: 'Outside India (export)', value: EXPORT_PLACE }, ...IN_STATE_OPTIONS];
+const place = computed(() => form.value.placeOfSupply);
+const isExport = computed(() => india.value && place.value === EXPORT_PLACE);
+const exportLut = computed(() => isExport.value && form.value.exportMode === 'lut');
+const homeState = computed(() => books.value.homeState || gstinState(books.value.taxId));
+const intraState = computed(() => india.value && gstSplit(place.value, homeState.value) === 'intra');
+
 const newCustomer = ref<string | null>(null);
 /** From a hand-off file: saved with the new customer if they add it. */
 const newCustomerAddress = ref('');
+const newCustomerDetails = ref<{ tin?: string; state?: string | null; country?: string | null }>({});
 
 function defaultCategory() {
   const usable = categories.value.filter((c) => c.kind === doc.value.categoryKind && !c.archived && c.class === 'pnl');
@@ -227,6 +260,7 @@ watch(
   () => form.value.contactId,
   (id) => {
     if (!loading.value && !existing.value && !isBill.value && !fromTouched.value) useTradingName(tradingNameFor(id));
+    if (!loading.value && !existing.value && india.value) form.value.placeOfSupply = placeFor(contactOf(id));
     if (!loading.value && !existing.value && usSale.value) {
       // New documents start at the customer's rate, and with no tax for an exempt customer.
       form.value.taxRateId = contactOf(id)?.taxRateId ?? null;
@@ -263,10 +297,13 @@ const computedLines = computed(() =>
   form.value.lines.map((l) => {
     const qtyMilli = parseQty(l.qty) ?? 0;
     const unitPrice = parseMoney(l.price, currency.value) ?? 0;
-    return { ...lineTotals({ qtyMilli, unitPrice, taxCode: l.taxCode }, form.value.pricesIncludeTax, taxOn.value, ratePpm.value), qtyMilli, unitPrice };
+    const taxCode = exportLut.value && l.taxCode === 'GST' ? 'ZER' : l.taxCode;
+    return { ...lineTotals({ qtyMilli, unitPrice, taxCode }, form.value.pricesIncludeTax, taxOn.value, l.taxRatePpm ?? ratePpm.value, intraState.value && !foreign.value), qtyMilli, unitPrice };
   }),
 );
 const totals = computed(() => sumTotals(computedLines.value));
+const inBooksCurrency = computed(() =>
+  foreign.value && fxRate.value ? formatMoney(toBooks(totals.value.gross, fxRate.value, currency.value, books.value.currency), books.value.currency) : '');
 
 function addLine() {
   form.value.lines.push(blankLine());
@@ -303,9 +340,11 @@ function addItem(id: number | null) {
   const taxCode = !taxOn.value ? null : taxOptions.value.some((t) => t.value === item.taxCode) ? item.taxCode : defaultTaxFor(categoryId);
   let price = item.unitPrice;
   if (taxOn.value && item.priceIncludesTax !== form.value.pricesIncludeTax) {
-    const rate = ratePpm.value;
+    const rate = item.taxRatePpm ?? ratePpm.value;
     price = item.priceIncludesTax ? price - taxFromInclusive(price, item.taxCode, rate) : price + taxOnExclusive(price, item.taxCode, rate);
   }
+  // Items are priced in the books' currency. Without a rate yet, the price is left to type.
+  if (foreign.value) price = fxRate.value ? toBooks(price, 1_000_000_000_000 / fxRate.value, books.value.currency, currency.value) : 0;
   const line: LineForm = {
     key: ++lineKey,
     description: item.description || item.name,
@@ -313,6 +352,8 @@ function addItem(id: number | null) {
     price: price ? toInput(price, currency.value) : '',
     categoryId,
     taxCode,
+    hsn: item.hsn ?? '',
+    taxRatePpm: item.taxRatePpm ?? booksGstRate(),
   };
   // Fill the empty line left at the bottom rather than adding below it.
   const last = form.value.lines[form.value.lines.length - 1];
@@ -328,10 +369,14 @@ async function saveAsItem(line: LineForm, i: number) {
       kind: doc.value.categoryKind,
       name,
       description: text === name ? null : text,
-      unitPrice: computedLines.value[i]?.unitPrice ?? 0,
+      unitPrice: foreign.value && fxRate.value
+        ? toBooks(computedLines.value[i]?.unitPrice ?? 0, fxRate.value, currency.value, books.value.currency)
+        : computedLines.value[i]?.unitPrice ?? 0,
       priceIncludesTax: form.value.pricesIncludeTax,
       categoryId: line.categoryId,
       taxCode: line.taxCode,
+      hsn: line.hsn || null,
+      taxRatePpm: line.taxRatePpm,
     });
     items.value = await api.listItems();
     toast({ title: `Saved “${name}”`, content: 'Pick it from “Add saved item” next time.', tone: 'success' });
@@ -344,7 +389,7 @@ async function addCustomer() {
   const name = newCustomer.value?.trim();
   if (!name) return;
   try {
-    const id = await api.saveContact({ kind: doc.value.contactKind, name, address: newCustomerAddress.value || null });
+    const id = await api.saveContact({ kind: doc.value.contactKind, name, address: newCustomerAddress.value || null, ...newCustomerDetails.value });
     customers.value = await api.listContacts();
     form.value.contactId = id;
     newCustomer.value = null;
@@ -381,6 +426,11 @@ async function save(status?: 'draft' | 'sent') {
       tradingNameId: isBill.value ? null : form.value.tradingNameId,
       pricesIncludeTax: form.value.pricesIncludeTax,
       taxRateId: usSale.value ? form.value.taxRateId : null,
+      currency: foreign.value ? form.value.currency : null,
+      fxRateMicro: foreign.value ? fxRate.value : null,
+      placeOfSupply: india.value ? form.value.placeOfSupply : null,
+      reverseCharge: india.value && form.value.reverseCharge,
+      exportMode: isExport.value ? form.value.exportMode : null,
       status,
       lines: form.value.lines.map((l, i) => ({
         description: l.description,
@@ -388,6 +438,8 @@ async function save(status?: 'draft' | 'sent') {
         unitPrice: computedLines.value[i].unitPrice,
         categoryId: l.categoryId,
         taxCode: l.taxCode,
+        hsn: l.hsn,
+        taxRatePpm: l.taxRatePpm,
       })),
     });
     const approved = status === 'sent' && existing.value?.rawStatus !== 'sent';
@@ -428,13 +480,20 @@ onMounted(async () => {
       tradingNameId: inv.tradingNameId,
       pricesIncludeTax: inv.pricesIncludeTax,
       taxRateId: inv.taxRateId,
+      currency: inv.currency ?? books.value.currency,
+      fxRate: inv.fxRateMicro ? fxRateText(inv.fxRateMicro) : '',
+      placeOfSupply: inv.placeOfSupply,
+      reverseCharge: inv.reverseCharge,
+      exportMode: inv.exportMode ?? 'lut',
       notes: inv.notes ?? '',
       lines: inv.lines.map((l) => ({
         key: ++lineKey,
         description: l.description,
         qty: String(l.qtyMilli / 1000),
-        price: toInput(l.unitPrice, currency.value),
+        price: toInput(l.unitPrice, inv.currency ?? books.value.currency),
         categoryId: l.categoryId,
+        hsn: l.hsn ?? '',
+        taxRatePpm: l.taxRatePpm ?? (books.value.country === 'IN' ? inv.taxRatePpm ?? booksGstRate() : null),
         taxCode: l.taxCode ?? (taxOn.value ? defaultTaxFor(l.categoryId) : null),
       })),
     };
@@ -469,6 +528,7 @@ async function applyHandoff(path: string) {
     else {
       newCustomer.value = h.customer.name;
       newCustomerAddress.value = h.customer.address;
+      newCustomerDetails.value = { tin: h.customer.taxId, state: h.customer.state, country: h.customer.country };
     }
     useTradingName(tradingNameFor(form.value.contactId));
     suggested.value = await api.suggestInvoiceNumber(doc.value.type, form.value.tradingNameId);
@@ -484,9 +544,12 @@ async function applyHandoff(path: string) {
     }
     form.value.reference = h.reference;
     form.value.notes = h.notes;
+    if (india.value) form.value.placeOfSupply = placeFor(contactOf(form.value.contactId) ?? h.customer);
+    if (h.currency && !isBill.value) form.value.currency = h.currency;
     const digits = minorDigits(currency.value);
     form.value.lines = h.lines.map((l) => ({
       ...blankLine(),
+      hsn: l.hsn ?? '',
       description: l.description,
       qty: String(l.quantity),
       price: toInput(Math.round(l.unitPrice * 10 ** digits), currency.value),
@@ -497,8 +560,10 @@ async function applyHandoff(path: string) {
       detail: `${h.lines.length} ${h.lines.length === 1 ? 'line' : 'lines'}, ${hours.toFixed(2).replace(/\.?0+$/, '')} hours for ${h.customer.name}.`
         + (match ? '' : ` ${h.customer.name} isn't a customer yet: add them above.`)
         + ' Check it over, then save.',
-      warning: h.currency && h.currency !== currency.value
-        ? `${h.source} priced this in ${h.currency}, but these books are in ${currency.value}. The amounts haven't been converted.`
+      warning: h.currency && h.currency !== books.value.currency
+        ? (isBill.value
+          ? `${h.source} priced this in ${h.currency}, but these books are in ${books.value.currency}. The amounts haven't been converted.`
+          : `${h.source} priced this in ${h.currency}. Enter the exchange rate before you save.`)
         : null,
     };
   } catch (e) {
@@ -567,6 +632,28 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
                 <TextField v-model="form.number" :label="doc.numberLabel" :placeholder="suggested" help-text="Leave blank to number it automatically." />
                 <TextField v-if="!isBill" v-model="form.reference" label="Reference (optional)" placeholder="e.g. PO number" />
               </FormLayoutGroup>
+              <FormLayoutGroup v-if="!isBill">
+                <Select v-model="form.currency" label="Currency" :options="currencyOptions" searchable />
+                <TextField
+                  v-if="foreign"
+                  v-model="form.fxRate"
+                  :label="`1 ${form.currency} in ${books.currency}`"
+                  align="right"
+                  placeholder="e.g. 84.25"
+                  required
+                  :help-text="inBooksCurrency ? `${inBooksCurrency} in your books` : 'Your rate on the invoice date. Your books record it at this rate.'"
+                />
+              </FormLayoutGroup>
+              <FormLayoutGroup v-if="india">
+                <Select v-model="form.placeOfSupply" label="Place of supply" :options="placeOptions" searchable placeholder="Choose" />
+                <Select
+                  v-if="isExport"
+                  v-model="form.exportMode"
+                  label="GST on this export"
+                  :options="[{ label: 'None, under a Letter of Undertaking', value: 'lut' }, { label: 'IGST paid, to claim a refund', value: 'igst' }]"
+                />
+              </FormLayoutGroup>
+              <ToggleSwitch v-if="india && !isExport" v-model="form.reverseCharge" label="Reverse charge applies" help-text="The customer pays the GST to the government. It's printed on the invoice." />
               <FormLayoutGroup>
                 <DatePicker v-model="form.issueDate" type="date" model-format="YYYY-MM-DD" :label="doc.issueLabel" required />
                 <template v-if="doc.type !== 'credit'">
@@ -631,6 +718,13 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
                     @update:model-value="(v: number | null) => onCategory(line, v)"
                   />
                   <Select v-if="taxOn" v-model="line.taxCode" :options="taxOptions" size="small" />
+                  <Select
+                    v-if="taxOn && books.country === 'IN' && line.taxCode === 'GST' && !exportLut"
+                    v-model="line.taxRatePpm"
+                    :options="GST_RATE_OPTIONS"
+                    size="small"
+                  />
+                  <TextField v-if="books.country === 'IN'" v-model="line.hsn" size="small" placeholder="HSN/SAC" />
                   <Button
                     v-if="line.description.trim()"
                     type="plain"
@@ -661,7 +755,11 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
             <dl class="Totals">
               <template v-if="taxOn">
                 <div><dt>Subtotal (ex. {{ tax?.short }})</dt><dd class="money">{{ money(totals.net) }}</dd></div>
-                <div><dt>{{ tax?.name }}</dt><dd class="money">{{ money(totals.tax) }}</dd></div>
+                <template v-if="india && intraState">
+                  <div><dt>CGST</dt><dd class="money">{{ money(Math.round(totals.tax / 2)) }}</dd></div>
+                  <div><dt>SGST</dt><dd class="money">{{ money(totals.tax - Math.round(totals.tax / 2)) }}</dd></div>
+                </template>
+                <div v-else><dt>{{ india ? 'IGST' : tax?.name }}</dt><dd class="money">{{ money(totals.tax) }}</dd></div>
               </template>
               <div class="Totals__grand"><dt>Total</dt><dd class="money">{{ money(totals.gross) }}</dd></div>
             </dl>
@@ -802,7 +900,7 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
 
 .Line__meta {
   display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 220px) auto;
+  grid-template-columns: minmax(0, 220px) minmax(0, 220px) auto auto;
   gap: 8px;
   justify-items: start;
 }

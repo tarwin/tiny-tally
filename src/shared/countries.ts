@@ -4,10 +4,12 @@
 // The country is picked when the books are made and can't change. It sets
 // the currency, the financial year, how ambiguous dates read on import, the
 // tax ID and the tax rules. Australia has GST and the BAS, New Zealand GST
-// and the GST return, and the US a flat sales tax (or none).
+// and the GST return, the US a flat sales tax (or none), and India GST split
+// by state, with zero-rated exports (india.ts).
 import type { TaxCode } from './tax';
+import { gstinError } from './india';
 
-export type Country = 'AU' | 'NZ' | 'US';
+export type Country = 'AU' | 'NZ' | 'US' | 'IN';
 
 /** How often tax returns are filed. */
 export type TaxFrequency = 'monthly' | 'two-monthly' | 'quarterly' | 'six-monthly' | 'annual';
@@ -36,7 +38,7 @@ export interface CountryTax {
   /** The ledger account the tax sits in. */
   account: string;
   /** The tax report the books prepare. */
-  report: 'bas' | 'nz-gst' | 'us-sales-tax';
+  report: 'bas' | 'nz-gst' | 'us-sales-tax' | 'in-gst';
   /** The filing frequencies on offer, and the usual one. */
   frequencies: { value: TaxFrequency; label: string; description?: string }[];
   defaultFrequency: TaxFrequency;
@@ -297,6 +299,41 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       },
     }),
   },
+  IN: {
+    code: 'IN',
+    name: 'India',
+    currency: 'INR',
+    fiscalYearStart: '04-01',
+    dateOrder: 'dmy',
+    taxId: { label: 'GSTIN', placeholder: '27AAPFU0939F1ZV', check: gstinError },
+    tax: {
+      name: 'GST',
+      short: 'GST',
+      registered: { label: 'Registered for GST', help: 'Tracks GST on sales and purchases, splits it by state, and prepares your GST summary.' },
+      // Most professional services. The rate is editable because goods and some services differ.
+      defaultRatePpm: 180_000,
+      rateEditable: true,
+      pricesIncludeTax: false,
+      spellOut: false,
+      adjustmentNote: false,
+      codes: ['GST', 'ZER', 'EXE', 'NTR'],
+      defaultCode: { sales: 'GST', purchases: 'GST' },
+      account: 'GST',
+      report: 'in-gst',
+      frequencies: [
+        { value: 'monthly', label: 'Monthly', description: 'GSTR-1 and GSTR-3B every month.' },
+        { value: 'quarterly', label: 'Quarterly (QRMP)', description: 'For smaller businesses that opted into the QRMP scheme.' },
+      ],
+      defaultFrequency: 'monthly',
+    },
+    invoiceTitle: (registered) => (registered ? 'Tax Invoice' : 'Invoice'),
+    categories: categories({
+      codes: { 'Interest Income': 'EXE', 'Bank Fees': 'GST' },
+      fallback: { income: 'GST', expense: 'GST' },
+      taxPayment: 'GST Payment',
+      taxRefund: 'GST Refund',
+    }),
+  },
   US: {
     code: 'US',
     name: 'United States',
@@ -374,7 +411,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   },
 };
 
-export const COUNTRY_OPTIONS = (['AU', 'NZ', 'US'] as Country[]).map((c) => ({ label: COUNTRIES[c].name, value: c }));
+export const COUNTRY_OPTIONS = (['AU', 'IN', 'NZ', 'US'] as Country[]).map((c) => ({ label: COUNTRIES[c].name, value: c }));
 
 export function isCountry(v: unknown): v is Country {
   return typeof v === 'string' && v in COUNTRIES;

@@ -1,5 +1,7 @@
 // Products and services: saved lines for invoices (things you sell) and
 // bills (things you buy). A document line copies what it takes from an item.
+import { TAX_CODE_MAP } from '../src/shared/tax';
+import { gstRateOr } from '../src/shared/india';
 import { all, getBooks, one, run } from './db';
 import { getSettings } from './settings';
 import { countryProfile } from '../src/shared/countries';
@@ -16,12 +18,16 @@ export interface ItemInput {
   priceIncludesTax: boolean;
   categoryId?: number | null;
   taxCode?: string | null;
+  /** India: the HSN or SAC code. */
+  hsn?: string | null;
+  /** India: its GST rate. */
+  taxRatePpm?: number | null;
 }
 
 export function listItems() {
   return all(getBooks().db,
     `SELECT i.id, i.kind, i.name, i.description, i.unit_price AS unitPrice, i.price_includes_tax AS priceIncludesTax,
-            i.category_id AS categoryId, c.name AS categoryName, i.tax_code AS taxCode, i.is_archived AS archived
+            i.category_id AS categoryId, c.name AS categoryName, i.tax_code AS taxCode, i.hsn, i.tax_rate_ppm AS taxRatePpm, i.is_archived AS archived
      FROM items i LEFT JOIN categories c ON c.id = i.category_id
      ORDER BY i.is_archived, i.name COLLATE NOCASE`,
   ).map((r: any) => ({ ...r, priceIncludesTax: !!r.priceIncludesTax, archived: !!r.archived }));
@@ -46,16 +52,18 @@ export function saveItem(input: ItemInput) {
   const taxCode = settings.taxEnabled && isTaxCode(input.taxCode)
     ? taxCodeOr(countryProfile(settings.country).tax, input.kind, input.taxCode)
     : null;
-  const fields = [input.kind, name, description, unitPrice, input.priceIncludesTax ? 1 : 0, categoryId, taxCode];
+  const hsn = settings.country === 'IN' ? String(input.hsn ?? '').trim() || null : null;
+  const taxRatePpm = settings.country === 'IN' && taxCode && TAX_CODE_MAP[taxCode].taxable ? gstRateOr(input.taxRatePpm, settings.taxRatePpm) : null;
+  const fields = [input.kind, name, description, unitPrice, input.priceIncludesTax ? 1 : 0, categoryId, taxCode, hsn, taxRatePpm];
   if (input.id) {
     run(db,
-      `UPDATE items SET kind = ?, name = ?, description = ?, unit_price = ?, price_includes_tax = ?, category_id = ?, tax_code = ?
+      `UPDATE items SET kind = ?, name = ?, description = ?, unit_price = ?, price_includes_tax = ?, category_id = ?, tax_code = ?, hsn = ?, tax_rate_ppm = ?
        WHERE id = ?`, ...fields, input.id);
     return input.id;
   }
   return one<{ id: number }>(db,
-    `INSERT INTO items (kind, name, description, unit_price, price_includes_tax, category_id, tax_code)
-     VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`, ...fields)!.id;
+    `INSERT INTO items (kind, name, description, unit_price, price_includes_tax, category_id, tax_code, hsn, tax_rate_ppm)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, ...fields)!.id;
 }
 
 export function archiveItem(id: number, archived: boolean) {

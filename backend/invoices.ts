@@ -12,7 +12,9 @@
 import { all, getBooks, one, run } from './db';
 import { changedSince } from './entries';
 import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from './settings';
-import { lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
+import { TAX_CODE_MAP, evenTax, lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
+import { carryingValue, foreignBalance, isCurrency, toBooks } from '../src/shared/currency';
+import { EXPORT_PLACE, gstNumberError, gstRateOr, gstSplit, gstinState, isInState, placeFor } from '../src/shared/india';
 import { countryProfile } from '../src/shared/countries';
 import { normaliseLayout } from '../src/shared/templateLayout';
 import { defaultTradingNameId, resolveTradingName, senderFor, snapshotOf } from './tradingNames';
@@ -41,6 +43,10 @@ export interface InvoiceLineInput {
   unitPrice: number;
   categoryId: number | null;
   taxCode: TaxCode | null;
+  /** India: the HSN or SAC code. */
+  hsn?: string | null;
+  /** India: the line's GST rate. */
+  taxRatePpm?: number | null;
 }
 
 export interface InvoiceInput {
@@ -60,6 +66,16 @@ export interface InvoiceInput {
   pricesIncludeTax: boolean;
   /** US sales: the sales tax rate (null = the books' own). Bills ignore it. */
   taxRateId?: number | null;
+  /** Sales in a foreign currency: unit prices are in it. Null or the books' own currency: not foreign. */
+  currency?: string | null;
+  /** Books' currency per one unit of it, in millionths. */
+  fxRateMicro?: number | null;
+  /** India: a GST state code, or EXPORT. Omit for the customer's own. */
+  placeOfSupply?: string | null;
+  /** India: tax on this supply is paid by the customer. */
+  reverseCharge?: boolean;
+  /** India, exports: without tax under a Letter of Undertaking, or with integrated tax. */
+  exportMode?: 'lut' | 'igst' | null;
   lines: InvoiceLineInput[];
   /** Save as draft or straight to sent. Omit to keep the current status. */
   status?: 'draft' | 'sent';
@@ -98,7 +114,7 @@ const STATUS_SQL = `
 const LIST_COLUMNS = `
   i.id, i.doc_type AS docType, i.number, i.contact_id AS contactId, ct.name AS contactName, ct.email AS contactEmail,
   i.issue_date AS issueDate, i.due_date AS dueDate, i.status AS rawStatus, i.reference, i.source_id AS sourceId,
-  i.trading_name_id AS tradingNameId, i.net, i.tax, i.total, ${PAID_SQL} AS paid, ${ALLOC_SQL} AS credited, i.total - ${SETTLED_SQL} AS balance,
+  i.trading_name_id AS tradingNameId, i.net, i.tax, i.total, i.currency, i.fc_total AS fcTotal, ${PAID_SQL} AS paid, ${ALLOC_SQL} AS credited, i.total - ${SETTLED_SQL} AS balance,
   ${STATUS_SQL} AS status`;
 
 function clean(v: unknown) {
@@ -152,22 +168,26 @@ export function getInvoice(id: number) {
     `SELECT ${LIST_COLUMNS}, i.notes, i.template_id AS templateId, i.prices_include_tax AS pricesIncludeTax, i.from_snapshot AS fromSnapshot,
             i.sent_at AS sentAt, i.schedule_id AS scheduleId, i.updated_at AS updatedAt, ct.address AS contactAddress, ct.phone AS contactPhone,
             src.number AS sourceNumber, src.doc_type AS sourceType,
-            i.tax_rate_id AS taxRateId, i.tax_rate_ppm AS taxRatePpm, tr.name AS taxRateName, ct.tax_exempt AS contactTaxExempt, ct.wht_rate_ppm AS contactWhtRatePpm, ct.tin AS contactTin, ct.is_1099 AS contactReportable
+            i.tax_rate_id AS taxRateId, i.tax_rate_ppm AS taxRatePpm, tr.name AS taxRateName, ct.tax_exempt AS contactTaxExempt, ct.wht_rate_ppm AS contactWhtRatePpm, ct.tin AS contactTin, ct.is_1099 AS contactReportable,
+            ct.state AS contactState, ct.country AS contactCountry, i.fx_rate_micro AS fxRateMicro, i.fc_net AS fcNet, i.fc_tax AS fcTax,
+            i.place_of_supply AS placeOfSupply, i.reverse_charge AS reverseCharge, i.export_mode AS exportMode
      FROM invoices i JOIN contacts ct ON ct.id = i.contact_id
      LEFT JOIN invoices src ON src.id = i.source_id
      LEFT JOIN tax_rates tr ON tr.id = i.tax_rate_id
      WHERE i.id = ?`, id);
   if (!inv) throw new Error('That document no longer exists.');
   inv.pricesIncludeTax = !!inv.pricesIncludeTax;
+  inv.reverseCharge = !!inv.reverseCharge;
   inv.sender = inv.docType === 'bill' ? null : senderFor(inv.tradingNameId, inv.fromSnapshot);
   delete inv.fromSnapshot;
   inv.lines = all(db,
     `SELECT l.id, l.description, l.qty_milli AS qtyMilli, l.unit_price AS unitPrice, l.category_id AS categoryId,
-            c.name AS categoryName, l.tax_code AS taxCode, l.net, l.tax
+            c.name AS categoryName, l.tax_code AS taxCode, l.net, l.tax, l.hsn, l.tax_rate_ppm AS taxRatePpm, l.fc_net AS fcNet, l.fc_tax AS fcTax
      FROM invoice_lines l LEFT JOIN categories c ON c.id = l.category_id
      WHERE l.invoice_id = ? ORDER BY l.sort, l.id`, id);
   inv.payments = all(db,
-    `SELECT e.id, e.date, e.amount, e.memo, e.account_id AS accountId, a.name AS accountName
+    `SELECT e.id, e.date, e.amount, e.memo, e.account_id AS accountId, a.name AS accountName,
+            COALESCE((SELECT SUM(CASE x.kind WHEN 'income' THEN x.amount ELSE -x.amount END) FROM entries x WHERE x.fx_of = e.id), 0) AS fxGain
      FROM entries e JOIN accounts a ON a.id = e.account_id
      WHERE e.invoice_id = ? ORDER BY e.date, e.id`, id);
   // Credit notes used against this invoice, or invoices this credit note was used on.
@@ -244,6 +264,11 @@ function settledOn(id: number) {
 
 const money = (c: number) => (c / 100).toFixed(2);
 
+/** India: the books' GST state, set in Settings or read from the GSTIN. */
+function homeStateOf(settings: BooksSettings) {
+  return settings.homeState || gstinState(settings.taxId);
+}
+
 export function saveInvoice(input: InvoiceInput) {
   const { db } = getBooks();
   const settings = getSettings();
@@ -273,6 +298,21 @@ export function saveInvoice(input: InvoiceInput) {
   if (!lines.length) throw new Error('Add at least one line.');
 
   const kind = DOC[type].categoryKind;
+  // A sale can be in a foreign currency: unit prices are in it, the totals in the books' own.
+  const foreign = type !== 'bill' && isCurrency(input.currency) && input.currency !== settings.currency ? input.currency : null;
+  const fxRate = foreign ? Math.round(Number(input.fxRateMicro)) : null;
+  if (foreign && !(fxRate! > 0)) throw new Error(`Enter the exchange rate for ${foreign}.`);
+  const inBooks = (minor: number) => (foreign ? toBooks(minor, fxRate!, foreign, settings.currency) : minor);
+  // India: where it's supplied decides CGST + SGST or IGST, and exports can go without tax.
+  const india = settings.country === 'IN' && settings.taxEnabled && type !== 'bill';
+  const customer = india ? one<any>(db, 'SELECT state, country FROM contacts WHERE id = ?', input.contactId) : null;
+  const place = india ? clean(input.placeOfSupply) ?? placeFor(customer) : null;
+  if (place && place !== EXPORT_PLACE && !isInState(place)) throw new Error('Choose the place of supply.');
+  if (india && type !== 'quote' && status === 'sent' && !place) {
+    throw new Error(`Choose the place of supply before approving this ${word}: add the customer's state, or pick it here.`);
+  }
+  const exportMode = place === EXPORT_PLACE ? (input.exportMode === 'igst' ? 'igst' : 'lut') : null;
+  const even = india && gstSplit(place, homeStateOf(settings)) === 'intra';
   // US sales can be at one of several rates. A document keeps the rate it was
   // worked out at while it stays on the same one, even if the rate changes later.
   const usSale = settings.country === 'US' && type !== 'bill';
@@ -292,12 +332,24 @@ export function saveInvoice(input: InvoiceInput) {
       categoryId = cat.id;
     }
     if (categoryId === null) throw new Error(`Line ${i + 1}: choose an ${kind} category.`);
-    const taxCode: TaxCode | null = settings.taxEnabled ? taxCodeOr(countryProfile(settings.country).tax, kind, l.taxCode) : null;
-    const t = lineTotals({ qtyMilli, unitPrice, taxCode }, !!input.pricesIncludeTax, settings.taxEnabled, rate.ppm);
-    return { description: clean(l.description) ?? '', qtyMilli, unitPrice, categoryId, taxCode, ...t, sort: i };
+    let taxCode: TaxCode | null = settings.taxEnabled ? taxCodeOr(countryProfile(settings.country).tax, kind, l.taxCode) : null;
+    // An export under a Letter of Undertaking carries no tax.
+    if (exportMode === 'lut' && taxCode === 'GST') taxCode = 'ZER';
+    const hsn = settings.country === 'IN' ? clean(l.hsn) : null;
+    if (hsn && !/^\d{4,8}$/.test(hsn)) throw new Error(`Line ${i + 1}: an HSN or SAC code is 4 to 8 digits.`);
+    // India taxes per line, at the rate of the goods or service. Everywhere else the document has one rate.
+    const taxRatePpm = settings.country === 'IN' && taxCode && TAX_CODE_MAP[taxCode].taxable ? gstRateOr(l.taxRatePpm, rate.ppm) : null;
+    const t = lineTotals({ qtyMilli, unitPrice, taxCode }, !!input.pricesIncludeTax, settings.taxEnabled, taxRatePpm ?? rate.ppm, even && !foreign);
+    if (!foreign) return { description: clean(l.description) ?? '', qtyMilli, unitPrice, categoryId, taxCode, hsn, taxRatePpm, ...t, fcNet: null as number | null, fcTax: null as number | null, sort: i };
+    const net = inBooks(t.net);
+    const tax = even ? evenTax(inBooks(t.tax)) : inBooks(t.tax);
+    return { description: clean(l.description) ?? '', qtyMilli, unitPrice, categoryId, taxCode, hsn, taxRatePpm, net, tax, gross: net + tax, fcNet: t.net as number | null, fcTax: t.tax as number | null, sort: i };
   });
   const totals = sumTotals(computed);
   if (totals.gross <= 0) throw new Error(`The ${word} total must be more than zero.`);
+  const fcNet = foreign ? computed.reduce((s, l) => s + l.fcNet!, 0) : null;
+  const fcTax = foreign ? computed.reduce((s, l) => s + l.fcTax!, 0) : null;
+  const fcTotal = foreign ? fcNet! + fcTax! : null;
 
   if (existing) {
     const { settled } = settledOn(existing.id);
@@ -305,6 +357,9 @@ export function saveInvoice(input: InvoiceInput) {
       throw new Error(`${money(settled)} has already been ${type === 'credit' ? 'used' : 'paid'}, which is more than the new total.`);
     }
     if (settled > 0 && status === 'draft') throw new Error(`A ${word} with payments can't go back to draft.`);
+    if (settled > 0 && ((existing.currency ?? null) !== foreign || (existing.fx_rate_micro ?? null) !== fxRate)) {
+      throw new Error(`This ${word} has payments, so its currency and exchange rate can't change.`);
+    }
   }
 
   let number = clean(input.number);
@@ -320,6 +375,11 @@ export function saveInvoice(input: InvoiceInput) {
     ? input.sourceId
     : null;
   const tradingNameId = type === 'bill' ? null : resolveTradingName(input.tradingNameId, input.contactId, existing?.trading_name_id);
+  if (india && type !== 'quote') {
+    const problem = gstNumberError(number ?? existing?.number ?? suggestNumber(type, tradingNameId));
+    if (problem) throw new Error(problem);
+  }
+  const reverseCharge = india && input.reverseCharge ? 1 : 0;
   // A draft moved to a trading name with its own numbering takes a number from
   // that run, unless its number was typed by hand.
   const renumber = !!existing && existing.status === 'draft' && type !== 'bill'
@@ -338,13 +398,14 @@ export function saveInvoice(input: InvoiceInput) {
       run(db,
         `UPDATE invoices SET number = ?, contact_id = ?, issue_date = ?, due_date = ?, status = ?, reference = ?, notes = ?,
            template_id = ?, trading_name_id = ?, from_snapshot = ?, prices_include_tax = ?, net = ?, tax = ?, total = ?,
-           tax_rate_id = ?, tax_rate_ppm = ?,
+           tax_rate_id = ?, tax_rate_ppm = ?, currency = ?, fx_rate_micro = ?, fc_net = ?, fc_tax = ?, fc_total = ?,
+           place_of_supply = ?, reverse_charge = ?, export_mode = ?,
            sent_at = CASE WHEN ? = 'sent' AND sent_at IS NULL THEN datetime('now') ELSE sent_at END,
            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id = ?`,
         renumber ? nextNumber(type, tradingNameId) : number ?? existing.number, input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
         clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross,
-        rate.id, usSale ? rate.ppm : null, status, id);
+        rate.id, usSale || india ? rate.ppm : null, foreign, fxRate, fcNet, fcTax, fcTotal, place, reverseCharge, exportMode, status, id);
       run(db, 'DELETE FROM invoice_lines WHERE invoice_id = ?', id);
       // Payments' GST share follows the new total.
       run(db, 'UPDATE entries SET tax_amount = CAST(ROUND(1.0 * amount * ? / ?) AS INTEGER) WHERE invoice_id = ?',
@@ -352,17 +413,18 @@ export function saveInvoice(input: InvoiceInput) {
     } else {
       id = one<{ id: number }>(db,
         `INSERT INTO invoices (doc_type, number, contact_id, issue_date, due_date, status, reference, notes, template_id,
-           trading_name_id, from_snapshot, prices_include_tax, net, tax, total, tax_rate_id, tax_rate_ppm, sent_at, source_id, schedule_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'sent' THEN datetime('now') END, ?, ?) RETURNING id`,
+           trading_name_id, from_snapshot, prices_include_tax, net, tax, total, tax_rate_id, tax_rate_ppm,
+           currency, fx_rate_micro, fc_net, fc_tax, fc_total, place_of_supply, reverse_charge, export_mode, sent_at, source_id, schedule_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'sent' THEN datetime('now') END, ?, ?) RETURNING id`,
         type, number ?? nextNumber(type, tradingNameId), input.contactId, input.issueDate, input.dueDate, status, clean(input.reference),
         clean(input.notes), templateId, tradingNameId, snapshot, input.pricesIncludeTax ? 1 : 0, totals.net, totals.tax, totals.gross,
-        rate.id, usSale ? rate.ppm : null, status,
+        rate.id, usSale || india ? rate.ppm : null, foreign, fxRate, fcNet, fcTax, fcTotal, place, reverseCharge, exportMode, status,
         sourceId, typeof input.scheduleId === 'number' ? input.scheduleId : null)!.id;
     }
     const ins = db.prepare(
-      `INSERT INTO invoice_lines (invoice_id, sort, description, qty_milli, unit_price, category_id, tax_code, net, tax)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const l of computed) ins.run(id, l.sort, l.description, l.qtyMilli, l.unitPrice, l.categoryId, l.taxCode, l.net, l.tax);
+      `INSERT INTO invoice_lines (invoice_id, sort, description, qty_milli, unit_price, category_id, tax_code, net, tax, hsn, tax_rate_ppm, fc_net, fc_tax)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const l of computed) ins.run(id, l.sort, l.description, l.qtyMilli, l.unitPrice, l.categoryId, l.taxCode, l.net, l.tax, l.hsn, l.taxRatePpm, l.fcNet, l.fcTax);
     ins.finalize();
   })();
   return id!;
@@ -434,6 +496,11 @@ function copyDocument(id: number, today: string, as?: DocType, link = false) {
     tradingNameId: inv.tradingNameId,
     pricesIncludeTax: inv.pricesIncludeTax,
     taxRateId: inv.taxRateId,
+    currency: inv.currency,
+    fxRateMicro: inv.fxRateMicro,
+    placeOfSupply: inv.placeOfSupply,
+    reverseCharge: inv.reverseCharge,
+    exportMode: inv.exportMode,
     lines: inv.lines,
     status: 'draft',
     sourceId: link ? inv.id : null,
@@ -488,7 +555,28 @@ export function holdingAccount(holds: Holding, create = true) {
     HOLDING_NAME[holds], holds)!.id;
 }
 
-export function recordPayment(p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null; withheld?: number | null }) {
+/** The categories exchange differences go to, made the first time they're needed. */
+function exchangeCategory(kind: 'income' | 'expense') {
+  const { db } = getBooks();
+  const name = kind === 'income' ? 'Exchange Gains' : 'Exchange Losses';
+  const found = one<{ id: number }>(db, 'SELECT id FROM categories WHERE name = ? AND kind = ?', name, kind);
+  if (found) return found.id;
+  const { country, taxEnabled } = getSettings();
+  const line = country === 'AU' ? `au-other-${kind === 'income' ? 'income' : 'expenses'}` : country === 'NZ' ? `nz-other-${kind === 'income' ? 'income' : 'expenses'}` : null;
+  return one<{ id: number }>(db,
+    `INSERT INTO categories (name, kind, class, tax_code, report_line, sort)
+     VALUES (?, ?, 'pnl', ?, ?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM categories)) RETURNING id`,
+    name, kind, taxEnabled && countryProfile(country).tax?.codes.includes('NTR') ? 'NTR' : null, line)!.id;
+}
+
+/**
+ * Recording a payment. On a foreign-currency invoice `amount` is in its
+ * currency and `received` is what landed in the books' currency. The payment
+ * clears the invoice at the rate it was issued at; any difference goes beside
+ * it as an exchange gain or loss, in the same account, so the bank is right
+ * and the invoice's income and GST don't move.
+ */
+export function recordPayment(p: { invoiceId: number; date: string; amount: number; accountId: number; memo?: string | null; withheld?: number | null; received?: number | null }) {
   const { db } = getBooks();
   const inv = one<any>(db, 'SELECT * FROM invoices WHERE id = ?', p.invoiceId);
   if (!inv) throw new Error('That document no longer exists.');
@@ -497,14 +585,21 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
   if (inv.status === 'void') throw new Error(`You can't record a payment on a void ${DOC[type].name}.`);
   if (!DATE.test(String(p.date))) throw new Error('Pick the date the money moved.');
   assertUnlocked(p.date);
-  const amount = Math.round(Number(p.amount));
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+  const entered = Math.round(Number(p.amount));
+  if (!Number.isFinite(entered) || entered <= 0) throw new Error('Enter an amount greater than zero.');
   const balance = inv.total - settledOn(inv.id).settled;
+  const fxPayment = type === 'invoice' && !!inv.currency;
+  const doc = { total: inv.total, fcTotal: inv.fc_total, balance };
+  if (fxPayment && entered > foreignBalance(doc)) throw new Error(`That's more than the ${money(foreignBalance(doc))} ${inv.currency} still owing.`);
+  const amount = fxPayment ? carryingValue(entered, doc) : entered;
+  const received = fxPayment ? Math.round(Number(p.received)) : amount;
+  if (!Number.isFinite(received) || received <= 0) throw new Error(`Enter what landed in ${getSettings().currency}.`);
+  if (fxPayment && p.withheld) throw new Error("Tax withheld isn't available on foreign-currency invoices yet.");
   const withheld = Math.round(Number(p.withheld ?? 0));
   if (!Number.isFinite(withheld) || withheld < 0) throw new Error('Enter the tax withheld, or leave it empty.');
   const country = getSettings().country;
-  const holds: Holding | null = type === 'invoice' && country === 'NZ' ? 'client-wht' : type === 'bill' && country === 'AU' ? 'no-abn' : null;
-  if (withheld && !holds) throw new Error('Tax withheld is only for New Zealand invoices and Australian bills.');
+  const holds: Holding | null = type === 'invoice' && (country === 'NZ' || country === 'IN') ? 'client-wht' : type === 'bill' && country === 'AU' ? 'no-abn' : null;
+  if (withheld && !holds) throw new Error('Tax withheld is only for New Zealand and Indian invoices and Australian bills.');
   if (amount + withheld > balance) {
     throw new Error(`That's more than the ${money(balance)} ${type === 'credit' ? 'left on this credit note' : 'still owing'}.`);
   }
@@ -527,8 +622,17 @@ export function recordPayment(p: { invoiceId: number; date: string; amount: numb
       run(db,
         `INSERT INTO entries (date, kind, amount, account_id, contact_id, memo, invoice_id, tax_amount)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        p.date, kind, withheld, holdingAccount(holds), inv.contact_id, holds === 'no-abn' ? 'No-ABN tax withheld (47%)' : 'Tax withheld',
+        p.date, kind, withheld, holdingAccount(holds), inv.contact_id, holds === 'no-abn' ? 'No-ABN tax withheld (47%)' : country === 'IN' ? 'TDS' : 'Tax withheld',
         inv.id, Math.round((withheld * inv.tax) / inv.total));
+    }
+    const difference = received - amount;
+    if (difference) {
+      const fxKind = difference > 0 ? 'income' : 'expense';
+      run(db,
+        `INSERT INTO entries (date, kind, amount, account_id, category_id, contact_id, memo, tax_code, tax_amount, fx_of)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+        p.date, fxKind, Math.abs(difference), account.id, exchangeCategory(fxKind), inv.contact_id,
+        `Exchange ${difference > 0 ? 'gain' : 'loss'} on ${inv.number}`, getSettings().taxEnabled && countryProfile(country).tax?.codes.includes('NTR') ? 'NTR' : null, id);
     }
   })();
   return id!;
@@ -539,8 +643,11 @@ export function deletePayment(entryId: number) {
   const e = one<any>(db, 'SELECT * FROM entries WHERE id = ? AND invoice_id IS NOT NULL', entryId);
   if (!e) return true;
   assertUnlocked(e.date);
-  if (e.rec_id) throw new Error('This payment has been reconciled. Undo the reconciliation first.');
-  run(db, 'DELETE FROM entries WHERE id = ?', entryId);
+  if (e.rec_id || one(db, 'SELECT id FROM entries WHERE fx_of = ? AND rec_id IS NOT NULL', entryId)) throw new Error('This payment has been reconciled. Undo the reconciliation first.');
+  db.transaction(() => {
+    run(db, 'DELETE FROM entries WHERE fx_of = ?', entryId);
+    run(db, 'DELETE FROM entries WHERE id = ?', entryId);
+  })();
   return true;
 }
 
@@ -554,6 +661,7 @@ export function applyCredit(p: { creditId: number; invoiceId: number; amount: nu
   if (credit.status !== 'sent') throw new Error('Approve the credit note first.');
   if (inv.status !== 'sent') throw new Error('The invoice must be approved.');
   if (credit.contact_id !== inv.contact_id) throw new Error('The credit note and invoice are for different customers.');
+  if ((credit.currency ?? null) !== (inv.currency ?? null)) throw new Error('The credit note and invoice are in different currencies.');
   if (!DATE.test(String(p.date))) throw new Error('Pick a date.');
   assertUnlocked(p.date);
   const amount = Math.round(Number(p.amount));

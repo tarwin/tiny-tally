@@ -18,7 +18,9 @@ const books = computed(() => session.books!);
 const taxNote = computed(() => {
   const tax = booksProfile().tax;
   if (!tax) return '';
-  return tax.report === 'bas'
+  return tax.report === 'in-gst'
+    ? "GST is what you've collected less your input tax credit and what you've paid."
+    : tax.report === 'bas'
     ? "GST is what you've collected less what you've claimed and paid the ATO."
     : `${tax.account} is what you've collected less what you've paid the state.`;
 });

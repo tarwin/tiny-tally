@@ -7,9 +7,12 @@
 //       client that withholds tax (schedular payments)
 //   US  Cedar & Finch Studio, Portland: no sales tax (Oregon has none),
 //       quarterly estimated tax, a 1099 contractor
+//   IN  Chai & Ink Studio, Pune: GST monthly, customers in and out of the state,
+//       exports in dollars and pounds under a Letter of Undertaking with exchange
+//       gains and losses, a client that deducts TDS, advance tax
 //
-// Each also has car trips, an asset register with depreciation posted, and
-// returns lodged for the last full year.
+// Each has returns lodged for the last full year. All but India also have car
+// trips and an asset register with depreciation posted.
 import { all, getBooks, one, run } from './db';
 import { saveContact, saveEntry } from './entries';
 import {
@@ -40,6 +43,7 @@ export const DEMO_NAMES: Record<Country, string> = {
   AU: 'Harbour & Pine Studio (Demo)',
   NZ: 'Kōwhai Lane Design (Demo)',
   US: 'Cedar & Finch Studio (Demo)',
+  IN: 'Chai & Ink Studio (Demo)',
 };
 export const DEMO_NAME = DEMO_NAMES.AU;
 
@@ -48,6 +52,7 @@ export const DEMO_SETUP: Record<Country, { country: Country; fiscalYearStart: st
   AU: { country: 'AU', fiscalYearStart: '07-01', taxEnabled: true },
   NZ: { country: 'NZ', fiscalYearStart: '04-01', taxEnabled: true },
   US: { country: 'US', fiscalYearStart: '01-01', taxEnabled: false },
+  IN: { country: 'IN', fiscalYearStart: '04-01', taxEnabled: true },
 };
 
 interface Spec {
@@ -67,8 +72,15 @@ interface Spec {
   tradingName: { name: string; address: string; email: string; phone: string; bank: string };
   sideLine: { name: string; email: string; bank: string };
   abroadWork: string;
-  trip: { places: string[]; distance: [number, number]; vehicle: string };
-  asset: { name: string; cost: number; method: 'pool' | 'dv' | 'macrs5'; lifeYears?: number; ratePct?: number };
+  /** null: the country's income tax rules for these aren't in yet. */
+  trip: { places: string[]; distance: [number, number]; vehicle: string } | null;
+  asset: { name: string; cost: number; method: 'pool' | 'dv' | 'macrs5'; lifeYears?: number; ratePct?: number } | null;
+  /** What the shared amounts are multiplied by, for a currency worth much less. */
+  scale?: number;
+  /** A customer's GST or tax details. */
+  customerDetails?: Partial<Record<keyof Spec['customers'], Record<string, unknown>>>;
+  /** India: the SAC on every line. */
+  sac?: string;
 }
 
 const SPECS: Record<Country, Spec> = {
@@ -156,6 +168,46 @@ const SPECS: Record<Country, Spec> = {
     trip: { places: ['Division St', 'NW Everett', 'Dundee', 'Downtown', 'Beaverton'], distance: [40, 900], vehicle: 'RAV4' },
     asset: { name: 'MacBook Pro', cost: 349_900, method: 'macrs5' },
   },
+  IN: {
+    fyMonth: 4,
+    // A widely published sample GSTIN, with made-up ones for the customers.
+    settings: { taxId: '27AAPFU0939F1ZV', invoicePrefix: 'CI-', pricesIncludeTax: false, taxPeriod: 'monthly', taxBasis: 'accrual', lutNumber: 'AD270000000000X' },
+    sale: 'GST', exportCode: 'ZER', equipmentCode: 'GST', equipment: 'Equipment',
+    taxPayment: 'GST Payment', taxRefund: 'GST Refund',
+    template: { accent: '#c2410c', title: 'Tax Invoice', showTaxColumn: true },
+    customers: {
+      bakery: ['Koregaon Bake House', 'accounts@koregaonbake.example', '14 Lane 5, Koregaon Park\nPune 411001'],
+      physio: ['Deccan Physio Clinic', 'admin@deccanphysio.example', '120 FC Road\nPune 411004'],
+      wines: ['Sahyadri Vineyards', 'hello@sahyadri.example', '9 Gangapur Road\nNashik 422013'],
+      arch: ['Lumen Architects', 'studio@lumenarch.example', '77 Indiranagar 100 Feet Road\nBengaluru 560038'],
+      festival: ['Konkan Arts Festival', 'finance@konkanarts.example', '12 Fontainhas\nPanaji 403001'],
+      abroad: ['Redwood Trails Inc', 'ap@redwoodtrails.example', '22 Water St\nPortland, OR 97209'],
+    },
+    customerDetails: {
+      bakery: { state: '27', tin: '27AAPFU0939F2ZU' },
+      physio: { state: '27' },
+      wines: { state: '27', tin: '27AAPFU0939F3ZT' },
+      arch: { state: '29', tin: '29AAPFU0939F1ZR' },
+      // Deducts 10% TDS from what it pays.
+      festival: { state: '30', tin: '30AAPFU0939F1Z8', whtRatePpm: 100_000 },
+      abroad: { country: 'US' },
+    },
+    vendors: {
+      cowork: 'Baner Coworking', pixel: 'Pixelworks Software', cloud: 'Cloudnest Hosting', telco: 'Sahyadri Mobile',
+      office: 'Laxmi Road Stationers', insure: 'Greenline Insurance', illo: 'Meera Joshi Illustration', cafe: 'Corner Chai',
+      print: 'Inkwell Printers Pune', tech: 'Tech Bazaar', accountant: 'Ledger & Co Chartered Accountants', air: 'Skyway Airlines',
+    },
+    tradingName: {
+      name: 'Chai & Ink Studio', address: '18 Example Lane, Baner\nPune 411045', email: 'hello@chaiink.example',
+      phone: '020 0000 0000', bank: 'Chai & Ink Studio · IFSC HDFC0000000 · A/C 000000000000 · SWIFT HDFCINBB',
+    },
+    sideLine: { name: 'Ink Trail Maps', email: 'maps@chaiink.example', bank: 'Ink Trail Maps · IFSC HDFC0000000 · A/C 000000000001 · SWIFT HDFCINBB' },
+    abroadWork: 'Trail map illustration (export of services)',
+    trip: null,
+    asset: null,
+    scale: 15,
+    sac: '998391',
+  },
 };
 
 // Small deterministic PRNG so the demo is the same every time.
@@ -183,6 +235,8 @@ const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTC
 export function seedDemo(today: string, country: Country = 'AU') {
   const { db } = getBooks();
   const S = SPECS[country];
+  // The shared amounts, in this country's money.
+  const M = (n: number) => n * (S.scale ?? 1);
   const r = rng(20250701);
   const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)];
   const between = (lo: number, hi: number) => Math.round(lo + r() * (hi - lo));
@@ -197,18 +251,19 @@ export function seedDemo(today: string, country: Country = 'AU') {
 
   // ---- accounts --------------------------------------------------------------
   const first = one<{ id: number }>(db, 'SELECT id FROM accounts ORDER BY id LIMIT 1')!;
-  run(db, 'UPDATE accounts SET name = ?, opening_balance = 1845000, opening_date = ? WHERE id = ?',
-    country === 'US' ? 'Business Checking' : 'Everyday Business', start, first.id);
+  run(db, 'UPDATE accounts SET name = ?, opening_balance = ?, opening_date = ? WHERE id = ?',
+    country === 'US' ? 'Business Checking' : 'Everyday Business', M(1845000), start, first.id);
   const bank = first.id;
   const savings = one<{ id: number }>(db,
-    "INSERT INTO accounts (name, kind, opening_balance, opening_date, sort) VALUES ('Tax Savings', 'bank', 600000, ?, 1) RETURNING id", start)!.id;
+    "INSERT INTO accounts (name, kind, opening_balance, opening_date, sort) VALUES ('Tax Savings', 'bank', ?, ?, 1) RETURNING id", M(600000), start)!.id;
   const card = one<{ id: number }>(db,
-    "INSERT INTO accounts (name, kind, opening_balance, opening_date, sort) VALUES ('Business Visa', 'credit_card', -124000, ?, 2) RETURNING id", start)!.id;
+    "INSERT INTO accounts (name, kind, opening_balance, opening_date, sort) VALUES ('Business Visa', 'credit_card', ?, ?, 2) RETURNING id", M(-124000), start)!.id;
 
   // ---- categories ------------------------------------------------------------
   const cat = (name: string) => one<{ id: number }>(db, 'SELECT id FROM categories WHERE name = ?', name)?.id ?? 0;
   const lineFor = (kind: 'income' | 'expense') =>
-    country === 'AU' ? (kind === 'income' ? 'au-other-income' : 'au-purchases')
+    country === 'IN' ? null
+    : country === 'AU' ? (kind === 'income' ? 'au-other-income' : 'au-purchases')
     : country === 'NZ' ? (kind === 'income' ? 'nz-sales' : 'nz-purchases')
     : (kind === 'income' ? 'gross-receipts' : 'supplies');
   run(db, 'INSERT INTO categories (name, kind, tax_code, report_line) VALUES (?, ?, ?, ?)', 'Design Services', 'income', S.sale ?? 'NON', lineFor('income'));
@@ -226,7 +281,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
 
   // ---- products and services ----------------------------------------------------
   const item = (kind: 'income' | 'expense', name: string, unitPrice: number, categoryId: number, description?: string) =>
-    saveItem({ kind, name, description, unitPrice, priceIncludesTax: kind === 'expense' && !!S.sale, categoryId, taxCode: (S.sale ?? (kind === 'income' ? 'NON' : 'NTR')) as any });
+    saveItem({ kind, name, description, unitPrice: M(unitPrice), priceIncludesTax: kind === 'expense' && !!S.sale, categoryId, taxCode: (S.sale ?? (kind === 'income' ? 'NON' : 'NTR')) as any, hsn: S.sac });
   item('income', 'Design work (per hour)', 15000, C.design, 'Design and artwork, per hour');
   item('income', 'Logo & brand identity', 320000, C.design, 'Logo design and brand identity: concepts, two rounds of changes, final files');
   item('income', 'Social media design (monthly)', 90000, C.design, 'Monthly social media design');
@@ -234,20 +289,29 @@ export function seedDemo(today: string, country: Country = 'AU') {
   item('income', 'Rush fee', 25000, C.design, 'Rush fee for a turnaround under 48 hours');
   item('expense', 'Business cards (250)', 9900, C.printing);
   item('expense', 'Illustration (per hour)', 11000, C.contractors);
+  if (country === 'IN') saveItem({ kind: 'income', name: 'Printed brochures (500)', unitPrice: M(22000), priceIncludesTax: false, categoryId: C.design, taxCode: 'GST', hsn: '4901', taxRatePpm: 50_000 });
 
   // ---- contacts ----------------------------------------------------------------
   const customer = ([name, email, address]: [string, string, string], extra: Record<string, unknown> = {}) =>
     saveContact({ kind: 'customer', name, email, address, ...extra });
   const vendor = (name: string, extra: Record<string, unknown> = {}) => saveContact({ kind: 'vendor', name, ...extra });
   const customers = {
-    bakery: customer(S.customers.bakery),
-    physio: customer(S.customers.physio),
-    wines: customer(S.customers.wines),
-    arch: customer(S.customers.arch),
+    bakery: customer(S.customers.bakery, S.customerDetails?.bakery),
+    physio: customer(S.customers.physio, S.customerDetails?.physio),
+    wines: customer(S.customers.wines, S.customerDetails?.wines),
+    arch: customer(S.customers.arch, S.customerDetails?.arch),
     // NZ: a production company that takes 20% withholding tax off what it pays (schedular payments).
-    festival: customer(S.customers.festival, country === 'NZ' ? { whtRatePpm: 200_000 } : {}),
-    abroad: customer(S.customers.abroad),
+    festival: customer(S.customers.festival, country === 'NZ' ? { whtRatePpm: 200_000 } : S.customerDetails?.festival),
+    abroad: customer(S.customers.abroad, S.customerDetails?.abroad),
   };
+  // India's exports are billed in the customer's currency, around these rates.
+  const overseas = country === 'IN'
+    ? [
+        { contactId: customers.abroad, currency: 'USD', rate: 86, price: [180000, 260000] },
+        { contactId: customer(['Thames Maps Ltd', 'accounts@thamesmaps.example', '8 Wharf Road\nLondon N1 7GR'], { country: 'GB' }), currency: 'GBP', rate: 113, price: [90000, 150000] },
+      ]
+    : null;
+  let overseasTurn = 0;
   const V = Object.fromEntries(Object.entries(S.vendors).map(([k, name]) => [k,
     // US: the illustrator gets a 1099-NEC.
     k === 'illo' && country === 'US'
@@ -284,22 +348,23 @@ export function seedDemo(today: string, country: Country = 'AU') {
   });
   run(db, 'UPDATE contacts SET trading_name_id = ? WHERE id = ?', maps, customers.abroad);
 
-  const spend = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; taxCode?: any } = {}) => {
+  // `exact`: already worked out in this country's money.
+  const spend = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; taxCode?: any; exact?: boolean } = {}) => {
     if (date > today || !categoryId) return 0;
-    return saveEntry({ date, kind: 'expense', amount, accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null, taxCode: opts.taxCode ?? null });
+    return saveEntry({ date, kind: 'expense', amount: opts.exact ? amount : M(amount), accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null, taxCode: opts.taxCode ?? null });
   };
-  const earn = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string } = {}) => {
+  const earn = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; exact?: boolean } = {}) => {
     if (date > today || !categoryId) return;
-    saveEntry({ date, kind: 'income', amount, accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null });
+    saveEntry({ date, kind: 'income', amount: opts.exact ? amount : M(amount), accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null });
   };
   const transfer = (date: string, amount: number, from: number, to: number, memo: string) => {
     if (date > today || amount <= 0) return;
-    saveEntry({ date, kind: 'transfer', amount, accountId: from, toAccountId: to, memo });
+    saveEntry({ date, kind: 'transfer', amount: M(amount), accountId: from, toAccountId: to, memo });
   };
 
   // ---- month by month -------------------------------------------------------------
   const sale = S.sale as any;
-  const jobs = [
+  const jobs: { c: number; items: any[][] }[] = [
     { c: customers.bakery, items: [['Packaging refresh', 1, 180000], ['Shelf wobblers & signage', 1, 65000]] },
     { c: customers.physio, items: [['Website design: home + 4 pages', 1, 320000]] },
     { c: customers.physio, items: [['Monthly social media design', 1, 90000]] },
@@ -308,11 +373,13 @@ export function seedDemo(today: string, country: Country = 'AU') {
     { c: customers.festival, items: [['Festival poster series', 1, 240000], ['Social tiles (set of 12)', 1, 60000]] },
     { c: customers.arch, items: [['Design hours', 8, 14000]] },
     { c: customers.bakery, items: [['Menu boards', 1, 78000]] },
+    // India: brochures are goods at 5% (HSN 4901), on the same invoice as design at 18%.
+    ...(country === 'IN' ? [{ c: customers.bakery, items: [['Brochure design', 1, 45000], ['Printed brochures (500)', 1, 22000, 50_000, '4901']] }] : []),
   ];
 
   let cardSpend = 124000; // the opening balance owed
   let assetEntry: { id: number; date: string; amount: number } | null = null;
-  const invoiceIds: { id: number; issue: string; total: number; contactId: number }[] = [];
+  const invoiceIds: { id: number; issue: string; total: number; contactId: number; fcTotal?: number }[] = [];
   for (let y = startYear, m = S.fyMonth; ymd(y, m, 1) <= today; m === 12 ? ((m = 1), y++) : m++) {
     const dim = daysInMonth(y, m);
     const day = (d: number) => ymd(y, m, Math.min(d, dim));
@@ -330,7 +397,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
     // Yearly
     if (monthOfYear === 1) spend(day(8), 132000, C.insurance, { contactId: V.insure, memo: 'Professional indemnity + public liability' });
     if (monthOfYear === 2) spend(day(14), 4400, C.licences, { memo: 'Business name renewal' });
-    if (monthOfYear === 3 && firstYear) {
+    if (monthOfYear === 3 && firstYear && S.asset) {
       // The big purchase of the year, which goes in the asset register.
       const amount = S.sale ? Math.round(S.asset.cost * (country === 'AU' ? 1.1 : 1.15)) : S.asset.cost;
       const id = spend(day(18), amount, C.equipment, { account: card, contactId: V.tech, memo: S.asset.name, taxCode: S.equipmentCode });
@@ -343,7 +410,11 @@ export function seedDemo(today: string, country: Country = 'AU') {
     // Variable costs
     for (let i = 0, n = between(2, 4); i < n; i++) {
       const amt = between(1800, 9500);
-      spend(day(between(2, 27)), amt, C.meals, { account: card, contactId: V.cafe, memo: pick(['Client coffee', 'Team lunch', 'Workshop catering']) });
+      spend(day(between(2, 27)), amt, C.meals, {
+        account: card, contactId: V.cafe, memo: pick(['Client coffee', 'Team lunch', 'Workshop catering']),
+        // India: no credit is claimed on food and drink.
+        taxCode: country === 'IN' ? 'NTR' : undefined,
+      });
       cardSpend += amt;
     }
     if (r() < 0.5) {
@@ -365,12 +436,12 @@ export function seedDemo(today: string, country: Country = 'AU') {
     }
 
     // Car trips to clients: a few a month.
-    for (let i = 0, n = between(2, 5); i < n; i++) {
+    for (let i = 0, n = S.trip ? between(2, 5) : 0; i < n; i++) {
       const date = day(between(2, 27));
       if (date > today) continue;
-      const to = pick(S.trip.places);
+      const to = pick(S.trip!.places);
       saveTrip({
-        date, distanceTenths: between(S.trip.distance[0], S.trip.distance[1]), vehicle: S.trip.vehicle,
+        date, distanceTenths: between(S.trip!.distance[0], S.trip!.distance[1]), vehicle: S.trip!.vehicle,
         purpose: pick(['Client meeting', 'Press check at the printer', 'Photo shoot', 'Delivering proofs', 'Brand workshop']),
         fromPlace: 'Studio', toPlace: to,
       });
@@ -400,12 +471,14 @@ export function seedDemo(today: string, country: Country = 'AU') {
         pricesIncludeTax: false,
         templateId: tpl,
         reference: r() < 0.4 ? `PO ${between(1000, 9999)}` : null,
-        lines: job.items.map(([description, qty, price]) => ({
+        lines: job.items.map(([description, qty, price, taxRatePpm, hsn]) => ({
           description: description as string,
           qtyMilli: (qty as number) * 1000,
-          unitPrice: Math.round((price as number) * (0.9 + r() * 0.3)),
+          unitPrice: M(Math.round((price as number) * (0.9 + r() * 0.3))),
           categoryId: C.design,
           taxCode: sale,
+          hsn: hsn ?? S.sac,
+          taxRatePpm,
         })),
         status: 'sent',
       });
@@ -414,7 +487,24 @@ export function seedDemo(today: string, country: Country = 'AU') {
     }
     if (m % 3 === 1) {
       const issue = day(between(5, 20));
-      if (issue <= today) {
+      if (issue <= today && overseas) {
+        const o = overseas[overseasTurn++ % overseas.length];
+        const id = saveInvoice({
+          contactId: o.contactId,
+          issueDate: issue,
+          dueDate: addDays(issue, 30),
+          pricesIncludeTax: false,
+          templateId: tpl,
+          currency: o.currency,
+          // To four decimal places, as a bank quotes it.
+          fxRateMicro: Math.round(o.rate * (1 + (r() - 0.5) * 0.04) * 10_000) * 100,
+          exportMode: 'lut',
+          lines: [{ description: S.abroadWork, qtyMilli: 1000, unitPrice: between(o.price[0], o.price[1]), categoryId: C.design, taxCode: S.exportCode as any, hsn: S.sac }],
+          status: 'sent',
+        });
+        const doc = one<{ total: number; fc_total: number }>(db, 'SELECT total, fc_total FROM invoices WHERE id = ?', id)!;
+        invoiceIds.push({ id, issue, total: doc.total, contactId: o.contactId, fcTotal: doc.fc_total });
+      } else if (issue <= today) {
         const id = saveInvoice({
           contactId: customers.abroad,
           issueDate: issue,
@@ -440,13 +530,19 @@ export function seedDemo(today: string, country: Country = 'AU') {
     const recent = inv.issue > addDays(today, -20);
     const unluckyOverdue = inv.issue > overdueCutoff && inv.issue <= addDays(today, -20) && i % 3 === 0;
     if (recent || unluckyOverdue || paidOn > today) return;
+    if (inv.fcTotal) {
+      // The rate has moved by the time it lands, a little either way, less a bank's cut.
+      const received = Math.round(inv.total * (0.985 + r() * 0.03));
+      recordPayment({ invoiceId: inv.id, date: paidOn, amount: inv.fcTotal, received, accountId: bank, memo: 'SWIFT inward remittance' });
+      return;
+    }
     if (i % 17 === 5) {
       recordPayment({ invoiceId: inv.id, date: paidOn, amount: Math.round(inv.total / 2), accountId: bank, memo: 'Part payment' });
       return;
     }
-    if (country === 'NZ' && inv.contactId === customers.festival) {
+    if ((country === 'NZ' || country === 'IN') && inv.contactId === customers.festival) {
       const tax = one<{ tax: number }>(db, 'SELECT tax FROM invoices WHERE id = ?', inv.id)!.tax;
-      const withheld = Math.round((inv.total - tax) * 0.2);
+      const withheld = Math.round((inv.total - tax) * (country === 'NZ' ? 0.2 : 0.1));
       recordPayment({ invoiceId: inv.id, date: paidOn, amount: inv.total - withheld, withheld, accountId: bank });
       return;
     }
@@ -464,7 +560,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
     templateId: tpl,
     notes: 'Deposit invoice: 50% upfront for next year’s festival campaign.',
     lines: [
-      { description: 'Campaign concept & key visual (50% deposit)', qtyMilli: 1000, unitPrice: 275000, categoryId: C.design, taxCode: sale },
+      { description: 'Campaign concept & key visual (50% deposit)', qtyMilli: 1000, unitPrice: M(275000), categoryId: C.design, taxCode: sale, hsn: S.sac },
     ],
     status: 'draft',
   });
@@ -474,7 +570,8 @@ export function seedDemo(today: string, country: Country = 'AU') {
     const [y, m] = today.split('-').map(Number);
     const issue = ymd(y, m - k, 10);
     if (issue > today) continue;
-    const amount = between(40000, 140000);
+    const amount = M(between(40000, 140000));
+    const description = pick(['Brochure print run', 'Poster printing', 'Business cards', 'Label proofs']);
     const bill = saveInvoice({
       docType: 'bill',
       contactId: V.print,
@@ -482,7 +579,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
       dueDate: addDays(issue, 30),
       reference: `INK-${between(20000, 29999)}`,
       pricesIncludeTax: !!S.sale,
-      lines: [{ description: pick(['Brochure print run', 'Poster printing', 'Business cards', 'Label proofs']), qtyMilli: 1000, unitPrice: amount, categoryId: C.printing, taxCode: (S.sale ?? 'NTR') as any }],
+      lines: [{ description, qtyMilli: 1000, unitPrice: amount, categoryId: C.printing, taxCode: (S.sale ?? 'NTR') as any, taxRatePpm: country === 'IN' && description === 'Brochure print run' ? 50_000 : null }],
       status: 'sent',
     });
     // Older bills are paid on the due date; the latest two are still open.
@@ -499,7 +596,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
       dueDate: addDays(issue, 30),
       pricesIncludeTax: false,
       templateId: tpl,
-      lines: lines.map(([description, qty, price]) => ({ description, qtyMilli: qty * 1000, unitPrice: price, categoryId: C.design, taxCode: sale })),
+      lines: lines.map(([description, qty, price]) => ({ description, qtyMilli: qty * 1000, unitPrice: M(price), categoryId: C.design, taxCode: sale, hsn: S.sac })),
       status: 'sent',
     });
   const accepted = quote(customers.wines, addDays(today, -12), [['Cellar door signage package', 1, 380000], ['Install supervision (hours)', 6, 12000]]);
@@ -511,7 +608,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
   // ---- a credit note: a discount on the latest unpaid invoice ---------------------
   const unpaid = one<any>(db,
     `SELECT i.id, i.contact_id, i.total FROM invoices i WHERE i.doc_type = 'invoice' AND i.status = 'sent'
-       AND NOT EXISTS (SELECT 1 FROM entries e WHERE e.invoice_id = i.id) AND i.issue_date < ?
+       AND i.currency IS NULL AND NOT EXISTS (SELECT 1 FROM entries e WHERE e.invoice_id = i.id) AND i.issue_date < ?
      ORDER BY i.issue_date LIMIT 1`, addDays(today, -2));
   if (unpaid) {
     const credit = saveInvoice({
@@ -523,7 +620,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
       pricesIncludeTax: false,
       templateId: tpl,
       notes: 'Goodwill discount agreed while chasing this overdue invoice.',
-      lines: [{ description: 'Discount on late proofs', qtyMilli: 1000, unitPrice: 20000, categoryId: C.design, taxCode: sale }],
+      lines: [{ description: 'Discount on late proofs', qtyMilli: 1000, unitPrice: M(20000), categoryId: C.design, taxCode: sale, hsn: S.sac }],
       status: 'sent',
     });
     const total = one<{ total: number }>(db, 'SELECT total FROM invoices WHERE id = ?', credit)!.total;
@@ -538,7 +635,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
     name: 'Desk membership',
     frequency: 'monthly',
     startDate: nextMonth(1),
-    payload: { kind: 'expense', amount: 165000, accountId: bank, categoryId: C.rent, contactId: V.cowork, memo: 'Desk membership' },
+    payload: { kind: 'expense', amount: M(165000), accountId: bank, categoryId: C.rent, contactId: V.cowork, memo: 'Desk membership' },
   });
   saveSchedule({
     kind: 'invoice',
@@ -551,7 +648,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
       dueDays: 14,
       pricesIncludeTax: false,
       templateId: tpl,
-      lines: [{ description: 'Monthly social media design', qtyMilli: 1000, unitPrice: 90000, categoryId: C.design, taxCode: sale }],
+      lines: [{ description: 'Monthly social media design', qtyMilli: 1000, unitPrice: M(90000), categoryId: C.design, taxCode: sale, hsn: S.sac }],
     },
   });
 
@@ -566,7 +663,13 @@ export function seedDemo(today: string, country: Country = 'AU') {
   const lastYear = thisYear - 1;
   const instalments: { date: string; amount: number; memo: string }[] = [];
   for (const y of [lastYear, thisYear]) {
-    if (country === 'AU') {
+    if (country === 'IN') {
+      // Advance tax, in June, September, December and March.
+      const fy = Number(incomeYearRange(y, fyStart).from.slice(0, 4));
+      for (const [i, d] of [`${fy}-06-15`, `${fy}-09-15`, `${fy}-12-15`, `${fy + 1}-03-15`].entries()) {
+        instalments.push({ date: d, amount: 150000, memo: `Advance tax instalment ${i + 1}` });
+      }
+    } else if (country === 'AU') {
       setYearInputs({ year: y, paygOption: 'amount', paygAmount: 125000 });
       // With each quarter's BAS: 28 Oct, 28 Feb, 28 Apr, 28 Jul.
       const { from } = incomeYearRange(y, fyStart);
@@ -589,7 +692,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
 
   // ---- the asset register --------------------------------------------------------------
   // The big purchase, in the register; depreciation posted for the year that's finished.
-  if (assetEntry) {
+  if (assetEntry && S.asset) {
     const e = one<{ amount: number; tax_amount: number | null }>(db, 'SELECT amount, tax_amount FROM entries WHERE id = ?', assetEntry.id)!;
     saveAsset({
       name: S.asset.name,
@@ -610,7 +713,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
   // finished period as a draft to review. Each lodged one is paid from tax
   // savings on its due date, before lodging (which locks the books).
   if (S.sale) {
-    const months = country === 'AU' ? 3 : 2;
+    const months = country === 'AU' ? 3 : country === 'IN' ? 1 : 2;
     const periods: [string, string][] = [];
     for (let q = 0; q < 24 / months; q++) {
       const ps = ymd(startYear, S.fyMonth + q * months, 1);
@@ -619,21 +722,22 @@ export function seedDemo(today: string, country: Country = 'AU') {
       if (pe < today) periods.push([ps, pe]);
     }
     const lodgeUntil = incomeYearRange(lastYear, fyStart).to;
-    const kind = country === 'AU' ? 'bas' : 'nz-gst';
+    const kind = country === 'AU' ? 'bas' : country === 'IN' ? 'in-gst' : 'nz-gst';
     const inputs = (): Record<string, number> => (country === 'AU' ? { t7: 125000 } : {});
     for (const [ps, pe] of periods) {
       if (pe > lodgeUntil) continue;
       const report = taxReturnReport({ from: ps, to: pe, basis: 'cash' });
       // PAYG (T7) is paid with the BAS but recorded on its own above, so only the GST here.
       const owed = RETURN_FORMS[kind].net(report.figures, {});
-      const payDay = country === 'AU' ? basDue(ps, pe) : nzGstDue(pe);
+      // India: GSTR-3B by the 20th of the next month.
+      const payDay = country === 'AU' ? basDue(ps, pe) : country === 'IN' ? addDays(pe, 20) : nzGstDue(pe);
       if (payDay > today) continue;
-      if (owed > 0) spend(payDay, owed, C.taxPayment, { account: savings, memo: `GST ${ps.slice(0, 7)} to ${pe.slice(0, 7)}` });
-      else if (owed < 0) earn(payDay, -owed, C.taxRefund, { account: savings, memo: `GST refund ${ps.slice(0, 7)} to ${pe.slice(0, 7)}` });
+      if (owed > 0) spend(payDay, owed, C.taxPayment, { account: savings, memo: `GST ${ps.slice(0, 7)} to ${pe.slice(0, 7)}`, exact: true });
+      else if (owed < 0) earn(payDay, -owed, C.taxRefund, { account: savings, memo: `GST refund ${ps.slice(0, 7)} to ${pe.slice(0, 7)}`, exact: true });
     }
     reconcile();
     for (const [ps, pe] of periods) {
-      saveTaxReturn({ periodStart: ps, periodEnd: pe, basis: 'cash', inputs: inputs(), lodge: pe <= lodgeUntil });
+      saveTaxReturn({ periodStart: ps, periodEnd: pe, basis: country === 'IN' ? 'accrual' : 'cash', inputs: inputs(), lodge: pe <= lodgeUntil });
     }
   } else {
     reconcile();

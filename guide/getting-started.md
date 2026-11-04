@@ -12,9 +12,10 @@ macOS (Apple Silicon and Intel), Windows and Linux. Free, and it updates itself.
 
 ## Try the demo first
 
-On the welcome screen, **Try demo books with sample data** has one for each country, each a small design studio with over a year of transactions, invoices, bills, car trips and an asset register:
+On the welcome screen, **Try demo books** asks which country you want. Each is a small design studio with over a year of transactions, invoices and bills, and all but India have car trips and an asset register:
 
 - **Australia**: *Harbour & Pine Studio*, with quarterly BAS lodged and PAYG instalments.
+- **India**: *Chai & Ink Studio*, with monthly GST, customers in and out of the state, exports in dollars and pounds with exchange gains and losses, goods at 5% beside services at 18%, and a client that deducts TDS.
 - **New Zealand**: *Kōwhai Lane Design*, with two-monthly GST returns, provisional tax, and a client that withholds tax.
 - **United States**: *Cedar & Finch Studio*, in Oregon (no sales tax), with estimated tax and a contractor on a 1099-NEC.
 

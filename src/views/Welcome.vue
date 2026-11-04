@@ -9,6 +9,8 @@ import {
   FormLayout,
   FormLayoutGroup,
   Heading,
+  Modal,
+  ModalSection,
   Select,
   TextField,
   ToggleSwitch,
@@ -64,11 +66,13 @@ const taxId = ref('');
 const demoing = ref(false);
 /** The selected country first, so its demo is the obvious one. */
 const DEMO_COUNTRIES = computed(() => [...COUNTRY_OPTIONS].sort((a, b) => Number(b.value === country.value) - Number(a.value === country.value)));
+const pickingDemo = ref(false);
+const demoChoice = ref<Country | null>(null);
 
 watch(country, (c) => {
   if (c) fiscalYearStart.value = COUNTRIES[c].fiscalYearStart;
   // Most US sole traders sell services and don't collect sales tax.
-  if (c) taxEnabled.value = !COUNTRIES[c].tax?.rateEditable;
+  if (c) taxEnabled.value = COUNTRIES[c].tax?.report !== 'us-sales-tax';
   countryError.value = null;
 });
 const fyMonth = computed({
@@ -147,7 +151,12 @@ async function create() {
   }
 }
 
+function closeDemoPicker() {
+  if (!demoing.value) pickingDemo.value = false;
+}
+
 async function tryDemo(demoCountry: Country) {
+  demoChoice.value = demoCountry;
   demoing.value = true;
   try {
     await api.createDemo(null, today(), demoCountry);
@@ -157,6 +166,8 @@ async function tryDemo(demoCountry: Country) {
     toast({ title: "Couldn't create the demo", content: errorMessage(e), tone: 'error' });
   } finally {
     demoing.value = false;
+    demoChoice.value = null;
+    pickingDemo.value = false;
   }
 }
 
@@ -244,13 +255,13 @@ function shortPath(path: string) {
               <TextField
                 v-if="profile.tax?.rateEditable && taxEnabled"
                 v-model="taxRate"
-                label="Sales tax rate"
+                :label="country === 'IN' ? 'GST rate' : 'Sales tax rate'"
                 suffix="%"
                 inputmode="decimal"
-                placeholder="e.g. 8.875"
+                :placeholder="country === 'IN' ? 'e.g. 18' : 'e.g. 8.875'"
                 required
                 :error="rateError"
-                help-text="Your combined state and local rate. You can change it in Settings."
+                :help-text="country === 'IN' ? 'The rate on what you sell. Most professional services are 18%. You can change it in Settings.' : 'Your combined state and local rate. You can change it in Settings.'"
               />
               <TextField
                 v-model="taxId"
@@ -280,16 +291,30 @@ function shortPath(path: string) {
       </Card>
 
       <div class="Demo">
-        <span class="subdued">Just looking? Try demo books with sample data:</span>
-        <Button
-          v-for="c in DEMO_COUNTRIES"
-          :key="c.value"
-          type="plain"
-          icon="mdi:storefront-outline"
-          :disabled="demoing"
-          @click="tryDemo(c.value)"
-        >{{ c.label }}</Button>
+        <span class="subdued">Just looking?</span>
+        <Button type="plain" icon="mdi:storefront-outline" @click="pickingDemo = true">Try demo books</Button>
       </div>
+
+      <Modal
+        :visible="pickingDemo"
+        title="Try demo books"
+        :secondary-actions="[{ label: 'Cancel', disabled: demoing, onAction: closeDemoPicker }]"
+        @close="closeDemoPicker"
+      >
+        <ModalSection>
+          <p class="subdued DemoPick__hint">Which country? You get a small design studio with over a year of sample data, in its own file, separate from your real books.</p>
+          <div class="DemoPick">
+            <Button
+              v-for="c in DEMO_COUNTRIES"
+              :key="c.value"
+              full-width
+              :loading="demoChoice === c.value"
+              :disabled="demoing && demoChoice !== c.value"
+              @click="tryDemo(c.value)"
+            >{{ c.label }}</Button>
+          </div>
+        </ModalSection>
+      </Modal>
     </div>
   </div>
 </template>
@@ -310,6 +335,16 @@ function shortPath(path: string) {
   align-items: center;
   gap: 4px;
   font-size: 14px;
+}
+
+.DemoPick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.DemoPick__hint {
+  margin: 0 0 12px;
 }
 
 .Welcome {

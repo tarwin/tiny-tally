@@ -46,7 +46,7 @@ const words = computed(() => ({
   US: { title: 'Mileage', rate: 'Standard mileage rate', actual: 'Actual car costs', uses: 'Schedule C line 9 uses', report: '/reports/schedule-c', reportName: 'Schedule C', authority: 'the IRS' },
   AU: { title: 'Car trips', rate: 'Cents per km', actual: 'Logbook (actual costs)', uses: 'Motor vehicle expenses use', report: '/reports/income-tax-return', reportName: 'Business schedule', authority: 'the ATO' },
   NZ: { title: 'Vehicle trips', rate: 'Kilometre rates', actual: 'Actual costs (logbook)', uses: 'Vehicle expenses use', report: '/reports/income-tax-return', reportName: 'IR10', authority: 'IRD' },
-}[country.value]));
+}[country.value as 'US' | 'AU' | 'NZ']));
 
 const ys = computed(() => books.value.fiscalYearStart);
 const thisYear = incomeYearOf(today(), ys.value);

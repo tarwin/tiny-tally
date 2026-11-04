@@ -5,6 +5,7 @@ import { budgetFor } from './budgets';
 import { summarise } from './entries';
 import { getSettings, metaValue, updateSettings } from './settings';
 import { basLabelsFor, nzBoxesFor, type TaxCode } from '../src/shared/tax';
+import { gstSplit, gstinState } from '../src/shared/india';
 import { countryProfile } from '../src/shared/countries';
 import {
   rulesFor,
@@ -575,6 +576,86 @@ export function nzGstReport(p: { from: string; to: string; basis: Basis }) {
   return { figures, detail, untagged, context };
 }
 
+/**
+ * India: the summary behind GSTR-1 and GSTR-3B. GST falls due when the invoice
+ * is issued for services, so this always reads the accrual ledger, whatever the
+ * basis. A sale's tax is CGST and SGST in half each within the home state, and
+ * IGST otherwise. Credits on purchases aren't split by head: bills and expenses
+ * don't record a place of supply.
+ */
+export function inGstReport(p: { from: string; to: string }) {
+  range(p.from, p.to);
+  const settings = getSettings();
+  const home = settings.homeState || gstinState(settings.taxId);
+  const rows = all<any>(getBooks().db,
+    `SELECT l.entry_id AS entryId, l.invoice_id AS invoiceId, l.date, l.kind, l.gross, l.tax, l.tax_code AS taxCode,
+            l.memo, c.name AS categoryName, ct.name AS contactName, i.place_of_supply AS place
+     FROM ledger_accrual l
+     LEFT JOIN categories c ON c.id = l.category_id
+     LEFT JOIN contacts ct ON ct.id = l.contact_id
+     LEFT JOIN invoices i ON i.id = l.invoice_id
+     WHERE l.date BETWEEN ? AND ?
+     ORDER BY l.date, l.entry_id`, p.from, p.to);
+  const figures: ReturnFigures = { taxable: 0, zero: 0, exempt: 0, igst: 0, cgst: 0, sgst: 0, purchases: 0, itc: 0 };
+  const detail = [];
+  let untagged = 0;
+  let local = 0;
+  for (const r of rows) {
+    if (!r.taxCode) {
+      untagged++;
+      continue;
+    }
+    const net = r.gross - r.tax;
+    if (r.taxCode === 'NTR') continue;
+    let label: string;
+    if (r.kind === 'expense') {
+      if (r.taxCode !== 'GST') continue;
+      label = 'Credits';
+      figures.purchases += net;
+      figures.itc += r.tax;
+    } else if (r.taxCode === 'ZER') {
+      label = 'Zero-rated';
+      figures.zero += net;
+    } else if (r.taxCode === 'EXE') {
+      label = 'Exempt';
+      figures.exempt += net;
+    } else {
+      label = 'Taxable';
+      figures.taxable += net;
+      // Income entered without an invoice has no place of supply: it's taken as local.
+      if (r.invoiceId === null || gstSplit(r.place, home) === 'intra') local += r.tax;
+      else figures.igst += r.tax;
+    }
+    detail.push({ ...r, labels: [label] });
+  }
+  // Split once, on the total: income without an invoice can leave an odd paisa.
+  figures.cgst = Math.round(local / 2);
+  figures.sgst = local - figures.cgst;
+  return { figures, detail, untagged, context: null, byRate: gstByRate(p.from, p.to, settings.taxRatePpm) };
+}
+
+/** Taxable sales and purchases at each GST rate, for GSTR-1's rate-wise tables. */
+function gstByRate(from: string, to: string, booksRate: number) {
+  const rows = all<{ kind: string; ratePpm: number; net: number; tax: number }>(getBooks().db,
+    `SELECT kind, rate AS ratePpm, SUM(net) AS net, SUM(tax) AS tax FROM (
+       SELECT e.kind, COALESCE(e.tax_rate_ppm, ?1) AS rate, e.amount - e.tax_amount AS net, e.tax_amount AS tax
+       FROM entries e
+       WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL AND e.tax_code = 'GST' AND e.date BETWEEN ?2 AND ?3
+       UNION ALL
+       SELECT d.kind, COALESCE(l.tax_rate_ppm, i.tax_rate_ppm, ?1), d.sign * d.net, d.sign * d.tax
+       FROM doc_lines d JOIN invoice_lines l ON l.id = d.line_id JOIN invoices i ON i.id = d.invoice_id
+       WHERE d.doc_status = 'sent' AND d.tax_code = 'GST' AND d.issue_date BETWEEN ?2 AND ?3
+     ) GROUP BY kind, rate`, booksRate, from, to);
+  const out = new Map<number, { ratePpm: number; sales: number; salesTax: number; purchases: number; credit: number }>();
+  for (const r of rows) {
+    const row = out.get(r.ratePpm) ?? { ratePpm: r.ratePpm, sales: 0, salesTax: 0, purchases: 0, credit: 0 };
+    if (r.kind === 'income') (row.sales += r.net), (row.salesTax += r.tax);
+    else (row.purchases += r.net), (row.credit += r.tax);
+    out.set(r.ratePpm, row);
+  }
+  return [...out.values()].sort((a, b) => a.ratePpm - b.ratePpm);
+}
+
 /** GST-inclusive purchases in Box 11, per category. */
 function claimedByCategory(view: string, from: string, to: string) {
   const out: Record<number, number> = {};
@@ -608,6 +689,7 @@ export function taxReturnReport(p: { from: string; to: string; basis: Basis }) {
     const r = basReport(p);
     return { kind, figures: r.figures as unknown as ReturnFigures, detail: r.detail, untagged: r.untagged, context: null };
   }
+  if (kind === 'in-gst') return { kind, ...inGstReport(p) };
   return { kind, ...nzGstReport(p) };
 }
 

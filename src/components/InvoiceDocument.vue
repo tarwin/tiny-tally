@@ -7,6 +7,8 @@ import type { Books, DocType, InvoiceLine, InvoiceStatus, InvoiceTemplate, Sende
 import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { countryProfile } from '../shared/countries';
+import { foreignBalance, fxRateText } from '../shared/currency';
+import { EXPORT_PLACE, exportEndorsement, gstSplit, gstinState, inStateName, gstHeads, gstRateText } from '../shared/india';
 import { TAX_CODE_MAP } from '../shared/tax';
 import { fillPlaceholders, labelDefault, normaliseLayout, priceLabel, type LabelKey, type TemplateSection } from '../shared/templateLayout';
 
@@ -30,6 +32,20 @@ export interface InvoiceDocData {
   paid?: number;
   balance?: number;
   status?: InvoiceStatus;
+  /** Set when it's in a foreign currency: prices are in it, net, tax and total in the books'. */
+  currency?: string | null;
+  fxRateMicro?: number | null;
+  fcNet?: number | null;
+  fcTax?: number | null;
+  fcTotal?: number | null;
+  /** India. */
+  placeOfSupply?: string | null;
+  reverseCharge?: boolean;
+  exportMode?: 'lut' | 'igst' | null;
+  taxRatePpm?: number | null;
+  contactTin?: string | null;
+  contactState?: string | null;
+  contactCountry?: string | null;
 }
 
 const props = defineProps<{
@@ -54,7 +70,16 @@ const t = computed(
     },
 );
 
-const currency = computed(() => props.books.currency);
+const foreign = computed(() => (props.invoice.currency && props.invoice.fcTotal != null ? props.invoice.currency : null));
+const currency = computed(() => foreign.value ?? props.books.currency);
+/** In the document's currency: a books amount, at the invoice's own rate. */
+const docValue = (v: number) => (foreign.value && props.invoice.total ? Math.round((v * props.invoice.fcTotal!) / props.invoice.total) : v);
+const shown = computed(() => (foreign.value
+  ? { net: props.invoice.fcNet ?? 0, tax: props.invoice.fcTax ?? 0, total: props.invoice.fcTotal! }
+  : { net: props.invoice.net, tax: props.invoice.tax, total: props.invoice.total }));
+const equivalent = computed(() => (foreign.value
+  ? `Equivalent to ${formatMoney(props.invoice.total, props.books.currency, props.books.documentCurrencyDisplay)} at 1 ${foreign.value} = ${fxRateText(props.invoice.fxRateMicro ?? 0)} ${props.books.currency}`
+  : ''));
 const profile = computed(() => countryProfile(props.books.country));
 const tax = computed(() => (props.books.taxEnabled ? profile.value.tax : null));
 const taxOn = computed(() => !!tax.value);
@@ -91,14 +116,40 @@ function label(key: LabelKey) {
   return labelDefault(key, tax.value);
 }
 
-const amountDue = computed(() => props.invoice.balance ?? props.invoice.total - (props.invoice.paid ?? 0));
+const amountDue = computed(() => {
+  const balance = props.invoice.balance ?? props.invoice.total - (props.invoice.paid ?? 0);
+  return foreign.value ? foreignBalance({ total: props.invoice.total, fcTotal: props.invoice.fcTotal!, balance }) : balance;
+});
+
+// India's Rule 46: state codes, place of supply, tax by head, and the export endorsement.
+const india = computed(() => props.books.country === 'IN' && taxOn.value && type.value !== 'quote');
+const stateLine = (code: string | null | undefined) => (inStateName(code) ? `${inStateName(code)} (${code})` : '');
+const homeState = computed(() => props.books.homeState || gstinState(props.books.taxId));
+const isExport = computed(() => props.invoice.placeOfSupply === EXPORT_PLACE);
+const placeLine = computed(() => (isExport.value ? 'Outside India' : stateLine(props.invoice.placeOfSupply)));
+/** A line's GST rate: older lines take the document's. */
+const lineRate = (l: { taxRatePpm?: number | null }) => l.taxRatePpm ?? props.invoice.taxRatePpm ?? props.books.taxRatePpm;
+const taxHeads = computed(() => gstHeads(
+  props.invoice.lines.map((l) => ({ ratePpm: lineRate(l), tax: foreign.value ? l.fcTax ?? 0 : l.tax })),
+  gstSplit(props.invoice.placeOfSupply, homeState.value),
+));
+const endorsement = computed(() => (india.value && isExport.value && type.value === 'invoice' ? exportEndorsement(props.invoice.exportMode ?? 'lut') : ''));
+const countryName = computed(() => {
+  const c = props.invoice.contactCountry;
+  if (!c) return '';
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(c) ?? c;
+  } catch {
+    return c;
+  }
+});
 const fill = (text: string | null | undefined) =>
   fillPlaceholders(text ?? '', {
     customer: props.invoice.contactName,
     number: props.invoice.number,
     issue_date: formatDay(props.invoice.issueDate),
     due_date: formatDay(props.invoice.dueDate),
-    total: money(props.invoice.total),
+    total: money(shown.value.total),
     amount_due: money(amountDue.value),
     business: from.value.name,
   }).trim();
@@ -128,8 +179,9 @@ function qty(milli: number) {
 }
 
 /** Line amounts are shown on the same basis the prices were entered. */
-function lineAmount(l: { net: number; tax: number }) {
-  return props.invoice.pricesIncludeTax ? l.net + l.tax : l.net;
+function lineAmount(l: { net: number; tax: number; fcNet?: number | null; fcTax?: number | null }) {
+  const [net, tax] = foreign.value ? [l.fcNet ?? 0, l.fcTax ?? 0] : [l.net, l.tax];
+  return props.invoice.pricesIncludeTax ? net + tax : net;
 }
 
 const stamp = computed(() => {
@@ -154,6 +206,7 @@ const stamp = computed(() => {
           <img v-if="logo" :src="logo" alt="" class="Doc__logo" />
           <div class="Doc__fromName">{{ from.name }}</div>
           <div v-if="books.taxId && show.taxId" class="Doc__taxId">{{ taxIdLabel }} {{ books.taxId }}</div>
+          <div v-if="india && stateLine(homeState)" class="Doc__taxId">State: {{ stateLine(homeState) }}</div>
           <div v-if="from.address && show.fromAddress" class="Doc__pre">{{ from.address }}</div>
           <div v-if="(from.email || from.phone) && show.fromContact" class="Doc__muted">
             {{ [from.email, from.phone].filter(Boolean).join(' · ') }}
@@ -168,6 +221,8 @@ const stamp = computed(() => {
             <div v-else-if="type === 'invoice' && show.dueDate"><dt>{{ label('due') }}</dt><dd>{{ formatDay(invoice.dueDate) }}</dd></div>
             <div v-if="type === 'credit' && invoice.sourceNumber"><dt>For invoice</dt><dd>{{ invoice.sourceNumber }}</dd></div>
             <div v-if="invoice.reference && show.reference"><dt>{{ label('reference') }}</dt><dd>{{ invoice.reference }}</dd></div>
+            <div v-if="india && placeLine"><dt>Place of supply</dt><dd>{{ placeLine }}</dd></div>
+            <div v-if="india"><dt>Reverse charge</dt><dd>{{ invoice.reverseCharge ? 'Yes' : 'No' }}</dd></div>
           </dl>
         </div>
       </header>
@@ -176,6 +231,9 @@ const stamp = computed(() => {
         <div class="Doc__label">{{ label('billTo') }}</div>
         <div class="Doc__toName">{{ invoice.contactName }}</div>
         <div v-if="invoice.contactAddress && show.customerAddress" class="Doc__pre">{{ invoice.contactAddress }}</div>
+        <div v-if="countryName">{{ countryName }}</div>
+        <div v-if="india && invoice.contactTin">GSTIN {{ invoice.contactTin }}</div>
+        <div v-if="india && !countryName && stateLine(invoice.contactState)">State: {{ stateLine(invoice.contactState) }}</div>
         <div v-if="invoice.contactEmail && show.customerEmail" class="Doc__muted">{{ invoice.contactEmail }}</div>
       </section>
 
@@ -199,12 +257,14 @@ const stamp = computed(() => {
               <td class="Doc__desc">
                 {{ l.description || '—' }}
                 <span v-if="taxOn && l.taxCode && l.taxCode !== tax?.defaultCode.sales" class="Doc__code">{{ TAX_CODE_MAP[l.taxCode].label }}</span>
+                <span v-if="india && l.hsn" class="Doc__code">HSN/SAC {{ l.hsn }}</span>
+                <span v-if="india && l.taxCode && TAX_CODE_MAP[l.taxCode].taxable" class="Doc__code">GST {{ gstRateText(lineRate(l)) }}</span>
               </td>
               <template v-if="show.qtyPrice">
                 <td class="num">{{ qty(l.qtyMilli) }}</td>
                 <td class="num">{{ money(l.unitPrice) }}</td>
               </template>
-              <td v-if="showTax" class="num">{{ money(l.tax) }}</td>
+              <td v-if="showTax" class="num">{{ money(foreign ? l.fcTax ?? 0 : l.tax) }}</td>
               <td class="num">{{ money(lineAmount(l)) }}</td>
             </tr>
           </tbody>
@@ -214,18 +274,27 @@ const stamp = computed(() => {
       <section v-else-if="s.key === 'totals'" class="Doc__totals" :class="sectionClass(s)">
         <dl>
           <template v-if="taxOn">
-            <div><dt>{{ label('subtotal') }}</dt><dd>{{ money(invoice.net) }}</dd></div>
-            <div><dt>{{ label('gstTotal') }}</dt><dd>{{ money(invoice.tax) }}</dd></div>
+            <div><dt>{{ india ? 'Taxable value' : label('subtotal') }}</dt><dd>{{ money(shown.net) }}</dd></div>
+            <template v-if="india">
+              <div v-for="h in shown.tax ? taxHeads : []" :key="h.label"><dt>{{ h.label }}</dt><dd>{{ money(h.value) }}</dd></div>
+            </template>
+            <div v-else><dt>{{ label('gstTotal') }}</dt><dd>{{ money(shown.tax) }}</dd></div>
           </template>
           <div class="Doc__grand">
-            <dt>{{ label('total') }}{{ tax?.spellOut ? ` (inc. ${tax.short})` : '' }}</dt><dd>{{ money(invoice.total) }}</dd>
+            <dt>{{ label('total') }}{{ tax?.spellOut ? ` (inc. ${tax.short})` : '' }}</dt><dd>{{ money(shown.total) }}</dd>
           </div>
           <template v-if="type === 'invoice' && (invoice.paid || invoice.credited)">
-            <div v-if="invoice.credited"><dt>{{ label('credited') }}</dt><dd>−{{ money(invoice.credited) }}</dd></div>
-            <div v-if="invoice.paid"><dt>{{ label('paid') }}</dt><dd>−{{ money(invoice.paid) }}</dd></div>
+            <div v-if="invoice.credited"><dt>{{ label('credited') }}</dt><dd>−{{ money(docValue(invoice.credited)) }}</dd></div>
+            <div v-if="invoice.paid"><dt>{{ label('paid') }}</dt><dd>−{{ money(docValue(invoice.paid)) }}</dd></div>
             <div class="Doc__due"><dt>{{ label('amountDue') }}</dt><dd>{{ money(amountDue) }}</dd></div>
           </template>
         </dl>
+      </section>
+
+      <section v-if="s.key === 'totals' && (equivalent || endorsement)" class="Doc__legal">
+        <p v-if="equivalent" class="Doc__muted">{{ equivalent }}</p>
+        <p v-if="endorsement">{{ endorsement }}</p>
+        <p v-if="endorsement && invoice.exportMode !== 'igst' && books.lutNumber" class="Doc__muted">Letter of Undertaking {{ books.lutNumber }}</p>
       </section>
 
       <section v-else-if="s.key === 'notes'" class="Doc__notes Doc__pre" :class="sectionClass(s)">{{ invoice.notes }}</section>
@@ -283,6 +352,15 @@ const stamp = computed(() => {
   display: flex;
   justify-content: space-between;
   gap: 12mm;
+}
+
+.Doc__legal {
+  font-size: 11px;
+  text-align: right;
+}
+
+.Doc__legal p {
+  margin: 0 0 1mm;
 }
 
 .Doc__logo {

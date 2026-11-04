@@ -687,4 +687,36 @@ export const migrations: string[] = [
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   `,
+  // v23: India and overseas billing. A document can be in a foreign currency:
+  // net, tax and total stay in the books' currency for every report, and fc_*
+  // and unit_price hold what it was issued for (NULL currency is the books').
+  // A payment that lands at a different rate is two entries: the payment, at
+  // the rate on the invoice, and an exchange gain or loss (fx_of) beside it.
+  // Indian GST needs a place of supply, the HSN or SAC per line, and a
+  // customer's country; contacts.tin holds a GSTIN and contacts.state its code.
+  `
+  ALTER TABLE invoices ADD COLUMN currency TEXT;
+  ALTER TABLE invoices ADD COLUMN fx_rate_micro INTEGER;
+  ALTER TABLE invoices ADD COLUMN fc_net INTEGER;
+  ALTER TABLE invoices ADD COLUMN fc_tax INTEGER;
+  ALTER TABLE invoices ADD COLUMN fc_total INTEGER;
+  ALTER TABLE invoices ADD COLUMN place_of_supply TEXT;
+  ALTER TABLE invoices ADD COLUMN reverse_charge INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE invoices ADD COLUMN export_mode TEXT;
+  ALTER TABLE invoice_lines ADD COLUMN hsn TEXT;
+  ALTER TABLE invoice_lines ADD COLUMN fc_net INTEGER;
+  ALTER TABLE invoice_lines ADD COLUMN fc_tax INTEGER;
+  ALTER TABLE items ADD COLUMN hsn TEXT;
+  ALTER TABLE contacts ADD COLUMN country TEXT;
+  ALTER TABLE entries ADD COLUMN fx_of INTEGER REFERENCES entries(id) ON DELETE SET NULL;
+  CREATE INDEX entries_fx_of ON entries (fx_of);
+  `,
+  // v24: India's GST rate goes with the goods or service, so a line, item or
+  // entry can have its own. NULL everywhere else, and on Indian rows from before
+  // this: those use the document's rate, then the books'.
+  `
+  ALTER TABLE invoice_lines ADD COLUMN tax_rate_ppm INTEGER;
+  ALTER TABLE items ADD COLUMN tax_rate_ppm INTEGER;
+  ALTER TABLE entries ADD COLUMN tax_rate_ppm INTEGER;
+  `,
 ];

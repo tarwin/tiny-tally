@@ -81,8 +81,11 @@ const sections = computed<NavigationSectionType[]>(() => [
       { id: 'categories', label: 'Categories', icon: 'mdi:shape-outline', url: '/categories' },
       { id: 'budget', label: 'Budget', icon: 'mdi:target', url: '/budget' },
       { id: 'recurring', label: 'Recurring', icon: 'mdi:repeat', url: '/recurring' },
-      { id: 'mileage', label: session.books?.country === 'US' ? 'Mileage' : 'Car trips', icon: 'mdi:car-outline', url: '/mileage' },
-      { id: 'assets', label: 'Assets', icon: 'mdi:laptop', url: '/assets' },
+      // Trips and depreciation follow each country's income tax rules; India's aren't in yet.
+      ...(session.books?.country === 'IN' ? [] : [
+        { id: 'mileage', label: session.books?.country === 'US' ? 'Mileage' : 'Car trips', icon: 'mdi:car-outline', url: '/mileage' },
+        { id: 'assets', label: 'Assets', icon: 'mdi:laptop', url: '/assets' },
+      ]),
       { id: 'journals', label: 'Journal entries', icon: 'mdi:book-edit-outline', url: '/journals' },
     ],
   },

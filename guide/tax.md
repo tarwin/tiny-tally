@@ -71,6 +71,12 @@ The IRS figures these use (the 1099 threshold, mileage rates, the Social Securit
 Your own health insurance and retirement plan contributions go on Schedule 1, not Schedule C, so record them in an owner's money category. Equipment is either **Small Equipment** (up to $2,500 an item, expensed as supplies) or **Equipment & Assets**, which stays off the Profit & Loss for your preparer to depreciate.
 :::
 
+## India: GST rates
+
+GST in India depends on what you sell, so each invoice line, bill line, product and transaction has its own **GST rate**, starting at 18%. Pick the rate for the item's HSN or SAC code. An invoice can mix rates, and its totals show CGST and SGST, or IGST, for each one. A credit note keeps the rates of the invoice it came from.
+
+The GST summary shows sales, tax and credits at each rate. Food and drink and other purchases you can't claim credit on aren't blocked automatically: use a code that claims nothing, such as *Not reportable*. Check your rates with your CA.
+
 ## Drafts, lodging and locking
 
 For a BAS or GST return:

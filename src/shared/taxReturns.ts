@@ -11,7 +11,7 @@
 // the guidance and move the date on (RELEASING.md).
 // No tjs:* imports and no Intl here: this file ships in both.
 
-export type ReturnKind = 'bas' | 'nz-gst';
+export type ReturnKind = 'bas' | 'nz-gst' | 'in-gst';
 
 /** Worked out from transactions, in cents, keyed by box. */
 export type ReturnFigures = Record<string, number>;
@@ -259,6 +259,46 @@ export interface RuleSet {
   form: ReturnForm;
 }
 
+// India: a summary to file GSTR-1 and GSTR-3B from. Not the forms themselves.
+const IN_GST: ReturnForm = {
+  kind: 'in-gst',
+  title: 'GST summary',
+  short: 'GST summary',
+  authority: 'the GST portal',
+  lodgeWhere: 'the GST portal or your accountant',
+  inputs: [],
+  filters: ['Taxable', 'Zero-rated', 'Exempt', 'Credits'],
+  wholeDollars: false,
+  rows(f) {
+    return [
+      { section: 'Sales', code: 'Taxable', label: 'Taxable value of sales', value: f.taxable },
+      { code: 'Zero-rated', label: 'Zero-rated sales and exports', value: f.zero },
+      { code: 'Exempt', label: 'Exempt sales', value: f.exempt },
+      { section: 'GST on sales', code: 'IGST', label: 'Integrated tax', value: f.igst },
+      { code: 'CGST', label: 'Central tax', value: f.cgst },
+      { code: 'SGST', label: 'State or UT tax', value: f.sgst },
+      { section: 'Purchases', code: 'Credits', label: 'Purchases with GST', help: 'Before GST', value: f.purchases },
+      { code: 'ITC', label: 'Input tax credit', help: 'Check the split by head against GSTR-2B on the portal', value: f.itc },
+      { section: 'Summary', code: 'Net', label: inGstNet(f) >= 0 ? 'GST to pay' : 'Credit carried forward', value: Math.abs(inGstNet(f)), grand: true },
+    ];
+  },
+  net: (f) => inGstNet(f),
+  headline: (f) => [
+    { label: 'GST on sales', value: f.igst + f.cgst + f.sgst },
+    { label: 'Input tax credit', value: f.itc },
+  ],
+  steps: [
+    'Check the figures. Click through the transactions below if something looks off.',
+    'File your sales in GSTR-1 on the GST portal, invoice by invoice.',
+    'Compare the input tax credit with GSTR-2B, then file GSTR-3B and pay what it shows.',
+  ],
+  note:
+    "A summary from your books, not a filed return. Figures are in rupees and paise; the portal's own figures can differ by rounding. " +
+    'Reverse-charge purchases and credit blocked by law aren\'t worked out here.',
+};
+
+const inGstNet = (f: ReturnFigures) => f.igst + f.cgst + f.sgst - f.itc;
+
 /** Oldest first. When a form changes, add a rule set with its own form; when re-checked, move checkedUntil on. */
 export const RETURN_RULES: Record<ReturnKind, RuleSet[]> = {
   bas: [
@@ -281,6 +321,16 @@ export const RETURN_RULES: Record<ReturnKind, RuleSet[]> = {
       form: NZ_GST,
     },
   ],
+  'in-gst': [
+    {
+      id: 'in-gst-2017',
+      name: 'GST summary (from July 2017)',
+      checkedAgainst: 'CGST Rules 46 and 47 as reproduced by CBIC and third parties, checked November 2026',
+      from: '2017-07-01',
+      checkedUntil: '2027-03-31',
+      form: IN_GST,
+    },
+  ],
 };
 
 /** The rules for a period ending on `periodEnd`, and whether this version of the app has checked them. */
@@ -300,6 +350,7 @@ export function rulesById(kind: ReturnKind, id: string | null | undefined, perio
 export const RETURN_FORMS: Record<ReturnKind, ReturnForm> = {
   bas: RETURN_RULES.bas[RETURN_RULES.bas.length - 1].form,
   'nz-gst': RETURN_RULES['nz-gst'][RETURN_RULES['nz-gst'].length - 1].form,
+  'in-gst': RETURN_RULES['in-gst'][RETURN_RULES['in-gst'].length - 1].form,
 };
 
 export function isReturnKind(v: unknown): v is ReturnKind {

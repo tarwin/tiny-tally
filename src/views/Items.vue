@@ -23,6 +23,7 @@ import { onBooksChanged } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
+import { GST_RATE_OPTIONS } from '../shared/india';
 
 const items = ref<Item[]>([]);
 const categories = ref<Category[]>([]);
@@ -72,6 +73,8 @@ const blank = (kind: CategoryKind = 'income') => ({
   priceIncludesTax: session.books!.pricesIncludeTax,
   categoryId: null as number | null,
   taxCode: null as TaxCode | null,
+  hsn: '',
+  taxRatePpm: session.books!.country === 'IN' ? session.books!.taxRatePpm : (null as number | null),
 });
 const form = ref(blank());
 
@@ -94,6 +97,8 @@ function open(i?: Item) {
         priceIncludesTax: i.priceIncludesTax,
         categoryId: i.categoryId,
         taxCode: i.taxCode,
+        hsn: i.hsn ?? '',
+        taxRatePpm: i.taxRatePpm ?? blank().taxRatePpm,
       }
     : blank(show.value === 'expense' ? 'expense' : 'income');
   if (!i) onKind(form.value.kind);
@@ -131,6 +136,8 @@ async function save() {
       priceIncludesTax: form.value.priceIncludesTax,
       categoryId: form.value.categoryId,
       taxCode: form.value.taxCode,
+      hsn: form.value.hsn,
+      taxRatePpm: form.value.taxRatePpm,
     });
     editing.value = false;
     await load();
@@ -238,6 +245,8 @@ const maxHeight = useFillHeight(tableBox);
           <FormLayoutGroup>
             <Select :model-value="form.categoryId" label="Category" :options="categoryOptions" searchable @update:model-value="onCategory" />
             <Select v-if="taxOn(form.kind)" v-model="form.taxCode" :label="`${tax?.short} code`" :options="taxOptions" />
+            <Select v-if="session.books?.country === 'IN' && taxOn(form.kind) && form.taxCode === 'GST'" v-model="form.taxRatePpm" label="GST rate" :options="GST_RATE_OPTIONS" help-text="Set by its HSN or SAC code." />
+            <TextField v-if="session.books?.country === 'IN'" v-model="form.hsn" label="HSN or SAC code" placeholder="e.g. 998314" help-text="Printed on invoices. Services use a SAC, goods an HSN." />
           </FormLayoutGroup>
         </FormLayout>
       </ModalSection>

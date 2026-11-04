@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { IN_STATE_OPTIONS, WORLD_COUNTRIES } from '../lib/worldOptions';
 import { useRouter } from 'vue-router';
 import { computed, onMounted, ref, watch } from 'vue';
 import {
@@ -65,6 +66,9 @@ const columns = computed<DataTableColumnType[]>(() => [
 const us = computed(() => session.books?.country === 'US');
 const au = computed(() => session.books?.country === 'AU');
 const nz = computed(() => session.books?.country === 'NZ');
+const india = computed(() => session.books?.country === 'IN');
+const inStateOptions = [{ label: 'Not set', value: null }, ...IN_STATE_OPTIONS];
+const countryOptions = [{ label: 'In my country', value: null }, ...WORLD_COUNTRIES.map((c) => ({ label: c.name, value: c.code }))];
 const taxRates = ref<TaxRate[]>([]);
 const rateOptions = computed(() => [
   { label: `${session.books?.taxRateName || 'Your rate'} (${ratePercent(session.books?.taxRatePpm ?? 0)}%)`, value: null },
@@ -116,6 +120,7 @@ const blank = () => ({
   legalName: '',
   tin: '',
   whtPct: '',
+  country: null as string | null,
 });
 const form = ref(blank());
 const nameError = ref<string | null>(null);
@@ -127,7 +132,7 @@ function openEditor(c?: Contact) {
     ? {
         id: c.id, kind: c.kind, name: c.name, email: c.email ?? '', phone: c.phone ?? '', address: c.address ?? '', notes: c.notes ?? '',
         tradingNameId: c.tradingNameId, state: c.state, taxRateId: c.taxRateId, exempt: !!c.taxExempt, taxExempt: c.taxExempt ?? '',
-        is1099: c.is1099, legalName: c.legalName ?? '', tin: c.tin ?? '',
+        is1099: c.is1099, legalName: c.legalName ?? '', tin: c.tin ?? '', country: c.country,
         whtPct: c.whtRatePpm ? String(c.whtRatePpm / 10_000) : '',
       }
     : blank();
@@ -236,6 +241,22 @@ const maxHeight = useFillHeight(tableBox);
             :placeholder="`Default (${defaultTradingName})`"
             help-text="New invoices and quotes for them start from this trading name."
           />
+          <Select v-model="form.country" label="Country" :options="countryOptions" searchable help-text="Set this for customers abroad." />
+          <template v-if="india && !form.country">
+            <FormLayoutGroup>
+              <TextField v-model="form.tin" label="GSTIN" placeholder="27AAPFU0939F1ZV" help-text="Leave it empty if they aren't registered." />
+              <Select v-model="form.state" label="State" :options="inStateOptions" :help-text="form.kind === 'customer' ? 'Sets the place of supply on their invoices.' : ''" />
+            </FormLayoutGroup>
+          </template>
+          <template v-if="india && form.kind === 'customer' && !form.country">
+            <TextField
+              v-model="form.whtPct"
+              label="TDS they deduct"
+              suffix="%"
+              placeholder="None"
+              help-text="If they deduct TDS from what they pay you, usually 10% on professional fees. Payments start with it worked out, on the amount before GST."
+            />
+          </template>
           <Select v-if="us" v-model="form.state" label="State" :options="stateOptions" :help-text="form.kind === 'customer' ? 'Where you deliver to. Counts towards that state\'s sales tax threshold.' : ''" />
           <template v-if="us && form.kind === 'customer' && session.books?.taxEnabled">
             <Select

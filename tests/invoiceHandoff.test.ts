@@ -40,5 +40,6 @@ test('optional fields fall back', () => {
   assert.equal(h.dueDays, null);
   assert.equal(h.number, '');
   assert.equal(h.source, 'another app');
-  assert.deepEqual(h.lines, [{ description: '', quantity: 1.5, unitPrice: 100 }]);
+  assert.deepEqual(h.customer, { name: 'A', address: '', taxId: '', state: null, country: null });
+  assert.deepEqual(h.lines, [{ description: '', quantity: 1.5, unitPrice: 100, hsn: '' }]);
 });

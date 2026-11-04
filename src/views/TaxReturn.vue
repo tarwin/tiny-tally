@@ -126,7 +126,7 @@ async function loadPayg() {
 }
 
 /** When the return is due: the BAS or GST return due date for the period (lodging it yourself). */
-const dueDate = computed(() => (period.value ? (kind.value === 'bas' ? basDue(period.value.from, period.value.to, books.value.basOnline) : nzGstDue(period.value.to)) : null));
+const dueDate = computed(() => (period.value && kind.value !== 'in-gst' ? (kind.value === 'bas' ? basDue(period.value.from, period.value.to, books.value.basOnline) : nzGstDue(period.value.to)) : null));
 
 async function load() {
   if (!period.value) return;
@@ -459,6 +459,20 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
                 </template>
               </tbody>
             </table>
+            <table v-if="figures && report?.byRate?.length" class="Report ByRate">
+              <thead>
+                <tr><th>GST rate</th><th class="num">Taxable sales</th><th class="num">GST on sales</th><th class="num">Purchases</th><th class="num">Credits</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in report.byRate" :key="r.ratePpm">
+                  <td>{{ r.ratePpm / 10_000 }}%</td>
+                  <td class="num">{{ boxMoney(r.sales) }}</td>
+                  <td class="num">{{ boxMoney(r.salesTax) }}</td>
+                  <td class="num">{{ boxMoney(r.purchases) }}</td>
+                  <td class="num">{{ boxMoney(r.credit) }}</td>
+                </tr>
+              </tbody>
+            </table>
             <p class="subdued Note">{{ form.note }}</p>
             <p class="subdued Note">Worked out with {{ ruling.rules.name }}: checked against {{ ruling.rules.checkedAgainst }}.</p>
           </div>
@@ -630,6 +644,10 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
 </template>
 
 <style scoped>
+.ByRate {
+  margin-top: 16px;
+}
+
 .Hint {
   margin: 0 0 12px;
 }

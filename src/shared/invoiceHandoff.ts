@@ -6,28 +6,29 @@
  * {
  *   "tallyInvoice": 1,
  *   "source": "Tiny Time",
- *   "customer": { "name": "Climate and Wildfire Institute", "address": "…" },
+ *   "customer": { "name": "Climate and Wildfire Institute", "address": "…",
+ *                 "taxId": "", "state": "", "country": "" },  // optional, for a new customer: a GSTIN, GST state code, ISO country
  *   "number": "CW-3",              // optional: blank uses Tiny Tally's next number
  *   "issueDate": "2026-11-03",     // optional
  *   "dueDays": 30,                 // optional
- *   "currency": "USD",             // optional: checked against the books
+ *   "currency": "USD",             // optional: a sale in another currency asks for its exchange rate
  *   "reference": "",
  *   "notes": "",
- *   "lines": [{ "description": "CWI Database: Programming (18 Jun – 9 Sep 2026)", "quantity": 7, "unitPrice": 250 }]
+ *   "lines": [{ "description": "CWI Database: Programming (18 Jun – 9 Sep 2026)", "quantity": 7, "unitPrice": 250, "hsn": "998314" }]  // hsn optional
  * }
  *
  * Amounts are in currency units (250 = $250.00), not cents.
  */
 export interface InvoiceHandoff {
   source: string;
-  customer: { name: string; address: string };
+  customer: { name: string; address: string; taxId: string; state: string | null; country: string | null };
   number: string;
   issueDate: string | null;
   dueDays: number | null;
   currency: string | null;
   reference: string;
   notes: string;
-  lines: Array<{ description: string; quantity: number; unitPrice: number }>;
+  lines: Array<{ description: string; quantity: number; unitPrice: number; hsn: string }>;
 }
 
 export const HANDOFF_EXT = '.tallyinvoice';
@@ -50,16 +51,16 @@ export function parseInvoiceHandoff(raw: string): InvoiceHandoff {
   const lines = (Array.isArray(d.lines) ? d.lines : [])
     .map((l) => {
       const o = (l && typeof l === 'object' ? l : {}) as Record<string, unknown>;
-      return { description: text(o.description, 2000), quantity: finite(o.quantity) ?? 1, unitPrice: finite(o.unitPrice) };
+      return { description: text(o.description, 2000), quantity: finite(o.quantity) ?? 1, unitPrice: finite(o.unitPrice), hsn: text(o.hsn, 8) };
     })
-    .filter((l): l is { description: string; quantity: number; unitPrice: number } => l.unitPrice !== null && l.quantity > 0);
+    .filter((l): l is { description: string; quantity: number; unitPrice: number; hsn: string } => l.unitPrice !== null && l.quantity > 0);
   if (!lines.length) throw new Error('The invoice file has no lines with a quantity and price.');
   const issue = text(d.issueDate, 10);
   const due = finite(d.dueDays);
   const cur = text(d.currency, 3).toUpperCase();
   return {
     source: text(d.source, 60) || 'another app',
-    customer: { name, address: text(c.address, 2000) },
+    customer: { name, address: text(c.address, 2000), taxId: text(c.taxId, 15), state: text(c.state, 2) || null, country: text(c.country, 2).toUpperCase() || null },
     number: text(d.number, 60),
     issueDate: /^\d{4}-\d{2}-\d{2}$/.test(issue) ? issue : null,
     dueDays: due !== null && due >= 0 ? Math.round(due) : null,

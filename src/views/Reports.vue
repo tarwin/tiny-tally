@@ -58,6 +58,14 @@ const reports = computed(() => [
         body: 'Your GST return figures (Boxes 5 to 15), ready to copy into myIR.',
       }]
     : []),
+  ...(tax.value?.report === 'in-gst'
+    ? [{
+        to: '/reports/tax-return',
+        icon: 'mdi:bank-outline',
+        title: 'GST summary',
+        body: 'Sales by CGST, SGST and IGST, zero-rated exports and input tax credit, to file GSTR-1 and GSTR-3B from.',
+      }]
+    : []),
   ...(tax.value?.report === 'bas'
     ? [{
         to: '/reports/tax-return',

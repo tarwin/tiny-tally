@@ -119,3 +119,53 @@ Simplified: AU pool disposals are treated as a balancing adjustment on the
 asset rather than reducing the pool; NZ's Investment Boost isn't applied (add
 it to the cost basis by hand); AU low-cost asset pools and US mid-quarter
 convention, listed property limits and luxury car caps aren't covered.
+
+## India
+
+Checked 2026-11-04. Tables and rules: `src/shared/india.ts`, `src/shared/taxReturns.ts`
+(`IN_GST`). **Have an Indian CA review these before relying on them.** Official
+pages were mostly unreachable when this was written, so much of this rests on
+reproductions and third parties.
+
+| Figure | Value | Source |
+|---|---|---|
+| Invoice number | up to 16 characters: letters, digits, `-`, `/`; unique per financial year | [CBIC: Rule 46](https://taxinformation.cbic.gov.in/content/html/tax_repository/gst/rules/cgst_rules/active/chapter6/rule46_v1.00.html), seen in search extracts only |
+| Invoice contents, export endorsement wording, country of destination | Rule 46, amended to 2023 | [GSTZen's reproduction](https://gstzen.in/a/tax-invoice-cgst-rule-46.html) (third party) |
+| Invoice for services within 30 days of supply | Rule 47 | [ClearTax's reproduction](https://cleartax.in/s/cgst-rules-chapter-6-tax-invoice-credit-and-debit-notes) (third party) |
+| Rounding tax to the nearest rupee | Section 170 | [CBIC: section 170](https://taxinformation.cbic.gov.in/content/html/tax_repository/gst/acts/2017_CGST_act/active/chapter21/section170_v1.00.html), seen in search extracts only |
+| E-invoicing above Rs 5 crore | not built: out of reach for sole traders | [TaxGuru, October 2026](https://taxguru.in/goods-and-service-tax/gst-invoice-october-2026-rs-5-crore-coverage-30-day-irn-reporting-rule.html) (third party) |
+| 18% on most services, Rs 20 lakh registration | default rate only | [IncorpX](https://www.incorpx.io/blog/gst-for-freelancers-consultants-india) (third party) |
+| TDS on professional fees: 10% over Rs 50,000 a year, on the amount before GST | a suggestion on the customer | [CA Dialogue](https://cadialogue.in/tds-professional-fees-section-393-tax-year-2026/) (third party) |
+| State codes, GSTIN check character | | Several third-party lists agree; the GSTIN check was tested on one published sample number |
+
+Not confirmed or not built: section 170 is not applied to invoices (they show
+paise); HSN/SAC digit requirements by turnover; one GST rate per set of books;
+input tax credit isn't split by head; no reverse-charge purchases, no income
+tax return, trips or depreciation for India; statements stay in rupees for
+foreign customers.
+
+### GST rates (checked 2026-11-04)
+
+A rate belongs to the goods or service, so Indian books set it per line
+(`GST_RATES` in `src/shared/india.ts`).
+
+| What | Value | Source |
+|---|---|---|
+| Goods rates from 22 Sep 2025 | 5, 18, 40, 3, 0.25, 1.5 and 28%, in Schedules I to VII | Gazette text of Notification 9/2025-Integrated Tax (Rate): the rate paragraph and the entries cited here were read, not all 56 pages: [PDF](https://a2ztaxcorp.net/wp-content/uploads/2025/09/N.-No.-9-2025-Integrated-Tax-Rate.pdf) |
+| Gold (7108) 3%, rough diamonds (7102) 0.25%, brochures (4901) 5%, other printed matter (4911) 18% | | Same notification |
+| Schedule VII (28%) is only pan masala and tobacco | | Same notification |
+| Those goods move to 40% on 1 Feb 2026, except biris at 18%, and compensation cess ends | Press and a practitioner summary, not the gazette | [LiveLaw](https://www.livelaw.in/amp/tax-cases/new-rsp-based-valuation-mechanism-40-gst-rate-on-pan-masala-cigarettes-cigars-tobacco-products-from-february-01-516688), [Free Press Journal](https://www.freepressjournal.in/business/tobacco-products-face-additional-excise-duty-pan-masala-health-cess-from-february-1) |
+| Two main slabs (5%, 18%) plus 40% from 22 Sep 2025; 12% isn't among the rates in the notification above | | [PIB: 56th GST Council](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2163555&reg=48&lang=2), from search results; the page refuses automated fetches |
+| Tables report HSN and rate together | | [ClearTax: Table 12](https://news.cleartax.in/?p=5941) |
+| A credit note keeps the original invoice's rate | Practitioner article, not a CBIC circular | [Tally](https://tallysolutions.com/smart-moves/expert-insights/gst-credit-debit-notes-rate-change-scenarios/) |
+
+Not confirmed, and so not in the list: the services notification
+(15/2025-Central Tax (Rate)) wasn't read in full, and the real estate rates (1%,
+7.5%) and the 6% and 12% some sources give for construction materials weren't
+confirmed. Whether anything is still at 28% today isn't stated outright. 12% and
+28% stay on the list, marked older, for documents and credit notes from before
+they ended.
+
+Input tax credit isn't blocked automatically: goods with no credit are recorded
+with a code that claims nothing. The demo does this for food and drink, from
+memory of section 17(5), which wasn't checked here. Ask a CA.

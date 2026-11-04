@@ -49,6 +49,7 @@ const commands = computed<(Item & { words: string })[]>(() => {
     { key: 'p-journal', icon: 'mdi:book-open-variant', label: 'Journal & Trial Balance', words: 'report accountant debits credits', run: go('/reports/journal') },
     ...(report === 'bas' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'BAS & GST', words: 'tax return ato', run: go('/reports/tax-return') }] : []),
     ...(report === 'nz-gst' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'GST return', words: 'tax ird myir', run: go('/reports/tax-return') }] : []),
+    ...(report === 'in-gst' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'GST summary', words: 'tax gstr cgst sgst igst', run: go('/reports/tax-return') }] : []),
     ...(report === 'us-sales-tax' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'Sales tax', words: 'tax return', run: go('/reports/sales-tax') }] : []),
     ...(session.books?.country === 'US' ? [{ key: 'p-schc', icon: 'mdi:file-document-outline', label: 'Schedule C', words: 'tax irs', run: go('/reports/schedule-c') }] : []),
     { key: 'p-inv', icon: 'mdi:file-document-outline', label: 'Invoices', run: go('/invoices') },
