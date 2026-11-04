@@ -22,8 +22,7 @@ import { useFillHeight } from '../lib/fillHeight';
 import { onBooksChanged } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
-import { taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
-import { GST_RATE_OPTIONS } from '../shared/india';
+import { lineRateOptions, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
 
 const items = ref<Item[]>([]);
 const categories = ref<Category[]>([]);
@@ -32,6 +31,8 @@ const show = ref<CategoryKind | 'all'>('all');
 
 const currency = computed(() => session.books!.currency);
 const tax = computed(() => booksTax());
+/** Where the rate goes with the product. In Canada it goes with the sale's province, so products don't have one. */
+const productRates = computed(() => (booksProfile().tax?.rateFollowsPlace ? [] : lineRateOptions(booksProfile().tax)));
 const taxOn = (kind: CategoryKind) => !!tax.value && tracksTax(booksProfile().tax, kind);
 
 const rows = computed(() => items.value.filter((i) => show.value === 'all' || i.kind === show.value));
@@ -74,7 +75,7 @@ const blank = (kind: CategoryKind = 'income') => ({
   categoryId: null as number | null,
   taxCode: null as TaxCode | null,
   hsn: '',
-  taxRatePpm: session.books!.country === 'IN' ? session.books!.taxRatePpm : (null as number | null),
+  taxRatePpm: productRates.value.length ? session.books!.taxRatePpm : (null as number | null),
 });
 const form = ref(blank());
 
@@ -245,7 +246,7 @@ const maxHeight = useFillHeight(tableBox);
           <FormLayoutGroup>
             <Select :model-value="form.categoryId" label="Category" :options="categoryOptions" searchable @update:model-value="onCategory" />
             <Select v-if="taxOn(form.kind)" v-model="form.taxCode" :label="`${tax?.short} code`" :options="taxOptions" />
-            <Select v-if="session.books?.country === 'IN' && taxOn(form.kind) && form.taxCode === 'GST'" v-model="form.taxRatePpm" label="GST rate" :options="GST_RATE_OPTIONS" help-text="Set by its HSN or SAC code." />
+            <Select v-if="productRates.length && taxOn(form.kind) && form.taxCode === 'GST'" v-model="form.taxRatePpm" :label="`${tax?.short} rate`" :options="productRates" :help-text="session.books?.country === 'IN' ? 'Set by its HSN or SAC code.' : ''" />
             <TextField v-if="session.books?.country === 'IN'" v-model="form.hsn" label="HSN or SAC code" placeholder="e.g. 998314" help-text="Printed on invoices. Services use a SAC, goods an HSN." />
           </FormLayoutGroup>
         </FormLayout>

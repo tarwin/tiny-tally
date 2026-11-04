@@ -105,7 +105,7 @@ const MONTHS_IN: Record<TaxFrequency, number> = { monthly: 1, 'two-monthly': 2, 
  * Tax periods, newest first, aligned to the financial year. Quarters are
  * numbered within the financial year (Q1 = first three months).
  */
-export function taxPeriods(frequency: TaxFrequency, ys: YearStart, count = 12, now = new Date()): TaxPeriod[] {
+export function taxPeriods(frequency: TaxFrequency, ys: YearStart, count = 12, now = new Date(), spansOnly = false): TaxPeriod[] {
   const months = MONTHS_IN[frequency];
   const today = startOfDay(now);
   // Find the period containing today, then walk back.
@@ -118,7 +118,7 @@ export function taxPeriods(frequency: TaxFrequency, ys: YearStart, count = 12, n
     const end = addDays(addMonths(start, months), -1);
     const fy = yearStartFor(start, ys);
     let label: string;
-    if (months === 1 || months === 2 || months === 6) label = span(start, end);
+    if (spansOnly || months === 1 || months === 2 || months === 6) label = span(start, end);
     else if (months === 3) {
       const q = Math.round(((start.getFullYear() - fy.getFullYear()) * 12 + start.getMonth() - fy.getMonth()) / 3) + 1;
       label = `Q${q} ${yearLabel(fy, ys)} (${span(start, end)})`;
@@ -127,6 +127,16 @@ export function taxPeriods(frequency: TaxFrequency, ys: YearStart, count = 12, n
     start = addMonths(start, -months);
   }
   return out;
+}
+
+/**
+ * The books' own tax periods. UK VAT quarters are set by HMRC and end at month
+ * ends, whatever the financial year, so they run from the books' VAT quarters.
+ */
+export function booksTaxPeriods(books: { country: string; taxPeriod: TaxFrequency; fiscalYearStart: YearStart; vatQuarters: string }, count = 12, now = new Date()) {
+  return books.country === 'GB'
+    ? taxPeriods(books.taxPeriod, books.vatQuarters, count, now, true)
+    : taxPeriods(books.taxPeriod, books.fiscalYearStart, count, now);
 }
 
 /** The same-length period immediately before [from, to] (for comparisons). */

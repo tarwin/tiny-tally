@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { IN_STATE_OPTIONS } from '../lib/worldOptions';
+import { CA_PROVINCE_OPTIONS, IN_STATE_OPTIONS } from '../lib/worldOptions';
+import { CA_OTHER_TAX } from '../shared/canada';
+import { VAT_QUARTERS } from '../shared/uk';
 import { computed, ref, watch } from 'vue';
 import {
   Button,
@@ -69,6 +71,7 @@ function fromBooks(c: Books): Form {
     logo: c.logo,
     homeState: c.homeState,
     lutNumber: c.lutNumber,
+    vatQuarters: c.vatQuarters,
     taxRateName: c.taxRateName,
     basOnline: c.basOnline,
   };
@@ -217,6 +220,13 @@ async function setLock(date: string | null) {
               :options="[{ label: 'From your GSTIN', value: '' }, ...IN_STATE_OPTIONS]"
               help-text="Sales here are charged CGST and SGST. Sales to other states are charged IGST."
             />
+            <Select
+              v-if="books.country === 'CA'"
+              v-model="form.homeState"
+              label="Province or territory"
+              :options="[{ label: 'Not set', value: '' }, ...CA_PROVINCE_OPTIONS]"
+              :help-text="CA_OTHER_TAX[form.homeState] ? `Tiny Tally tracks GST/HST only. ${CA_OTHER_TAX[form.homeState]} isn't tracked here, so keep it separately if you're registered for it.` : 'Where the business is. Purchases start at this rate.'"
+            />
             <div>
               <div class="Label">Logo</div>
               <div class="Logo">
@@ -290,13 +300,16 @@ async function setLock(date: string | null) {
                 placeholder="e.g. Brooklyn, NY"
                 help-text="Shown beside other rates you add below, and on the Sales tax report."
               />
-              <div v-if="books.country !== 'IN'">
+              <div v-if="!profile.tax.accrualOnly">
                 <div class="Label">Accounting basis</div>
                 <SegmentedControl
                   v-model="form.taxBasis"
                   :options="[{ label: 'Cash', value: 'cash' }, { label: 'Accrual', value: 'accrual' }]"
                 />
-                <p class="subdued Hint">
+                <p v-if="books.country === 'GB'" class="subdued Hint">
+                  Accrual: report VAT when you invoice or are billed, the usual way. Cash: report it when money changes hands, only if you're on HMRC's Cash Accounting Scheme.
+                </p>
+                <p v-else class="subdued Hint">
                   Cash: report {{ profile.tax.short }} when money changes hands (most small businesses). Accrual: report it when you invoice or are billed.
                 </p>
               </div>
@@ -312,6 +325,13 @@ async function setLock(date: string | null) {
                 v-model="form.basOnline"
                 label="I lodge my BAS online myself"
                 help-text="The ATO gives two more weeks for quarters 1, 3 and 4 (11 November, 12 May, 11 August). Reminders use those dates."
+              />
+              <Select
+                v-if="books.country === 'GB' && form.taxPeriod === 'quarterly'"
+                v-model="form.vatQuarters"
+                label="Your VAT quarters end in"
+                :options="VAT_QUARTERS"
+                help-text="HMRC sets these. They're on your VAT registration certificate and in your VAT online account."
               />
               <ToggleSwitch v-model="form.pricesIncludeTax" :label="`Invoice prices include ${profile.tax.short} by default`" />
             </template>

@@ -4,12 +4,15 @@
 // The country is picked when the books are made and can't change. It sets
 // the currency, the financial year, how ambiguous dates read on import, the
 // tax ID and the tax rules. Australia has GST and the BAS, New Zealand GST
-// and the GST return, the US a flat sales tax (or none), and India GST split
-// by state, with zero-rated exports (india.ts).
-import type { TaxCode } from './tax';
-import { gstinError } from './india';
+// and the GST return, the US a flat sales tax (or none), India GST split by
+// state with zero-rated exports (india.ts), Canada GST/HST at the customer's
+// province's rate (canada.ts), and the UK VAT at a rate per line (uk.ts).
+import type { TaxCode, TaxCodeInfo } from './tax';
+import { CA_RATES, businessNumberError, caRatePpm, caTaxWord } from './canada';
+import { EXPORT_PLACE, GST_RATES, gstHeads, gstRateText, gstinError } from './india';
+import { VAT_RATES, vatNumberError } from './uk';
 
-export type Country = 'AU' | 'NZ' | 'US' | 'IN';
+export type Country = 'AU' | 'NZ' | 'US' | 'IN' | 'CA' | 'GB';
 
 /** How often tax returns are filed. */
 export type TaxFrequency = 'monthly' | 'two-monthly' | 'quarterly' | 'six-monthly' | 'annual';
@@ -35,10 +38,18 @@ export interface CountryTax {
   codes: TaxCode[];
   /** The code for a new line on each side. */
   defaultCode: { sales: TaxCode; purchases: TaxCode };
+  /** What a code is called here, where it isn't what the other countries call it. */
+  codeLabels?: Partial<Record<TaxCode, Pick<TaxCodeInfo, 'label' | 'help'>>>;
+  /** Each line has its own rate, from this list, instead of the document having one. */
+  lineRates?: { ppm: number; label: string }[];
+  /** The rate comes from where the sale is made, not from what's being sold, so products don't carry one (Canada). */
+  rateFollowsPlace?: boolean;
+  /** Tax falls due when the invoice is issued, so there's no cash basis to choose (India, Canada). */
+  accrualOnly?: boolean;
   /** The ledger account the tax sits in. */
   account: string;
   /** The tax report the books prepare. */
-  report: 'bas' | 'nz-gst' | 'us-sales-tax' | 'in-gst';
+  report: 'bas' | 'nz-gst' | 'us-sales-tax' | 'in-gst' | 'ca-gst' | 'uk-vat';
   /** The filing frequencies on offer, and the usual one. */
   frequencies: { value: TaxFrequency; label: string; description?: string }[];
   defaultFrequency: TaxFrequency;
@@ -318,6 +329,8 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       adjustmentNote: false,
       codes: ['GST', 'ZER', 'EXE', 'NTR'],
       defaultCode: { sales: 'GST', purchases: 'GST' },
+      lineRates: GST_RATES,
+      accrualOnly: true,
       account: 'GST',
       report: 'in-gst',
       frequencies: [
@@ -332,6 +345,93 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       fallback: { income: 'GST', expense: 'GST' },
       taxPayment: 'GST Payment',
       taxRefund: 'GST Refund',
+    }),
+  },
+  CA: {
+    code: 'CA',
+    name: 'Canada',
+    currency: 'CAD',
+    // Sole proprietors generally keep a calendar year.
+    fiscalYearStart: '01-01',
+    dateOrder: 'mdy',
+    taxId: { label: 'Business Number', placeholder: '123456789 RT 0001', check: businessNumberError },
+    tax: {
+      name: 'GST/HST',
+      short: 'GST/HST',
+      registered: { label: 'Registered for GST/HST', help: "Charges GST or HST by your customer's province, tracks your input tax credits and prepares your GST/HST return figures." },
+      defaultRatePpm: 50_000,
+      rateEditable: false,
+      pricesIncludeTax: false,
+      spellOut: false,
+      adjustmentNote: false,
+      codes: ['GST', 'ZER', 'EXE', 'NTR'],
+      defaultCode: { sales: 'GST', purchases: 'GST' },
+      codeLabels: {
+        GST: { label: 'GST/HST', help: "Charged or paid at the rate on the line: on a sale, the rate for the customer's province" },
+        ZER: { label: 'Zero-rated', help: 'Taxed at 0%: exports and other listed supplies. Not every service to a customer abroad qualifies.' },
+        EXE: { label: 'Exempt', help: 'No GST/HST and no credits, such as interest and most financial services' },
+        NTR: { label: 'Not reportable', help: 'Left off the return: owner drawings, loans, tax payments' },
+      },
+      lineRates: CA_RATES,
+      rateFollowsPlace: true,
+      accrualOnly: true,
+      account: 'GST/HST',
+      report: 'ca-gst',
+      frequencies: [
+        { value: 'annual', label: 'Annually', description: 'What the CRA assigns at $1.5 million of taxable sales or less.' },
+        { value: 'quarterly', label: 'Quarterly', description: 'Assigned over $1.5 million, or by choice.' },
+        { value: 'monthly', label: 'Monthly', description: 'Assigned over $6 million, or by choice.' },
+      ],
+      defaultFrequency: 'annual',
+    },
+    invoiceTitle: () => 'Invoice',
+    categories: categories({
+      codes: { 'Interest Income': 'EXE', 'Bank Fees': 'EXE', Insurance: 'EXE', 'Taxes & Licences': 'NTR' },
+      fallback: { income: 'GST', expense: 'GST' },
+      taxPayment: 'GST/HST Payment',
+      taxRefund: 'GST/HST Refund',
+    }),
+  },
+  GB: {
+    code: 'GB',
+    name: 'United Kingdom',
+    currency: 'GBP',
+    // The tax year. Sole traders are taxed on it, whatever their accounting date.
+    fiscalYearStart: '04-06',
+    dateOrder: 'dmy',
+    taxId: { label: 'VAT number', placeholder: 'GB 123 4567 89', check: vatNumberError },
+    tax: {
+      name: 'VAT',
+      short: 'VAT',
+      registered: { label: 'Registered for VAT', help: 'Charges VAT at a rate per line, tracks what you can reclaim and prepares your 9-box VAT return to send through bridging software.' },
+      defaultRatePpm: 200_000,
+      rateEditable: false,
+      pricesIncludeTax: false,
+      spellOut: false,
+      adjustmentNote: false,
+      codes: ['GST', 'ZER', 'EXE', 'OOS', 'NTR'],
+      defaultCode: { sales: 'GST', purchases: 'GST' },
+      codeLabels: {
+        GST: { label: 'VAT', help: 'Charged or paid at the rate on the line: 20% for most things, 5% for some' },
+        ZER: { label: 'Zero-rated', help: 'VAT at 0%, such as most food and children’s clothes. Counts in Boxes 6 and 7.' },
+        EXE: { label: 'Exempt or no VAT to reclaim', help: 'Financial and property transactions, stamps, and costs such as business entertainment. Counts in Boxes 6 and 7.' },
+        NTR: { label: 'Not reportable', help: 'Left off the return: wages, owner drawings, loans, tax payments' },
+      },
+      lineRates: VAT_RATES,
+      account: 'VAT',
+      report: 'uk-vat',
+      frequencies: [
+        { value: 'quarterly', label: 'Quarterly', description: 'What most businesses do. Pick your quarters below.' },
+        { value: 'monthly', label: 'Monthly', description: 'If HMRC has agreed monthly returns with you.' },
+      ],
+      defaultFrequency: 'quarterly',
+    },
+    invoiceTitle: (registered) => (registered ? 'VAT Invoice' : 'Invoice'),
+    categories: categories({
+      codes: { 'Interest Income': 'EXE', 'Bank Fees': 'EXE', Insurance: 'EXE', 'Meals & Entertainment': 'EXE', 'Taxes & Licences': 'NTR', Travel: 'ZER' },
+      fallback: { income: 'GST', expense: 'GST' },
+      taxPayment: 'VAT Payment',
+      taxRefund: 'VAT Refund',
     }),
   },
   US: {
@@ -411,7 +511,34 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   },
 };
 
-export const COUNTRY_OPTIONS = (['AU', 'IN', 'NZ', 'US'] as Country[]).map((c) => ({ label: COUNTRIES[c].name, value: c }));
+export const COUNTRY_OPTIONS = (['AU', 'CA', 'IN', 'NZ', 'GB', 'US'] as Country[]).map((c) => ({ label: COUNTRIES[c].name, value: c }));
+
+/** Whether car trips and the asset register are in for this country: they follow its income tax rules. */
+export const hasIncomeRules = (c: string | null | undefined) => c === 'AU' || c === 'NZ' || c === 'US';
+
+/** What a new line starts at, where each line has a rate. Null everywhere else. */
+export function defaultLineRate(books: { country: string; taxRatePpm: number; homeState?: string | null }, place: string | null | undefined, date: string) {
+  const tax = countryProfile(books.country).tax;
+  if (!tax?.lineRates) return null;
+  if (tax.rateFollowsPlace) return caRatePpm(place && place !== EXPORT_PLACE ? place : books.homeState, date);
+  return books.taxRatePpm;
+}
+
+/** A line's rate as printed beside it: 'GST 18%', 'HST 13%', 'VAT 5%'. */
+export function lineRateText(country: string, ppm: number) {
+  return `${country === 'CA' ? caTaxWord(ppm) : countryProfile(country).tax?.short ?? ''} ${gstRateText(ppm)}`;
+}
+
+/** The tax lines on a document's totals, one per rate (India: two where the state's share is half). */
+export function taxHeadsFor(country: string, lines: { ratePpm: number; tax: number }[], split: 'intra' | 'inter') {
+  if (country === 'IN') return gstHeads(lines, split);
+  const byRate = new Map<number, number>();
+  for (const l of lines) if (l.tax) byRate.set(l.ratePpm, (byRate.get(l.ratePpm) ?? 0) + l.tax);
+  return [...byRate.entries()].sort((a, b) => a[0] - b[0]).map(([ppm, value]) => {
+    const [word, rate] = lineRateText(country, ppm).split(' ');
+    return { label: `${word} @ ${rate}`, value };
+  });
+}
 
 export function isCountry(v: unknown): v is Country {
   return typeof v === 'string' && v in COUNTRIES;

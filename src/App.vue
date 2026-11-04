@@ -12,6 +12,7 @@ import Welcome from './views/Welcome.vue';
 import character from './assets/tiny-tally-character.svg';
 import { api } from './lib/api';
 import { DOCS } from './lib/documents';
+import { hasIncomeRules } from './shared/countries';
 import { HANDOFF_EXT } from './shared/invoiceHandoff';
 import { dropAttachments } from './lib/attachments';
 import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density, stepZoom } from './lib/appSettings';
@@ -81,8 +82,8 @@ const sections = computed<NavigationSectionType[]>(() => [
       { id: 'categories', label: 'Categories', icon: 'mdi:shape-outline', url: '/categories' },
       { id: 'budget', label: 'Budget', icon: 'mdi:target', url: '/budget' },
       { id: 'recurring', label: 'Recurring', icon: 'mdi:repeat', url: '/recurring' },
-      // Trips and depreciation follow each country's income tax rules; India's aren't in yet.
-      ...(session.books?.country === 'IN' ? [] : [
+      // Trips and depreciation follow each country's income tax rules; India's, Canada's and the UK's aren't in yet.
+      ...(!hasIncomeRules(session.books?.country) ? [] : [
         { id: 'mileage', label: session.books?.country === 'US' ? 'Mileage' : 'Car trips', icon: 'mdi:car-outline', url: '/mileage' },
         { id: 'assets', label: 'Assets', icon: 'mdi:laptop', url: '/assets' },
       ]),

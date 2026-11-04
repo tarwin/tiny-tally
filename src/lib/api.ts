@@ -51,6 +51,7 @@ export interface BooksSettings {
   taxRateName: string;
   /** India: the Letter of Undertaking's reference. */
   lutNumber: string;
+  vatQuarters: string;
 }
 
 export interface Books extends BooksSettings {
@@ -894,7 +895,7 @@ export interface TaxReturnReport {
   untagged: number;
   /** NZ: what percent adjustments are worked out from. */
   context: AdjustmentContext | null;
-  /** India: sales and purchases at each GST rate. */
+  /** Sales and purchases at each rate, where each line has its own. */
   byRate?: { ratePpm: number; sales: number; salesTax: number; purchases: number; credit: number }[];
 }
 
@@ -1237,7 +1238,7 @@ export const api = {
     call<Record<string, { categoryId: number; kind: 'income' | 'expense' }>>('import.suggest', { names }),
   commitImport: (plan: ImportPlan) => call<ImportResult>('import.commit', plan),
   start: () => call<StartState>('app.start'),
-  createBooks: (p: { name: string; tradingName?: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxRatePpm?: number; taxId?: string }) =>
+  createBooks: (p: { name: string; tradingName?: string; country: Country; fiscalYearStart: string; dir: string | null; taxEnabled?: boolean; taxRatePpm?: number; taxId?: string; homeState?: string }) =>
     call<Books>('books.create', p),
   createDemo: (dir: string | null, today: string, country: Country = 'AU') => call<Books>('books.createDemo', { dir, today, country }),
   openBooks: (path: string, force = false) => call<OpenResult>('books.open', { path, force }),

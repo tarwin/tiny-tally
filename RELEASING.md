@@ -3,7 +3,8 @@
 0. Tax rules: check `checkedUntil` in `RETURN_RULES` (src/shared/taxReturns.ts)
    and `SCHEDULE_C_YEARS` (src/shared/scheduleC.ts). If a date is near or past,
    re-check the official guidance named in `checkedAgainst` (ATO GST reporting
-   and Simpler BAS pages, IRD IR375 and IR372, IRS Instructions for Schedule C).
+   and Simpler BAS pages, IRD IR375 and IR372, IRS Instructions for Schedule C,
+   CRA RC4022, HMRC VAT Notices 700/12 and 700/22).
    No change: move `checkedUntil` on and update `checkedAgainst`. A changed form
    or new line numbers: add a new rule set or year from the date it applies,
    and keep the old one so earlier returns still work out the same.
@@ -68,6 +69,8 @@ update the file, run `pnpm test`, and do a release so apps pick it up.
 | October – November | IRS: Social Security wage base, 1099 threshold, new Schedule C instructions | `usTaxYears.ts`, `scheduleC.ts` |
 | December | IRS standard mileage rate for the next calendar year | `usTaxYears.ts` |
 | December | NZ: GST rules (IR375 / IR372): move `checkedUntil` on | `taxReturns.ts` |
+| December | Canada: CRA RC4022 and the provincial GST/HST rates: move `checkedUntil` on | `taxReturns.ts`, `canada.ts` |
+| March | UK: VAT Notices 700/12 and 700/22, and the rates after the Budget: move `checkedUntil` on | `taxReturns.ts`, `uk.ts` |
 | Once a year | US state economic nexus thresholds | `usStates.ts` |
 | When set by law | NZ Matariki dates past 2034 | `holidays.ts` |
 | Any time | Depreciation figures: AU instant asset write-off, NZ low-value asset limit, US section 179 and bonus depreciation | `auTaxYears.ts`, `nzTaxYears.ts`, `depreciation.ts` |

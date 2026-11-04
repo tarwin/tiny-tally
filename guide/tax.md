@@ -77,12 +77,60 @@ GST in India depends on what you sell, so each invoice line, bill line, product 
 
 The GST summary shows sales, tax and credits at each rate. Food and drink and other purchases you can't claim credit on aren't blocked automatically: use a code that claims nothing, such as *Not reportable*. Check your rates with your CA.
 
+## Canada: GST/HST
+
+The **GST/HST return** shows lines 101 and 103 to 115 for a year, a quarter or a month. Line 103 counts every invoice in the period, paid or not, so there's no cash basis to choose. Line 101 includes zero-rated and exempt sales. Type any adjustments (lines 104 and 107), instalments (110) and rebates (111) that apply to you.
+
+The rate follows the customer's province:
+
+| Where | Tax |
+|---|---|
+| Alberta, BC, Manitoba, Quebec, Saskatchewan, the territories | GST 5% |
+| Ontario | HST 13% |
+| New Brunswick, Newfoundland and Labrador, PEI | HST 15% |
+| Nova Scotia | HST 14% (15% before 1 April 2025) |
+
+Set the province on the contact, or on the invoice. An invoice can't be approved without one. Bills and transactions start at your own province's rate: change it on the line if the bill shows something else. A credit note keeps the rate of the invoice it came from.
+
+A customer outside Canada starts with no province and a zero-rated line. **Check that's right**: only some services to non-residents are zero-rated, so a line may need tax. A service done wholly outside Canada isn't charged GST/HST at all.
+
+Some things aren't worked out for you:
+
+- **Meals and entertainment**: you can usually claim half the tax. Enter that half as the tax on the transaction.
+- **PST, RST and QST** are separate taxes with their own returns. Tiny Tally doesn't track them.
+- **The Quick Method** isn't worked out.
+- **Income tax**: there's no T2125 or instalment planner.
+
+Tiny Tally doesn't file. Type the figures into GST/HST NETFILE or My Business Account, or send them to your accountant.
+
+## United Kingdom: VAT
+
+The **VAT return** shows the nine boxes for a quarter or a month. Tell Tiny Tally which months your quarters end in, under **Your VAT quarters end in** in Settings: they're on your registration certificate. Boxes 2, 8 and 9 only matter if you move goods between Northern Ireland and the EU. Boxes 6 to 9 are in whole pounds with the pence dropped; Box 5 keeps its pence.
+
+Each invoice line, bill line, product and transaction has its own rate:
+
+| Choose | For |
+|---|---|
+| VAT at 20% or 5% | Standard and reduced rate |
+| Zero-rated | Zero-rated, for example printed books and brochures |
+| Exempt or no VAT to reclaim | Exempt, for example most insurance |
+| Outside the scope | Sales outside UK VAT, for example some services to customers abroad. Counted in Box 6 |
+| Not reportable | Wages, drawings, VAT payments and anything else that stays off the return |
+
+Business entertainment starts as *Exempt or no VAT to reclaim*, so it stays out of Box 4. **Check these defaults with your accountant**: what applies depends on what you sell and who to.
+
+**Making Tax Digital.** VAT returns have to go to HMRC through compatible software unless you're exempt. Typing or copying the figures across doesn't count. Tiny Tally doesn't connect to HMRC. Instead, **Export VAT figures** saves a CSV of the nine boxes, which you import into bridging software to submit, or give to your accountant.
+
+Accrual is the usual basis. Switch to Cash only if you're on HMRC's Cash Accounting Scheme. Reverse charge, the Flat Rate Scheme and partial exemption aren't worked out.
+
+Making Tax Digital for Income Tax is separate, and Tiny Tally doesn't send those updates either. There's no self-assessment return or payments on account planner.
+
 ## Drafts, lodging and locking
 
-For a BAS or GST return:
+For a BAS, GST, GST/HST or VAT return:
 
 1. **Save draft** keeps the figures you've entered while you check.
-2. After the period has ended, **Mark as lodged…** once you've lodged it. This locks every transaction and invoice up to the end of the period, so the figures you reported can't change.
+2. After the period has ended, **Mark as lodged…** once you've lodged, filed or submitted it. This locks every transaction and invoice up to the end of the period, so the figures you reported can't change.
 3. **Record payment** (or **Record the refund**) when the money moves.
 
 Found a mistake? **Reopen to amend** unlocks it.

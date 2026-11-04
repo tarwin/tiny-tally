@@ -43,8 +43,10 @@ export interface BooksSettings {
   logo: string;
   /** Entries dated on or before this can't change (set by lodging a tax return). */
   lockDate: string | null;
-  /** US: the state the business is in ('NY'), or ''. Sales into other states count towards their nexus thresholds. India: the GST state code ('27'). */
+  /** US: the state the business is in ('NY'), or ''. Sales into other states count towards their nexus thresholds. India: the GST state code ('27'). Canada: the province ('ON'). */
   homeState: string;
+  /** UK: which set of quarters HMRC has the business on, as where a year of them starts ('01-01'). */
+  vatQuarters: string;
   /** India: the Letter of Undertaking's reference, printed on exports without tax. Renewed each financial year. */
   lutNumber: string;
   /** US: what the books' own sales tax rate is called on documents and reports ('Brooklyn, NY'). */
@@ -135,6 +137,7 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
     },
   },
   lutNumber: { key: 'lut_number', ...str() },
+  vatQuarters: { key: 'vat_quarters', ...oneOf(['01-01', '02-01', '03-01'], '01-01') },
   homeState: {
     key: 'home_state',
     parse: (v) => v ?? '',

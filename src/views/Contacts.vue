@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IN_STATE_OPTIONS, WORLD_COUNTRIES } from '../lib/worldOptions';
+import { CA_PROVINCE_OPTIONS, IN_STATE_OPTIONS, WORLD_COUNTRIES } from '../lib/worldOptions';
 import { useRouter } from 'vue-router';
 import { computed, onMounted, ref, watch } from 'vue';
 import {
@@ -67,7 +67,9 @@ const us = computed(() => session.books?.country === 'US');
 const au = computed(() => session.books?.country === 'AU');
 const nz = computed(() => session.books?.country === 'NZ');
 const india = computed(() => session.books?.country === 'IN');
+const canada = computed(() => session.books?.country === 'CA');
 const inStateOptions = [{ label: 'Not set', value: null }, ...IN_STATE_OPTIONS];
+const provinceOptions = [{ label: 'Not set', value: null }, ...CA_PROVINCE_OPTIONS];
 const countryOptions = [{ label: 'In my country', value: null }, ...WORLD_COUNTRIES.map((c) => ({ label: c.name, value: c.code }))];
 const taxRates = ref<TaxRate[]>([]);
 const rateOptions = computed(() => [
@@ -248,6 +250,13 @@ const maxHeight = useFillHeight(tableBox);
               <Select v-model="form.state" label="State" :options="inStateOptions" :help-text="form.kind === 'customer' ? 'Sets the place of supply on their invoices.' : ''" />
             </FormLayoutGroup>
           </template>
+          <Select
+            v-if="canada && !form.country"
+            v-model="form.state"
+            label="Province or territory"
+            :options="provinceOptions"
+            :help-text="form.kind === 'customer' ? 'Sets the GST or HST rate on their invoices.' : ''"
+          />
           <template v-if="india && form.kind === 'customer' && !form.country">
             <TextField
               v-model="form.whtPct"

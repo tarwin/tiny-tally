@@ -29,10 +29,10 @@ import { csvMoney, saveCsv } from '../lib/csv';
 import { addDays, formatDay, today } from '../lib/dates';
 
 import { formatMoney, parseMoney, toInput } from '../lib/money';
-import { taxPeriods } from '../lib/periods';
+import { booksTaxPeriods } from '../lib/periods';
 import { printElement } from '../lib/print';
 import { booksProfile, session } from '../lib/session';
-import { TAX_CODE_MAP } from '../shared/tax';
+import { taxCodeLabel, type TaxCode } from '../shared/tax';
 import { basDue, nzGstDue } from '../shared/dueDates';
 import { incomeYearOf } from '../shared/incomeYear';
 import {
@@ -55,6 +55,7 @@ const router = useRouter();
 const books = computed(() => session.books!);
 const money = (v: number) => formatMoney(v, books.value.currency);
 const profile = computed(() => booksProfile());
+const taxName = computed(() => profile.value.tax?.name ?? 'GST');
 const kind = computed<ReturnKind>(() => {
   const report = profile.value.tax?.report;
   return isReturnKind(report) ? report : 'bas';
@@ -73,7 +74,7 @@ const boxMoney = (cents: number) =>
     ? formatMoney(Math.trunc(cents / 100) * 100, books.value.currency).replace(/\.00$/, '')
     : formatMoney(cents, books.value.currency);
 
-const periods = computed(() => taxPeriods(books.value.taxPeriod, books.value.fiscalYearStart, 12));
+const periods = computed(() => booksTaxPeriods(books.value, 12));
 const periodKey = ref('');
 const period = computed(() => periods.value.find((p) => p.from === periodKey.value) ?? periods.value[0]);
 const periodOptions = computed(() =>
@@ -87,7 +88,7 @@ const periodOptions = computed(() =>
   }),
 );
 
-const basis = ref<Basis>(books.value.taxBasis);
+const basis = ref<Basis>(profile.value.tax?.accrualOnly ? 'accrual' : books.value.taxBasis);
 const report = ref<TaxReturnReport | null>(null);
 const returns = ref<TaxReturn[]>([]);
 const loading = ref(false);
@@ -126,7 +127,7 @@ async function loadPayg() {
 }
 
 /** When the return is due: the BAS or GST return due date for the period (lodging it yourself). */
-const dueDate = computed(() => (period.value && kind.value !== 'in-gst' ? (kind.value === 'bas' ? basDue(period.value.from, period.value.to, books.value.basOnline) : nzGstDue(period.value.to)) : null));
+const dueDate = computed(() => (!period.value ? null : kind.value === 'bas' ? basDue(period.value.from, period.value.to, books.value.basOnline) : kind.value === 'nz-gst' ? nzGstDue(period.value.to) : null));
 
 async function load() {
   if (!period.value) return;
@@ -354,32 +355,41 @@ const detailRows = computed(() =>
 );
 const labelOptions = computed(() => [
   { label: 'All transactions', value: 'all' },
-  ...form.value.filters.map((l) => ({ label: form.value.kind === 'nz-gst' ? `Box ${l}` : l, value: l })),
+  ...form.value.filters.map((l) => ({ label: form.value.kind === 'nz-gst' || form.value.kind === 'uk-vat' ? `Box ${l}` : form.value.kind === 'ca-gst' ? `Line ${l}` : l, value: l })),
 ]);
 const detailColumns: DataTableColumnType[] = [
   { key: 'date', label: 'Date', width: 110 },
   { key: 'memo', label: 'Description', minWidth: 200 },
-  { key: 'taxCode', label: 'Tax code', width: 140, formatFunc: (v) => TAX_CODE_MAP[v as keyof typeof TAX_CODE_MAP]?.label ?? v },
+  { key: 'taxCode', label: 'Tax code', width: 140, formatFunc: (v) => taxCodeLabel(profile.value.tax, v as TaxCode) },
   { key: 'labels', label: 'Boxes', width: 140, formatFunc: (v) => (v as string[]).join(', ') },
   { key: 'gross', label: 'Amount', width: 120 },
-  { key: 'tax', label: 'GST', width: 100 },
+  { key: 'tax', label: taxName.value, width: 100 },
 ];
 
 function openRow(r: TaxReturnDetailRow) {
   if (r.invoiceId) void router.push(`/invoices/${r.invoiceId}`);
 }
 
+/** The boxes alone, for bridging software to send. */
+function exportFigures() {
+  if (!report.value) return;
+  void saveCsv(`${form.value.short} figures ${period.value.from} to ${period.value.to}`, [
+    ['Period start', 'Period end', 'Box', 'Description', 'Amount'],
+    ...rows.value.map((r) => [period.value.from, period.value.to, r.code, r.label, csvMoney(r.value)]),
+  ]);
+}
+
 function exportCsv() {
   if (!report.value) return;
   void saveCsv(`${form.value.short} ${period.value.from} to ${period.value.to}`, [
-    ['Date', 'Kind', 'Description', 'Contact', 'Category', 'Tax code', 'Boxes', 'Amount (inc. GST)', 'GST'],
+    ['Date', 'Kind', 'Description', 'Contact', 'Category', 'Tax code', 'Boxes', `Amount (inc. ${taxName.value})`, taxName.value],
     ...report.value.detail.map((r) => [
       r.date,
       r.kind,
       r.memo ?? '',
       r.contactName ?? '',
       r.categoryName ?? '',
-      r.taxCode,
+      taxCodeLabel(profile.value.tax, r.taxCode as TaxCode),
       r.labels.join(' '),
       csvMoney(r.gross),
       csvMoney(r.tax),
@@ -392,19 +402,24 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
 
 <template>
   <Page
-    :title="form.kind === 'bas' ? 'BAS & GST' : 'GST return'"
+    :title="form.kind === 'bas' ? 'BAS & GST' : form.title"
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
     size="fullWidth"
-    :primary-action="{ label: 'Export detail CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
-    :secondary-actions="[{ label: 'Print', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
+    :primary-action="form.exportsFigures
+      ? { label: 'Export VAT figures', icon: 'mdi:file-delimited-outline', onAction: exportFigures }
+      : { label: 'Export detail CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
+    :secondary-actions="[
+      ...(form.exportsFigures ? [{ label: 'Export detail CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }] : []),
+      { label: 'Print', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) },
+    ]"
   >
-    <Banner v-if="!books.taxEnabled" status="info" title="GST is turned off">
-      Turn on “Registered for GST” in Settings to track GST and prepare your {{ form.short }}.
+    <Banner v-if="!books.taxEnabled" status="info" :title="`${taxName} is turned off`">
+      Turn on “{{ profile.tax?.registered.label }}” in Settings to track {{ taxName }} and prepare your {{ form.short }}.
     </Banner>
 
     <div class="Controls">
       <Select v-model="periodKey" label="Period" :options="periodOptions" show-description />
-      <div>
+      <div v-if="!profile.tax?.accrualOnly">
         <div class="Label">Accounting basis</div>
         <SegmentedControl
           v-model="basis"
@@ -461,7 +476,7 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
             </table>
             <table v-if="figures && report?.byRate?.length" class="Report ByRate">
               <thead>
-                <tr><th>GST rate</th><th class="num">Taxable sales</th><th class="num">GST on sales</th><th class="num">Purchases</th><th class="num">Credits</th></tr>
+                <tr><th>{{ taxName }} rate</th><th class="num">Taxable sales</th><th class="num">{{ taxName }} on sales</th><th class="num">Purchases</th><th class="num">{{ form.kind === 'uk-vat' ? 'Reclaimed' : 'Credits' }}</th></tr>
               </thead>
               <tbody>
                 <tr v-for="r in report.byRate" :key="r.ratePpm">

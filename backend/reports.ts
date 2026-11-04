@@ -634,7 +634,75 @@ export function inGstReport(p: { from: string; to: string }) {
   return { figures, detail, untagged, context: null, byRate: gstByRate(p.from, p.to, settings.taxRatePpm) };
 }
 
-/** Taxable sales and purchases at each GST rate, for GSTR-1's rate-wise tables. */
+/**
+ * Canada: the lines of the GST/HST return. Tax is reported on paid and unpaid
+ * invoices alike, so this always reads the accrual ledger.
+ */
+export function caGstReport(p: { from: string; to: string }) {
+  range(p.from, p.to);
+  const rows = taxLedgerRows('ledger_accrual', p.from, p.to);
+  const figures: ReturnFigures = { '101': 0, '103': 0, '106': 0, purchases: 0 };
+  const detail = [];
+  let untagged = 0;
+  for (const r of rows) {
+    if (!r.taxCode) {
+      untagged++;
+      continue;
+    }
+    if (r.taxCode === 'NTR') continue;
+    const net = r.gross - r.tax;
+    if (r.kind === 'income') {
+      figures['101'] += net;
+      figures['103'] += r.tax;
+      detail.push({ ...r, labels: r.tax ? ['101', '103'] : ['101'] });
+    } else if (r.tax) {
+      figures.purchases += net;
+      figures['106'] += r.tax;
+      detail.push({ ...r, labels: ['106'] });
+    }
+  }
+  return { figures, detail, untagged, context: null, byRate: gstByRate(p.from, p.to, getSettings().taxRatePpm) };
+}
+
+/**
+ * The UK's VAT return, on the books' basis (cash for the Cash Accounting Scheme).
+ * Box 6 takes every sale before VAT and Box 7 every purchase, zero-rated and
+ * exempt included. Not-reportable rows stay off.
+ */
+export function ukVatReport(p: { from: string; to: string; basis: Basis }) {
+  range(p.from, p.to);
+  const rows = taxLedgerRows(p.basis === 'accrual' ? 'ledger_accrual' : 'ledger_cash', p.from, p.to);
+  const figures: ReturnFigures = { '1': 0, '4': 0, '6': 0, '7': 0 };
+  const detail = [];
+  let untagged = 0;
+  for (const r of rows) {
+    if (!r.taxCode) {
+      untagged++;
+      continue;
+    }
+    if (r.taxCode === 'NTR') continue;
+    const net = r.gross - r.tax;
+    const [taxBox, valueBox] = r.kind === 'income' ? ['1', '6'] : ['4', '7'];
+    figures[taxBox] += r.tax;
+    figures[valueBox] += net;
+    detail.push({ ...r, labels: r.tax ? [taxBox, valueBox] : [valueBox] });
+  }
+  // By rate reads documents by their date, so it only lines up with the boxes on accrual.
+  return { figures, detail, untagged, context: null, byRate: p.basis === 'accrual' ? gstByRate(p.from, p.to, getSettings().taxRatePpm) : [] };
+}
+
+function taxLedgerRows(view: 'ledger_accrual' | 'ledger_cash', from: string, to: string) {
+  return all<any>(getBooks().db,
+    `SELECT l.entry_id AS entryId, l.invoice_id AS invoiceId, l.date, l.kind, l.gross, l.tax, l.tax_code AS taxCode,
+            l.memo, c.name AS categoryName, ct.name AS contactName
+     FROM ${view} l
+     LEFT JOIN categories c ON c.id = l.category_id
+     LEFT JOIN contacts ct ON ct.id = l.contact_id
+     WHERE l.date BETWEEN ? AND ?
+     ORDER BY l.date, l.entry_id`, from, to);
+}
+
+/** Taxable sales and purchases at each rate: for GSTR-1's rate-wise tables, and to check a return by eye. */
 function gstByRate(from: string, to: string, booksRate: number) {
   const rows = all<{ kind: string; ratePpm: number; net: number; tax: number }>(getBooks().db,
     `SELECT kind, rate AS ratePpm, SUM(net) AS net, SUM(tax) AS tax FROM (
@@ -690,6 +758,8 @@ export function taxReturnReport(p: { from: string; to: string; basis: Basis }) {
     return { kind, figures: r.figures as unknown as ReturnFigures, detail: r.detail, untagged: r.untagged, context: null };
   }
   if (kind === 'in-gst') return { kind, ...inGstReport(p) };
+  if (kind === 'ca-gst') return { kind, ...caGstReport(p) };
+  if (kind === 'uk-vat') return { kind, ...ukVatReport(p) };
   return { kind, ...nzGstReport(p) };
 }
 

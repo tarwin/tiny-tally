@@ -31,7 +31,7 @@ import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { printElement } from '../lib/print';
 import { booksProfile, booksTax, session } from '../lib/session';
 import { useTabTitle } from '../lib/tabs';
-import { TAX_CODE_MAP, tracksTax } from '../shared/tax';
+import { taxCodeLabel, tracksTax } from '../shared/tax';
 
 const dataVersion = useBooksVersion();
 
@@ -456,7 +456,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
                 <tr v-for="l in invoice.lines" :key="l.id">
                   <td>{{ l.description || '—' }}</td>
                   <td class="subdued">{{ l.categoryName }}</td>
-                  <td v-if="tax" class="subdued">{{ l.taxCode ? TAX_CODE_MAP[l.taxCode].label : '' }}</td>
+                  <td v-if="tax" class="subdued">{{ l.taxCode ? taxCodeLabel(booksProfile().tax, l.taxCode) : '' }}</td>
                   <td class="num money">{{ money(l.net + l.tax) }}</td>
                 </tr>
               </tbody>

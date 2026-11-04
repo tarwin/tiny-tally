@@ -22,6 +22,8 @@ import { openBooksAt, pickAndOpenBooks, refreshSession } from '../lib/books';
 import { today } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { COUNTRIES, COUNTRY_OPTIONS, type Country } from '../shared/countries';
+import { CA_OTHER_TAX } from '../shared/canada';
+import { CA_PROVINCE_OPTIONS } from '../lib/worldOptions';
 import { MONTHS, session } from '../lib/session';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import { appSettingsPanel } from '../lib/appSettings';
@@ -63,6 +65,9 @@ const taxEnabled = ref(true);
 const taxRate = ref('');
 const rateError = ref<string | null>(null);
 const taxId = ref('');
+/** Canada: the province, which sets the rate on purchases. */
+const homeState = ref('');
+const provinceError = ref<string | null>(null);
 const demoing = ref(false);
 /** The selected country first, so its demo is the obvious one. */
 const DEMO_COUNTRIES = computed(() => [...COUNTRY_OPTIONS].sort((a, b) => Number(b.value === country.value) - Number(a.value === country.value)));
@@ -126,7 +131,8 @@ async function create() {
   const askRate = !!profile.value?.tax?.rateEditable && taxEnabled.value;
   const ppm = askRate ? parseRate(taxRate.value) : null;
   rateError.value = askRate && !ppm ? 'Enter your sales tax rate, like 8.875.' : null;
-  if (nameError.value || !country.value || rateError.value) return;
+  provinceError.value = country.value === 'CA' && taxEnabled.value && !homeState.value ? 'Choose your province or territory.' : null;
+  if (nameError.value || !country.value || rateError.value || provinceError.value) return;
   if (storage.value === 'folder' && !folder.value) {
     await chooseFolder();
     if (!folder.value) return;
@@ -141,6 +147,7 @@ async function create() {
       taxEnabled: !!profile.value?.tax && taxEnabled.value,
       ...(ppm ? { taxRatePpm: ppm } : {}),
       taxId: taxId.value.trim(),
+      ...(country.value === 'CA' && homeState.value ? { homeState: homeState.value } : {}),
       dir: storage.value === 'internal' ? null : folder.value,
     });
     await refreshSession();
@@ -252,6 +259,16 @@ function shortPath(path: string) {
                 <Select v-model="fyDay" label="Day" :options="YEAR_START_DAYS" />
               </FormLayoutGroup>
               <ToggleSwitch v-if="profile.tax" v-model="taxEnabled" :label="profile.tax.registered.label" :help-text="profile.tax.registered.help" />
+              <Select
+                v-if="country === 'CA' && taxEnabled"
+                v-model="homeState"
+                label="Province or territory"
+                :options="CA_PROVINCE_OPTIONS"
+                placeholder="Choose…"
+                required
+                :error="provinceError ?? undefined"
+                :help-text="CA_OTHER_TAX[homeState] ? `Tiny Tally tracks GST/HST only. ${CA_OTHER_TAX[homeState]} isn't tracked here, so keep it separately if you're registered for it.` : 'Where the business is. Purchases start at this rate.'"
+              />
               <TextField
                 v-if="profile.tax?.rateEditable && taxEnabled"
                 v-model="taxRate"

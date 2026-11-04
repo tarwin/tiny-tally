@@ -11,7 +11,7 @@
 // the guidance and move the date on (RELEASING.md).
 // No tjs:* imports and no Intl here: this file ships in both.
 
-export type ReturnKind = 'bas' | 'nz-gst' | 'in-gst';
+export type ReturnKind = 'bas' | 'nz-gst' | 'in-gst' | 'ca-gst' | 'uk-vat';
 
 /** Worked out from transactions, in cents, keyed by box. */
 export type ReturnFigures = Record<string, number>;
@@ -49,6 +49,8 @@ export interface ReturnForm {
   filters: string[];
   /** Lodged in whole dollars, cents dropped (the ATO). */
   wholeDollars: boolean;
+  /** Sent through other software, so the figures export as a file (HMRC: no copying by hand). */
+  exportsFigures?: boolean;
   rows(f: ReturnFigures, inputs: ReturnInputs): ReturnRow[];
   /** What's owed: positive to pay, negative for a refund. */
   net(f: ReturnFigures, inputs: ReturnInputs): number;
@@ -299,6 +301,108 @@ const IN_GST: ReturnForm = {
 
 const inGstNet = (f: ReturnFigures) => f.igst + f.cgst + f.sgst - f.itc;
 
+// Canada: the lines of the GST/HST return, to type into NETFILE or My Business
+// Account. Tax is reported on paid and unpaid invoices alike (RC4022), so these
+// read the accrual ledger whatever the basis.
+const caLine = (f: ReturnFigures, inputs: ReturnInputs) => {
+  const l105 = f['103'] + (inputs.l104 ?? 0);
+  const l108 = f['106'] + (inputs.l107 ?? 0);
+  const l109 = l105 - l108;
+  return { l105, l108, l109, due: l109 - (inputs.l110 ?? 0) - (inputs.l111 ?? 0) };
+};
+
+const CA_GST: ReturnForm = {
+  kind: 'ca-gst',
+  title: 'GST/HST return',
+  short: 'GST/HST return',
+  authority: 'the CRA',
+  lodgeWhere: 'GST/HST NETFILE, My Business Account or your accountant',
+  inputs: [
+    { key: 'l104', label: 'Line 104' },
+    { key: 'l107', label: 'Line 107' },
+    { key: 'l110', label: 'Line 110' },
+    { key: 'l111', label: 'Line 111' },
+  ],
+  filters: ['101', '103', '106'],
+  wholeDollars: false,
+  rows(f, inputs) {
+    const c = caLine(f, inputs);
+    return [
+      { section: 'Sales', code: '101', label: 'Sales and other revenue', help: 'Before tax, including zero-rated and exempt supplies', value: f['101'] },
+      { section: 'Net tax', code: '103', label: 'GST/HST collected or collectible', help: 'On paid and unpaid invoices', value: f['103'] },
+      { code: '104', label: 'Adjustments to add', value: inputs.l104 ?? 0, input: 'l104' },
+      { code: '105', label: 'Total GST/HST and adjustments (103 + 104)', value: c.l105 },
+      { code: '106', label: 'Input tax credits', help: 'GST/HST paid or payable on purchases', value: f['106'] },
+      { code: '107', label: 'Adjustments to deduct', value: inputs.l107 ?? 0, input: 'l107' },
+      { code: '108', label: 'Total credits and adjustments (106 + 107)', value: c.l108 },
+      { code: '109', label: 'Net tax (105 − 108)', value: c.l109 },
+      { section: 'Payments and rebates', code: '110', label: 'Instalments paid', value: inputs.l110 ?? 0, input: 'l110' },
+      { code: '111', label: 'Rebates', value: inputs.l111 ?? 0, input: 'l111' },
+      { section: 'Summary', code: c.due >= 0 ? '115' : '114', label: c.due >= 0 ? 'To pay the CRA' : 'Refund from the CRA', value: Math.abs(c.due), grand: true },
+    ];
+  },
+  net: (f, inputs) => caLine(f, inputs).due,
+  headline: (f) => [
+    { label: 'GST/HST collected (103)', value: f['103'] },
+    { label: 'Input tax credits (106)', value: f['106'] },
+  ],
+  steps: [
+    'Check the figures. Click through the transactions below if something looks off.',
+    'Enter any adjustments, instalments or rebates that apply to you.',
+    'Type the figures into GST/HST NETFILE or My Business Account, or send them to your accountant.',
+  ],
+  note:
+    "GST/HST only. PST, RST and QST are separate taxes with their own returns, and aren't worked out here. " +
+    "Only half the tax on meals and entertainment can be claimed: enter that half as the tax on those transactions. The Quick Method isn't worked out here.",
+};
+
+// The UK's nine boxes (VAT Notice 700/12). Boxes 6 to 9 go in whole pounds.
+const pounds = (pence: number) => Math.trunc(pence / 100) * 100;
+const ukBox5 = (f: ReturnFigures, inputs: ReturnInputs) => f['1'] + (inputs.box2 ?? 0) - f['4'];
+
+const UK_VAT: ReturnForm = {
+  kind: 'uk-vat',
+  title: 'VAT return',
+  short: 'VAT return',
+  authority: 'HMRC',
+  lodgeWhere: 'bridging software recognised by HMRC, or your accountant',
+  inputs: [
+    { key: 'box2', label: 'Box 2' },
+    { key: 'box8', label: 'Box 8' },
+    { key: 'box9', label: 'Box 9' },
+  ],
+  filters: ['1', '4', '6', '7'],
+  wholeDollars: false,
+  exportsFigures: true,
+  rows(f, inputs) {
+    const box3 = f['1'] + (inputs.box2 ?? 0);
+    const box5 = ukBox5(f, inputs);
+    return [
+      { section: 'VAT', code: '1', label: 'VAT due on sales and other outputs', value: f['1'] },
+      { code: '2', label: 'VAT due on goods acquired from the EU', help: 'Northern Ireland only', value: inputs.box2 ?? 0, input: 'box2' },
+      { code: '3', label: 'Total VAT due (Box 1 + Box 2)', value: box3 },
+      { code: '4', label: 'VAT reclaimed on purchases and other inputs', value: f['4'] },
+      { code: '5', label: box5 >= 0 ? 'Net VAT to pay HMRC' : 'Net VAT to reclaim from HMRC', value: Math.abs(box5), grand: true },
+      { section: 'Values, excluding VAT, in whole pounds', code: '6', label: 'Total sales and other outputs', help: 'Including zero-rated, exempt and outside the scope', value: pounds(f['6']) },
+      { code: '7', label: 'Total purchases and other inputs', value: pounds(f['7']) },
+      { code: '8', label: 'Goods and related costs supplied to the EU', help: 'Northern Ireland only', value: pounds(inputs.box8 ?? 0), input: 'box8' },
+      { code: '9', label: 'Goods and related costs acquired from the EU', help: 'Northern Ireland only', value: pounds(inputs.box9 ?? 0), input: 'box9' },
+    ];
+  },
+  net: (f, inputs) => ukBox5(f, inputs),
+  headline: (f) => [
+    { label: 'VAT on sales (Box 1)', value: f['1'] },
+    { label: 'VAT reclaimed (Box 4)', value: f['4'] },
+  ],
+  steps: [
+    'Check the figures. Click through the transactions below if something looks off.',
+    'Enter Boxes 2, 8 and 9 only if you move goods between Northern Ireland and the EU.',
+    "Choose Export VAT figures, then send the file to HMRC with bridging software, or give it to your accountant. HMRC doesn't allow typing these in by hand unless you're exempt from Making Tax Digital.",
+  ],
+  note:
+    "Boxes 6 to 9 are in whole pounds, with pence dropped. Reverse charge, the Flat Rate Scheme and partial exemption aren't worked out here: ask your accountant if they apply to you.",
+};
+
 /** Oldest first. When a form changes, add a rule set with its own form; when re-checked, move checkedUntil on. */
 export const RETURN_RULES: Record<ReturnKind, RuleSet[]> = {
   bas: [
@@ -331,6 +435,26 @@ export const RETURN_RULES: Record<ReturnKind, RuleSet[]> = {
       form: IN_GST,
     },
   ],
+  'ca-gst': [
+    {
+      id: 'ca-gst-2024',
+      name: 'GST/HST return, filed online (from January 2024)',
+      checkedAgainst: 'CRA guide RC4022, checked November 2026',
+      from: '2024-01-01',
+      checkedUntil: '2027-12-31',
+      form: CA_GST,
+    },
+  ],
+  'uk-vat': [
+    {
+      id: 'uk-vat-2021',
+      name: '9-box VAT return (from January 2021)',
+      checkedAgainst: 'VAT Notices 700/12 and 700/22, checked November 2026',
+      from: '2021-01-01',
+      checkedUntil: '2027-03-31',
+      form: UK_VAT,
+    },
+  ],
 };
 
 /** The rules for a period ending on `periodEnd`, and whether this version of the app has checked them. */
@@ -351,6 +475,8 @@ export const RETURN_FORMS: Record<ReturnKind, ReturnForm> = {
   bas: RETURN_RULES.bas[RETURN_RULES.bas.length - 1].form,
   'nz-gst': RETURN_RULES['nz-gst'][RETURN_RULES['nz-gst'].length - 1].form,
   'in-gst': RETURN_RULES['in-gst'][RETURN_RULES['in-gst'].length - 1].form,
+  'ca-gst': RETURN_RULES['ca-gst'][RETURN_RULES['ca-gst'].length - 1].form,
+  'uk-vat': RETURN_RULES['uk-vat'][RETURN_RULES['uk-vat'].length - 1].form,
 };
 
 export function isReturnKind(v: unknown): v is ReturnKind {

@@ -10,7 +10,8 @@ import { updateSettings } from '../backend/settings.ts';
 import { all, getBooks, one } from '../backend/db.ts';
 import { COUNTRIES } from '../src/shared/countries.ts';
 import { carryingValue, foreignBalance, parseFxRate, toBooks } from '../src/shared/currency.ts';
-import { EXPORT_PLACE, GST_RATES, gstHeads, gstNumberError, gstRateOr, gstSplit, gstinError, gstinState } from '../src/shared/india.ts';
+import { lineRateOr } from '../src/shared/tax.ts';
+import { EXPORT_PLACE, GST_RATES, gstHeads, gstNumberError, gstSplit, gstinError, gstinState } from '../src/shared/india.ts';
 
 type Ctx = { db: any; services: number; account: number; contact: (name: string, extra: object) => number; sale: (contactId: number, unitPrice: number, extra?: object) => number };
 
@@ -228,8 +229,9 @@ test('a line with no rate takes the books', () => india(({ contact, sale }) => {
 test('only real GST rates are accepted', () => india(({ contact, sale, services }) => {
   const local = contact('Pune Co', { state: '27' });
   assert.throws(() => sale(local, 0, { lines: mixed(services, [77_000]) }), /GST rate/);
-  assert.equal(gstRateOr(null, 180_000), 180_000);
-  assert.equal(gstRateOr(50_000, 180_000), 50_000);
+  const tax = COUNTRIES.IN.tax!;
+  assert.equal(lineRateOr(tax, null, 180_000), 180_000);
+  assert.equal(lineRateOr(tax, 50_000, 180_000), 50_000);
   // Every rate on the list can be halved into a printable CGST and SGST.
   for (const r of GST_RATES) assert.ok(Number.isInteger(r.ppm / 2));
 }));

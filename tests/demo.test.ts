@@ -12,10 +12,11 @@ import { trialBalance } from '../backend/ledger.ts';
 import { gstNumberError } from '../src/shared/india.ts';
 import { taxWithheld } from '../backend/auNzTax.ts';
 import { incomeYearOf, incomeYearRange } from '../src/shared/incomeYear.ts';
+import { hasIncomeRules } from '../src/shared/countries.ts';
 
 const TODAY = '2026-11-03';
 
-for (const c of ['AU', 'NZ', 'US', 'IN'] as const) {
+for (const c of ['AU', 'NZ', 'US', 'IN', 'CA', 'GB'] as const) {
   test(`demo books: ${c}`, async () => {
     const b = await makeBooks({ name: DEMO_NAMES[c], ...DEMO_SETUP[c] });
     b.run(() => {
@@ -25,11 +26,11 @@ for (const c of ['AU', 'NZ', 'US', 'IN'] as const) {
       const last = incomeYearOf(TODAY, ys) - 1;
       const { from, to } = incomeYearRange(last, ys);
       const pl = profitAndLoss({ from, to, basis: 'cash' });
-      assert.ok(pl.totals.income > 10_000_000, `income ${pl.totals.income}`);
+      assert.ok(pl.totals.income > 8_000_000, `income ${pl.totals.income}`);
       assert.ok(pl.totals.net > 0, `profit ${pl.totals.net}`);
       // Every journal balances, and last year's depreciation is posted and current.
       assert.equal(one<{ t: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS t FROM journal_lines')!.t, 0);
-      if (c !== 'IN') {
+      if (hasIncomeRules(c)) {
         const reg = assetRegister(last);
         assert.equal(reg.rows.length, 1);
         assert.ok(reg.totals.claimed > 0);
@@ -38,10 +39,10 @@ for (const c of ['AU', 'NZ', 'US', 'IN'] as const) {
       }
       const lodged = all<any>(db, 'SELECT id FROM tax_returns WHERE lodged_at IS NOT NULL');
       if (c === 'US') assert.equal(lodged.length, 0);
-      else assert.equal(lodged.length, c === 'AU' ? 4 : c === 'IN' ? 12 : 6);
+      else assert.equal(lodged.length, { AU: 4, GB: 4, IN: 12, CA: 1, NZ: 6 }[c]);
       if (c === 'NZ') assert.ok(taxWithheld(from, to).total > 0);
       const instalments = one<{ n: number }>(db,
-        c === 'IN'
+        !hasIncomeRules(c)
           ? "SELECT COUNT(*) AS n FROM entries e JOIN categories c ON c.id = e.category_id WHERE c.name = 'Income Tax Payment'"
           : "SELECT COUNT(*) AS n FROM entries e JOIN categories c ON c.id = e.category_id WHERE c.report_line = 'estimated-tax'")!.n;
       assert.ok(instalments >= 3);

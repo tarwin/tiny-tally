@@ -29,7 +29,7 @@ features:
     details: Profit and loss, balance sheet, cash flow, budgets and more.
     link: /reports
   - title: Tax figures, worked out
-    details: Australian BAS, NZ GST returns, US Schedule C and sales tax.
+    details: Australian BAS, NZ, Indian and Canadian GST returns, UK VAT, US Schedule C and sales tax.
     link: /tax
   - title: Work your way
     details: Tabs, windows, ⌘K search and keyboard shortcuts.

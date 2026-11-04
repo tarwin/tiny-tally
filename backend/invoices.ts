@@ -12,10 +12,11 @@
 import { all, getBooks, one, run } from './db';
 import { changedSince } from './entries';
 import { assertUnlocked, getSettings, updateSettings, type BooksSettings } from './settings';
-import { TAX_CODE_MAP, evenTax, lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
+import { TAX_CODE_MAP, evenTax, lineRateOr, lineTotals, sumTotals, taxCodeOr, type TaxCode } from '../src/shared/tax';
 import { carryingValue, foreignBalance, isCurrency, toBooks } from '../src/shared/currency';
-import { EXPORT_PLACE, gstNumberError, gstRateOr, gstSplit, gstinState, isInState, placeFor } from '../src/shared/india';
-import { countryProfile } from '../src/shared/countries';
+import { EXPORT_PLACE, gstNumberError, gstSplit, gstinState, isInState, placeFor } from '../src/shared/india';
+import { isCaProvince } from '../src/shared/canada';
+import { countryProfile, defaultLineRate } from '../src/shared/countries';
 import { normaliseLayout } from '../src/shared/templateLayout';
 import { defaultTradingNameId, resolveTradingName, senderFor, snapshotOf } from './tradingNames';
 import { resolveTaxRate } from './usTax';
@@ -305,13 +306,18 @@ export function saveInvoice(input: InvoiceInput) {
   const inBooks = (minor: number) => (foreign ? toBooks(minor, fxRate!, foreign, settings.currency) : minor);
   // India: where it's supplied decides CGST + SGST or IGST, and exports can go without tax.
   const india = settings.country === 'IN' && settings.taxEnabled && type !== 'bill';
-  const customer = india ? one<any>(db, 'SELECT state, country FROM contacts WHERE id = ?', input.contactId) : null;
-  const place = india ? clean(input.placeOfSupply) ?? placeFor(customer) : null;
-  if (place && place !== EXPORT_PLACE && !isInState(place)) throw new Error('Choose the place of supply.');
-  if (india && type !== 'quote' && status === 'sent' && !place) {
-    throw new Error(`Choose the place of supply before approving this ${word}: add the customer's state, or pick it here.`);
+  // Canada: where it's supplied decides between GST and which HST rate.
+  const canadaSale = settings.country === 'CA' && settings.taxEnabled && type !== 'bill';
+  const placed = india || canadaSale;
+  const customer = placed ? one<any>(db, 'SELECT state, country FROM contacts WHERE id = ?', input.contactId) : null;
+  const place = placed ? clean(input.placeOfSupply) ?? placeFor(customer, settings.country) : null;
+  if (place && place !== EXPORT_PLACE && !(canadaSale ? isCaProvince(place) : isInState(place))) throw new Error(canadaSale ? 'Choose the province.' : 'Choose the place of supply.');
+  if (placed && type !== 'quote' && status === 'sent' && !place) {
+    throw new Error(canadaSale
+      ? `Choose the province before approving this ${word}: add the customer's province, or pick it here.`
+      : `Choose the place of supply before approving this ${word}: add the customer's state, or pick it here.`);
   }
-  const exportMode = place === EXPORT_PLACE ? (input.exportMode === 'igst' ? 'igst' : 'lut') : null;
+  const exportMode = india && place === EXPORT_PLACE ? (input.exportMode === 'igst' ? 'igst' : 'lut') : null;
   const even = india && gstSplit(place, homeStateOf(settings)) === 'intra';
   // US sales can be at one of several rates. A document keeps the rate it was
   // worked out at while it stays on the same one, even if the rate changes later.
@@ -337,8 +343,9 @@ export function saveInvoice(input: InvoiceInput) {
     if (exportMode === 'lut' && taxCode === 'GST') taxCode = 'ZER';
     const hsn = settings.country === 'IN' ? clean(l.hsn) : null;
     if (hsn && !/^\d{4,8}$/.test(hsn)) throw new Error(`Line ${i + 1}: an HSN or SAC code is 4 to 8 digits.`);
-    // India taxes per line, at the rate of the goods or service. Everywhere else the document has one rate.
-    const taxRatePpm = settings.country === 'IN' && taxCode && TAX_CODE_MAP[taxCode].taxable ? gstRateOr(l.taxRatePpm, rate.ppm) : null;
+    // India, Canada and the UK tax per line. Everywhere else the document has one rate.
+    const taxRules = countryProfile(settings.country).tax;
+    const taxRatePpm = taxRules?.lineRates && taxCode && TAX_CODE_MAP[taxCode].taxable ? lineRateOr(taxRules, l.taxRatePpm, defaultLineRate(settings, place, input.issueDate)!) : null;
     const t = lineTotals({ qtyMilli, unitPrice, taxCode }, !!input.pricesIncludeTax, settings.taxEnabled, taxRatePpm ?? rate.ppm, even && !foreign);
     if (!foreign) return { description: clean(l.description) ?? '', qtyMilli, unitPrice, categoryId, taxCode, hsn, taxRatePpm, ...t, fcNet: null as number | null, fcTax: null as number | null, sort: i };
     const net = inBooks(t.net);

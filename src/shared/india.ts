@@ -87,10 +87,10 @@ export function gstSplit(place: string | null | undefined, homeState: string | n
   return place && place !== EXPORT_PLACE && place === homeState ? 'intra' : 'inter';
 }
 
-/** Where a customer's supply takes place, for most services: where the customer is. */
-export function placeFor(contact: { country?: string | null; state?: string | null } | null | undefined) {
+/** Where a customer's supply takes place, for most services: where the customer is. Canada uses this too. */
+export function placeFor(contact: { country?: string | null; state?: string | null } | null | undefined, home = 'IN') {
   if (!contact) return null;
-  if (contact.country && contact.country !== 'IN') return EXPORT_PLACE;
+  if (contact.country && contact.country !== home) return EXPORT_PLACE;
   return contact.state ?? null;
 }
 
@@ -109,16 +109,6 @@ export const GST_RATES: { ppm: number; label: string }[] = [
   { ppm: 120_000, label: '12% (older)' },
   { ppm: 280_000, label: '28% (older)' },
 ];
-
-export const GST_RATE_OPTIONS = GST_RATES.map((r) => ({ label: r.label, value: r.ppm }));
-
-/** The rate to use on a line: the one given if it's a real rate, or the fallback when none was. */
-export function gstRateOr(input: unknown, fallback: number) {
-  if (input === null || input === undefined) return fallback;
-  const ppm = Number(input);
-  if (ppm !== fallback && !GST_RATES.some((r) => r.ppm === ppm)) throw new Error('Choose a GST rate from the list.');
-  return ppm;
-}
 
 const pct = (ppm: number) => ppm / 10_000;
 export const gstRateText = (ppm: number) => `${pct(ppm)}%`;

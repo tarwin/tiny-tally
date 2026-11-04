@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { Card, CardSection, Icon, Page } from '@octans/ui';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/money';
-import { taxPeriods } from '../lib/periods';
+import { booksTaxPeriods } from '../lib/periods';
 import { booksTax, session } from '../lib/session';
 import { RETURN_FORMS, isReturnKind } from '../shared/taxReturns';
 
@@ -12,7 +12,7 @@ const router = useRouter();
 const books = computed(() => session.books!);
 const money = (v: number) => formatMoney(v, books.value.currency);
 
-const period = computed(() => taxPeriods(books.value.taxPeriod, books.value.fiscalYearStart, 1)[0]);
+const period = computed(() => booksTaxPeriods(books.value, 1)[0]);
 const tax = computed(() => booksTax());
 /** The BAS or NZ GST return, where these books prepare one. */
 const form = computed(() => (isReturnKind(tax.value?.report) ? RETURN_FORMS[tax.value.report] : null));
@@ -64,6 +64,22 @@ const reports = computed(() => [
         icon: 'mdi:bank-outline',
         title: 'GST summary',
         body: 'Sales by CGST, SGST and IGST, zero-rated exports and input tax credit, to file GSTR-1 and GSTR-3B from.',
+      }]
+    : []),
+  ...(tax.value?.report === 'ca-gst'
+    ? [{
+        to: '/reports/tax-return',
+        icon: 'mdi:bank-outline',
+        title: 'GST/HST return',
+        body: 'Your return lines (101 to 115), ready to type into GST/HST NETFILE or My Business Account.',
+      }]
+    : []),
+  ...(tax.value?.report === 'uk-vat'
+    ? [{
+        to: '/reports/tax-return',
+        icon: 'mdi:bank-outline',
+        title: 'VAT return',
+        body: 'Your nine boxes, exported as a file to send to HMRC with bridging software.',
       }]
     : []),
   ...(tax.value?.report === 'bas'

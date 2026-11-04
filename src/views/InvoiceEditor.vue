@@ -35,9 +35,10 @@ import { formatMoney, minorDigits, parseMoney, ratePercent, toInput } from '../l
 import { booksProfile, booksTax, session } from '../lib/session';
 import { useTabTitle } from '../lib/tabs';
 import { INVOICE_CURRENCIES, fxRateText, parseFxRate, toBooks } from '../shared/currency';
-import { EXPORT_PLACE, GST_RATE_OPTIONS, gstSplit, gstinState, placeFor } from '../shared/india';
-import { IN_STATE_OPTIONS } from '../lib/worldOptions';
-import { lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
+import { EXPORT_PLACE, gstSplit, gstinState, placeFor } from '../shared/india';
+import { defaultLineRate } from '../shared/countries';
+import { CA_PROVINCE_OPTIONS, IN_STATE_OPTIONS } from '../lib/worldOptions';
+import { lineRateOptions, lineTotals, sumTotals, taxCodeOr, taxCodesFor, taxFromInclusive, taxOnExclusive, tracksTax } from '../shared/tax';
 
 const route = useRoute();
 const router = useRouter();
@@ -82,8 +83,9 @@ const items = ref<Item[]>([]);
 const suggested = ref('');
 
 let lineKey = 0;
-/** India: what a new line starts at. Null elsewhere, where the document has one rate. */
-const booksGstRate = () => (books.value.country === 'IN' && taxOn.value ? books.value.taxRatePpm : null);
+/** Where each line has its own rate, what a new one starts at. Null elsewhere, where the document has one rate. */
+const lineRates = computed(() => lineRateOptions(tax.value));
+const lineDefault = () => (taxOn.value ? defaultLineRate(books.value, isBill.value ? null : form.value.placeOfSupply, form.value.issueDate) : null);
 const blankLine = (): LineForm => ({
   key: ++lineKey,
   description: '',
@@ -92,7 +94,7 @@ const blankLine = (): LineForm => ({
   categoryId: defaultCategory(),
   taxCode: taxOn.value ? defaultTaxFor(defaultCategory()) : null,
   hsn: '',
-  taxRatePpm: booksGstRate(),
+  taxRatePpm: lineDefault(),
 });
 
 const startTerms = (): number | 'custom' =>
@@ -114,7 +116,7 @@ const form = ref({
   taxRateId: null as number | null,
   currency: session.books!.currency,
   fxRate: '',
-  /** India: a state code or EXPORT; null follows the customer. */
+  /** India: a state code or EXPORT. Canada: a province or EXPORT. null follows the customer. */
   placeOfSupply: null as string | null,
   reverseCharge: false,
   exportMode: 'lut' as 'lut' | 'igst',
@@ -125,7 +127,23 @@ const form = ref({
 // ---- India: place of supply ---------------------------------------------------------
 
 const india = computed(() => books.value.country === 'IN' && taxOn.value && !isBill.value);
-const placeOptions = [{ label: 'Outside India (export)', value: EXPORT_PLACE }, ...IN_STATE_OPTIONS];
+const canadaSale = computed(() => books.value.country === 'CA' && taxOn.value && !isBill.value);
+const usesPlace = computed(() => india.value || canadaSale.value);
+const placeOptions = computed(() => (books.value.country === 'CA'
+  ? [{ label: 'Outside Canada', value: EXPORT_PLACE }, ...CA_PROVINCE_OPTIONS]
+  : [{ label: 'Outside India (export)', value: EXPORT_PLACE }, ...IN_STATE_OPTIONS]));
+const placeAbroad = computed(() => canadaSale.value && form.value.placeOfSupply === EXPORT_PLACE);
+/** Canada: the place sets the rate on every taxed line, and a sale abroad starts zero-rated. */
+function setPlace(next: string | null) {
+  const wasAbroad = form.value.placeOfSupply === EXPORT_PLACE;
+  form.value.placeOfSupply = next;
+  if (!canadaSale.value) return;
+  for (const l of form.value.lines) {
+    if (next === EXPORT_PLACE && l.taxCode === 'GST') l.taxCode = 'ZER';
+    else if (next !== EXPORT_PLACE && wasAbroad && l.taxCode === 'ZER') l.taxCode = 'GST';
+    if (l.taxCode === 'GST') l.taxRatePpm = lineDefault();
+  }
+}
 const place = computed(() => form.value.placeOfSupply);
 const isExport = computed(() => india.value && place.value === EXPORT_PLACE);
 const exportLut = computed(() => isExport.value && form.value.exportMode === 'lut');
@@ -260,7 +278,7 @@ watch(
   () => form.value.contactId,
   (id) => {
     if (!loading.value && !existing.value && !isBill.value && !fromTouched.value) useTradingName(tradingNameFor(id));
-    if (!loading.value && !existing.value && india.value) form.value.placeOfSupply = placeFor(contactOf(id));
+    if (!loading.value && !existing.value && usesPlace.value) setPlace(placeFor(contactOf(id), books.value.country));
     if (!loading.value && !existing.value && usSale.value) {
       // New documents start at the customer's rate, and with no tax for an exempt customer.
       form.value.taxRateId = contactOf(id)?.taxRateId ?? null;
@@ -340,7 +358,7 @@ function addItem(id: number | null) {
   const taxCode = !taxOn.value ? null : taxOptions.value.some((t) => t.value === item.taxCode) ? item.taxCode : defaultTaxFor(categoryId);
   let price = item.unitPrice;
   if (taxOn.value && item.priceIncludesTax !== form.value.pricesIncludeTax) {
-    const rate = item.taxRatePpm ?? ratePpm.value;
+    const rate = item.taxRatePpm ?? lineDefault() ?? ratePpm.value;
     price = item.priceIncludesTax ? price - taxFromInclusive(price, item.taxCode, rate) : price + taxOnExclusive(price, item.taxCode, rate);
   }
   // Items are priced in the books' currency. Without a rate yet, the price is left to type.
@@ -353,7 +371,7 @@ function addItem(id: number | null) {
     categoryId,
     taxCode,
     hsn: item.hsn ?? '',
-    taxRatePpm: item.taxRatePpm ?? booksGstRate(),
+    taxRatePpm: item.taxRatePpm ?? lineDefault(),
   };
   // Fill the empty line left at the bottom rather than adding below it.
   const last = form.value.lines[form.value.lines.length - 1];
@@ -428,7 +446,7 @@ async function save(status?: 'draft' | 'sent') {
       taxRateId: usSale.value ? form.value.taxRateId : null,
       currency: foreign.value ? form.value.currency : null,
       fxRateMicro: foreign.value ? fxRate.value : null,
-      placeOfSupply: india.value ? form.value.placeOfSupply : null,
+      placeOfSupply: usesPlace.value ? form.value.placeOfSupply : null,
       reverseCharge: india.value && form.value.reverseCharge,
       exportMode: isExport.value ? form.value.exportMode : null,
       status,
@@ -493,7 +511,7 @@ onMounted(async () => {
         price: toInput(l.unitPrice, inv.currency ?? books.value.currency),
         categoryId: l.categoryId,
         hsn: l.hsn ?? '',
-        taxRatePpm: l.taxRatePpm ?? (books.value.country === 'IN' ? inv.taxRatePpm ?? booksGstRate() : null),
+        taxRatePpm: l.taxRatePpm ?? (lineRates.value.length ? inv.taxRatePpm ?? lineDefault() : null),
         taxCode: l.taxCode ?? (taxOn.value ? defaultTaxFor(l.categoryId) : null),
       })),
     };
@@ -544,7 +562,7 @@ async function applyHandoff(path: string) {
     }
     form.value.reference = h.reference;
     form.value.notes = h.notes;
-    if (india.value) form.value.placeOfSupply = placeFor(contactOf(form.value.contactId) ?? h.customer);
+    if (usesPlace.value) form.value.placeOfSupply = placeFor(contactOf(form.value.contactId) ?? h.customer, books.value.country);
     if (h.currency && !isBill.value) form.value.currency = h.currency;
     const digits = minorDigits(currency.value);
     form.value.lines = h.lines.map((l) => ({
@@ -653,6 +671,16 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
                   :options="[{ label: 'None, under a Letter of Undertaking', value: 'lut' }, { label: 'IGST paid, to claim a refund', value: 'igst' }]"
                 />
               </FormLayoutGroup>
+              <Select
+                v-if="canadaSale"
+                :model-value="form.placeOfSupply"
+                label="Province or territory"
+                :options="placeOptions"
+                searchable
+                placeholder="Choose"
+                :help-text="placeAbroad ? 'Lines start zero-rated. Only listed services to customers abroad are, so check yours is. Services done wholly outside Canada have no GST/HST at all.' : 'Sets the GST or HST rate on the lines.'"
+                @update:model-value="setPlace"
+              />
               <ToggleSwitch v-if="india && !isExport" v-model="form.reverseCharge" label="Reverse charge applies" help-text="The customer pays the GST to the government. It's printed on the invoice." />
               <FormLayoutGroup>
                 <DatePicker v-model="form.issueDate" type="date" model-format="YYYY-MM-DD" :label="doc.issueLabel" required />
@@ -719,9 +747,9 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
                   />
                   <Select v-if="taxOn" v-model="line.taxCode" :options="taxOptions" size="small" />
                   <Select
-                    v-if="taxOn && books.country === 'IN' && line.taxCode === 'GST' && !exportLut"
+                    v-if="taxOn && lineRates.length && line.taxCode === 'GST' && !exportLut"
                     v-model="line.taxRatePpm"
-                    :options="GST_RATE_OPTIONS"
+                    :options="lineRates"
                     size="small"
                   />
                   <TextField v-if="books.country === 'IN'" v-model="line.hsn" size="small" placeholder="HSN/SAC" />

@@ -23,8 +23,8 @@ import { today } from '../lib/dates';
 import { entryEditor } from '../lib/entryEditor';
 import { formatMoney, parseMoney, ratePercent, toInput } from '../lib/money';
 import { booksProfile, booksTax, session } from '../lib/session';
-import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, taxFromInclusive, tracksTax } from '../shared/tax';
-import { GST_RATE_OPTIONS } from '../shared/india';
+import { TAX_CODE_MAP, lineRateOptions, taxCodeOr, taxCodesFor, taxFromInclusive, tracksTax } from '../shared/tax';
+import { defaultLineRate } from '../shared/countries';
 
 const accounts = ref<Account[]>([]);
 const categories = ref<Category[]>([]);
@@ -135,11 +135,12 @@ const rateOptions = computed(() => [
     .filter((r) => !r.archived || r.id === form.value.taxRateId)
     .map((r) => ({ label: `${r.name} (${ratePercent(r.ratePpm)}%)`, value: r.id })),
 ]);
-/** India: the rate goes with what was bought or sold. */
-const indiaGst = computed(() => session.books?.country === 'IN' && taxOn.value);
-const booksGstRate = () => (session.books?.country === 'IN' ? session.books.taxRatePpm : null);
+/** India, Canada and the UK: each transaction has its own rate. */
+const lineRates = computed(() => lineRateOptions(tax.value));
+const lineRated = computed(() => !!lineRates.value.length && taxOn.value);
+const booksLineRate = () => (session.books ? defaultLineRate(session.books, null, today()) : null);
 const ratePpm = computed(() =>
-  indiaGst.value ? form.value.taxRatePpm ?? session.books?.taxRatePpm
+  lineRated.value ? form.value.taxRatePpm ?? booksLineRate() ?? session.books?.taxRatePpm
   : usSale.value ? taxRates.value.find((r) => r.id === form.value.taxRateId)?.ratePpm ?? session.books?.taxRatePpm : session.books?.taxRatePpm,
 );
 const autoTax = computed(() => {
@@ -267,7 +268,7 @@ function reset() {
       taxCode: e.taxCode,
       taxAmount: null,
       taxRateId: e.taxRateId ?? null,
-      taxRatePpm: e.taxRatePpm ?? booksGstRate(),
+      taxRatePpm: e.taxRatePpm ?? booksLineRate(),
     };
     // Keep a hand-entered GST amount if it differs from the calculated one.
     void nextTick(() => {
@@ -289,7 +290,7 @@ function reset() {
     taxCode: null,
     taxAmount: null,
     taxRateId: null,
-    taxRatePpm: booksGstRate(),
+    taxRatePpm: booksLineRate(),
   };
 }
 
@@ -374,7 +375,7 @@ async function save(andNew = false) {
             taxCode: f.taxCode,
             taxAmount: f.taxAmount !== null && taxable.value ? parseMoney(f.taxAmount, currency.value) : null,
             ...(usSale.value ? { taxRateId: f.taxRateId } : {}),
-            ...(indiaGst.value ? { taxRatePpm: f.taxRatePpm } : {}),
+            ...(lineRated.value ? { taxRatePpm: f.taxRatePpm } : {}),
           }
         : {}),
     });
@@ -404,7 +405,7 @@ async function save(andNew = false) {
           memo: f.memo || null,
           ...(taxOn.value ? { taxCode: f.taxCode } : {}),
           ...(usSale.value ? { taxRateId: f.taxRateId } : {}),
-            ...(indiaGst.value ? { taxRatePpm: f.taxRatePpm } : {}),
+            ...(lineRated.value ? { taxRatePpm: f.taxRatePpm } : {}),
         },
       });
       repeated = ` Repeats ${FREQUENCY_OPTIONS.find((o) => o.value === repeat.value.frequency)!.label.toLowerCase()}.`;
@@ -543,10 +544,10 @@ async function addContact() {
           />
         </FormLayoutGroup>
         <Select
-          v-if="indiaGst && taxable"
+          v-if="lineRated && taxable"
           v-model="form.taxRatePpm"
-          label="GST rate"
-          :options="GST_RATE_OPTIONS"
+          :label="`${tax?.short} rate`"
+          :options="lineRates"
           @update:model-value="form.taxAmount = null"
         />
         <Select

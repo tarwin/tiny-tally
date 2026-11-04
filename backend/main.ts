@@ -413,7 +413,7 @@ export const api: Record<string, TinyApiHandler> = {
     };
   },
 
-  'books.create': async ({ name, tradingName, country, fiscalYearStart, dir, taxEnabled, taxRatePpm, taxId }: {
+  'books.create': async ({ name, tradingName, country, fiscalYearStart, dir, taxEnabled, taxRatePpm, taxId, homeState }: {
     name: string;
     tradingName?: string;
     country: Country;
@@ -424,6 +424,8 @@ export const api: Record<string, TinyApiHandler> = {
     /** US sales tax: the person's rate. */
     taxRatePpm?: number;
     taxId?: string;
+    /** Canada: the province, which sets the rate on purchases. */
+    homeState?: string;
   }, _app, { window: win }) => {
     name = String(name ?? '').trim();
     if (!name) throw new Error('Enter your name.');
@@ -435,6 +437,7 @@ export const api: Record<string, TinyApiHandler> = {
     await createBooks(win, path, dir === null, { name, tradingName, country, fiscalYearStart: isYearStart(String(fiscalYearStart)) ? fiscalYearStart : COUNTRIES[country].fiscalYearStart, taxEnabled, taxRatePpm: taxRatePpm == null ? undefined : rate });
     inWindow(win, () => {
       if (taxId) updateSettings({ taxId });
+      if (homeState) updateSettings({ homeState });
       startHistory('books.create', JSON.stringify({ name }));
     });
     return afterOpen(win);

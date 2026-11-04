@@ -169,3 +169,61 @@ they ended.
 Input tax credit isn't blocked automatically: goods with no credit are recorded
 with a code that claims nothing. The demo does this for food and drink, from
 memory of section 17(5), which wasn't checked here. Ask a CA.
+
+## Canada
+
+Checked 2026-11-04. Tables and rules: `src/shared/canada.ts`,
+`src/shared/taxReturns.ts` (`CA_GST`), `caGstReport` in `backend/reports.ts`.
+**Have a Canadian accountant review these before relying on them.**
+
+| Figure | Value | Source |
+|---|---|---|
+| GST/HST rates by province, Nova Scotia 14% from 1 April 2025 | 5, 13, 14, 15% | [CRA: GST/HST rates](https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/charge-collect-which-rate/calculator.html) |
+| Return lines 101, 103 to 115; line 103 covers paid and unpaid invoices | | [CRA: RC4022 (Rev. 25)](https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4022/general-information-gst-hst-registrants.html) |
+| Filing periods: annual up to $1.5M, quarterly to $6M, monthly above | | RC4022 |
+| E-filing for periods from 2024, except selected financial institutions and most charities; NETFILE takes typed figures | | RC4022 |
+| Small supplier $30,000 | not used in the app | RC4022 |
+| Services are supplied where the recipient's address is obtained | why the rate follows the customer's province | RC4022 |
+| Only listed services to non-residents are zero-rated | why an export line needs a person's check | RC4022 |
+| Half the GST/HST on meals and entertainment | entered by hand | CRA page on meals and entertainment |
+
+Not confirmed: invoice field thresholds (memo 8-4 gives $30 and $150, a summary
+in RC4022 reads as $100 and $500; Tiny Tally prints every field either way).
+Business Number format and the calendar year for sole proprietors are general
+knowledge, not checked against a page. QST at 9.975% and the PST notes come from
+non-government sources. Instalment dates in the demo are from memory.
+
+Not built: the Quick Method, PST, RST and QST, place of supply for goods, real
+property or anything other than the customer's address, income tax (T2125).
+
+## United Kingdom
+
+Checked 2026-11-04. Tables and rules: `src/shared/uk.ts`,
+`src/shared/taxReturns.ts` (`UK_VAT`), `ukVatReport` in `backend/reports.ts`.
+**Have a UK accountant review these before relying on them.**
+
+| Figure | Value | Source |
+|---|---|---|
+| Rates 20, 5 and 0% | | [GOV.UK: VAT rates](https://www.gov.uk/vat-rates) |
+| Registration threshold £90,000 | not used in the app | [GOV.UK: VAT thresholds](https://www.gov.uk/how-vat-works/vat-thresholds) |
+| The nine boxes; Box 6 includes zero-rated, reduced, exempt, exports, outside the scope; Box 7 leaves out wages and similar; business entertainment isn't in Box 4 | | [VAT Notice 700/12](https://www.gov.uk/guidance/how-to-fill-in-and-submit-your-vat-return-vat-notice-70012) |
+| All VAT-registered businesses file through software unless exempt; a CSV import or export counts as a digital link, copy and paste doesn't; bridging software is allowed | | [VAT Notice 700/22](https://www.gov.uk/government/publications/vat-notice-70022-making-tax-digital-for-vat/vat-notice-70022-making-tax-digital-for-vat) |
+| Invoice contents: sequential number, time of supply, supplier and customer, VAT number, each description's quantity, rate and amount, sterling VAT total | | [VAT Notice 700/21](https://www.gov.uk/guidance/record-keeping-for-vat-notice-70021), section 4.1 |
+| The three sets of quarter ends | stagger groups | [HMRC manual DMBM530020](https://www.gov.uk/hmrc-internal-manuals/debt-management-and-banking/dmbm530020) |
+| MTD Income Tax: over £50,000 from April 2026, £30,000 April 2027, £20,000 April 2028 | not sent by Tiny Tally | [GOV.UK: MTD for Income Tax](https://www.gov.uk/government/publications/extension-of-making-tax-digital-for-income-tax-self-assessment-to-sole-traders-and-landlords/making-tax-digital-for-income-tax-self-assessment-for-sole-traders-and-landlords) |
+
+Not confirmed:
+
+- Boxes 6 to 9 in whole pounds comes from third-party pages, and they disagree on
+  rounding. Tiny Tally rounds down.
+- Whether exempt purchases go in Box 7 isn't stated. The list of exclusions doesn't
+  mention them, so they're included.
+- From memory, used as defaults or in the demo: printed brochures and flights
+  zero-rated, insurance exempt, the VAT due date of a month and 7 days, payments
+  on account dates.
+- **The VAT figures CSV hasn't been tried in any bridging software.** Each product
+  has its own mapping, so check one before relying on it.
+
+Not built: submission to HMRC (the MTD VAT API needs HMRC's production credentials
+and fraud prevention headers), reverse charge, the Flat Rate Scheme, partial
+exemption, the VAT Annual Accounting Scheme, income tax (SA103).

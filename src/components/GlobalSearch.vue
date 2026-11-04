@@ -50,6 +50,8 @@ const commands = computed<(Item & { words: string })[]>(() => {
     ...(report === 'bas' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'BAS & GST', words: 'tax return ato', run: go('/reports/tax-return') }] : []),
     ...(report === 'nz-gst' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'GST return', words: 'tax ird myir', run: go('/reports/tax-return') }] : []),
     ...(report === 'in-gst' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'GST summary', words: 'tax gstr cgst sgst igst', run: go('/reports/tax-return') }] : []),
+    ...(report === 'ca-gst' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'GST/HST return', words: 'tax hst cra netfile', run: go('/reports/tax-return') }] : []),
+    ...(report === 'uk-vat' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'VAT return', words: 'tax hmrc making digital mtd', run: go('/reports/tax-return') }] : []),
     ...(report === 'us-sales-tax' ? [{ key: 'p-tax', icon: 'mdi:bank-outline', label: 'Sales tax', words: 'tax return', run: go('/reports/sales-tax') }] : []),
     ...(session.books?.country === 'US' ? [{ key: 'p-schc', icon: 'mdi:file-document-outline', label: 'Schedule C', words: 'tax irs', run: go('/reports/schedule-c') }] : []),
     { key: 'p-inv', icon: 'mdi:file-document-outline', label: 'Invoices', run: go('/invoices') },

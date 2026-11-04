@@ -6,10 +6,10 @@ import { computed } from 'vue';
 import type { Books, DocType, InvoiceLine, InvoiceStatus, InvoiceTemplate, Sender } from '../lib/api';
 import { formatDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
-import { countryProfile } from '../shared/countries';
+import { countryProfile, lineRateText, taxHeadsFor } from '../shared/countries';
 import { foreignBalance, fxRateText } from '../shared/currency';
-import { EXPORT_PLACE, exportEndorsement, gstSplit, gstinState, inStateName, gstHeads, gstRateText } from '../shared/india';
-import { TAX_CODE_MAP } from '../shared/tax';
+import { EXPORT_PLACE, exportEndorsement, gstSplit, gstinState, inStateName } from '../shared/india';
+import { TAX_CODE_MAP, taxCodeLabel } from '../shared/tax';
 import { fillPlaceholders, labelDefault, normaliseLayout, priceLabel, type LabelKey, type TemplateSection } from '../shared/templateLayout';
 
 export interface InvoiceDocData {
@@ -113,6 +113,8 @@ function label(key: LabelKey) {
   const own = layout.value.labels[key];
   if (own) return own;
   if (key === 'price') return priceLabel(tax.value, props.invoice.pricesIncludeTax);
+  // A VAT invoice has to show the time of supply. It's the issue date unless they differ.
+  if (key === 'issued' && taxOn.value && props.books.country === 'GB' && type.value === 'invoice') return 'Date and tax point';
   return labelDefault(key, tax.value);
 }
 
@@ -129,10 +131,17 @@ const isExport = computed(() => props.invoice.placeOfSupply === EXPORT_PLACE);
 const placeLine = computed(() => (isExport.value ? 'Outside India' : stateLine(props.invoice.placeOfSupply)));
 /** A line's GST rate: older lines take the document's. */
 const lineRate = (l: { taxRatePpm?: number | null }) => l.taxRatePpm ?? props.invoice.taxRatePpm ?? props.books.taxRatePpm;
-const taxHeads = computed(() => gstHeads(
+/** Each line has its own rate here, so it's printed beside the line and the tax splits by rate in the totals. */
+const lineRated = computed(() => !!tax.value?.lineRates && type.value !== 'quote');
+const taxHeads = computed(() => taxHeadsFor(
+  props.books.country,
   props.invoice.lines.map((l) => ({ ratePpm: lineRate(l), tax: foreign.value ? l.fcTax ?? 0 : l.tax })),
   gstSplit(props.invoice.placeOfSupply, homeState.value),
 ));
+/** HMRC wants the VAT total in sterling, on any invoice in another currency. */
+const taxInBooks = computed(() => (foreign.value && props.books.country === 'GB' && props.invoice.tax
+  ? `VAT ${formatMoney(props.invoice.tax, props.books.currency, props.books.documentCurrencyDisplay)}`
+  : ''));
 const endorsement = computed(() => (india.value && isExport.value && type.value === 'invoice' ? exportEndorsement(props.invoice.exportMode ?? 'lut') : ''));
 const countryName = computed(() => {
   const c = props.invoice.contactCountry;
@@ -256,9 +265,9 @@ const stamp = computed(() => {
             <tr v-for="(l, i) in invoice.lines" :key="i">
               <td class="Doc__desc">
                 {{ l.description || '—' }}
-                <span v-if="taxOn && l.taxCode && l.taxCode !== tax?.defaultCode.sales" class="Doc__code">{{ TAX_CODE_MAP[l.taxCode].label }}</span>
+                <span v-if="taxOn && l.taxCode && l.taxCode !== tax?.defaultCode.sales" class="Doc__code">{{ taxCodeLabel(tax, l.taxCode) }}</span>
                 <span v-if="india && l.hsn" class="Doc__code">HSN/SAC {{ l.hsn }}</span>
-                <span v-if="india && l.taxCode && TAX_CODE_MAP[l.taxCode].taxable" class="Doc__code">GST {{ gstRateText(lineRate(l)) }}</span>
+                <span v-if="lineRated && l.taxCode && TAX_CODE_MAP[l.taxCode].taxable" class="Doc__code">{{ lineRateText(books.country, lineRate(l)) }}</span>
               </td>
               <template v-if="show.qtyPrice">
                 <td class="num">{{ qty(l.qtyMilli) }}</td>
@@ -275,7 +284,7 @@ const stamp = computed(() => {
         <dl>
           <template v-if="taxOn">
             <div><dt>{{ india ? 'Taxable value' : label('subtotal') }}</dt><dd>{{ money(shown.net) }}</dd></div>
-            <template v-if="india">
+            <template v-if="lineRated">
               <div v-for="h in shown.tax ? taxHeads : []" :key="h.label"><dt>{{ h.label }}</dt><dd>{{ money(h.value) }}</dd></div>
             </template>
             <div v-else><dt>{{ label('gstTotal') }}</dt><dd>{{ money(shown.tax) }}</dd></div>
@@ -292,7 +301,7 @@ const stamp = computed(() => {
       </section>
 
       <section v-if="s.key === 'totals' && (equivalent || endorsement)" class="Doc__legal">
-        <p v-if="equivalent" class="Doc__muted">{{ equivalent }}</p>
+        <p v-if="equivalent" class="Doc__muted">{{ equivalent }}<template v-if="taxInBooks">, including {{ taxInBooks }}</template></p>
         <p v-if="endorsement">{{ endorsement }}</p>
         <p v-if="endorsement && invoice.exportMode !== 'igst' && books.lutNumber" class="Doc__muted">Letter of Undertaking {{ books.lutNumber }}</p>
       </section>

@@ -18,7 +18,7 @@ import { CLASS_INFO, classOptions } from '../lib/categoryClass';
 import { useFillHeight } from '../lib/fillHeight';
 import { onBooksChanged } from '../lib/live';
 import { booksProfile, booksTax, session } from '../lib/session';
-import { TAX_CODE_MAP, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
+import { taxCodeLabel, taxCodeOr, taxCodesFor, tracksTax } from '../shared/tax';
 import { SCHEDULE_C_LINES, SCHEDULE_C_MAP } from '../shared/scheduleC';
 import { incomeReturnFor } from '../shared/incomeReturnLines';
 
@@ -46,7 +46,7 @@ const columns = computed<DataTableColumnType[]>(() => [
   { key: 'name', label: 'Name' },
   { key: 'class', label: 'Type', width: 200, formatFunc: (v: CategoryClass) => (v === 'pnl' ? '' : CLASS_INFO[v].label) },
   ...(taxOnFor(kind.value)
-    ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, formatFunc: (v: TaxCode | null) => (v ? TAX_CODE_MAP[v].label : 'None') }]
+    ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, formatFunc: (v: TaxCode | null) => (v ? taxCodeLabel(booksProfile().tax, v) : 'None') }]
     : []),
   ...(usesReturn.value
     ? [{

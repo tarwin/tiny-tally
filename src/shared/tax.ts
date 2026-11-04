@@ -9,7 +9,7 @@
 // left or hit the bank).
 import type { CountryTax } from './countries';
 
-export type TaxCode = 'GST' | 'FRE' | 'EXP' | 'CAP' | 'INP' | 'NTR' | 'TAX' | 'NON' | 'ZER' | 'EXE';
+export type TaxCode = 'GST' | 'FRE' | 'EXP' | 'CAP' | 'INP' | 'NTR' | 'TAX' | 'NON' | 'ZER' | 'EXE' | 'OOS';
 
 export interface TaxCodeInfo {
   code: TaxCode;
@@ -32,6 +32,8 @@ export const TAX_CODES: TaxCodeInfo[] = [
   // New Zealand: GST, zero-rated, exempt and not reportable.
   { code: 'ZER', label: 'Zero-rated', taxable: false, sales: true, purchases: true, help: 'GST at 0%: exports and other zero-rated supplies (Box 6)' },
   { code: 'EXE', label: 'Exempt', taxable: false, sales: true, purchases: true, help: 'Financial services, interest, residential rent: left off the GST return' },
+  // UK: a sale that's outside UK VAT, such as most services to customers abroad. It still counts in Box 6.
+  { code: 'OOS', label: 'Outside the scope', taxable: false, sales: true, purchases: false, help: 'Outside UK VAT, such as most services to customers abroad (Box 6)' },
   // US sales tax: charged on sales only; tax paid on purchases is part of the cost.
   { code: 'TAX', label: 'Taxable', taxable: true, sales: true, purchases: false, help: 'Sales tax charged at your rate' },
   { code: 'NON', label: 'Not taxable', taxable: false, sales: true, purchases: false, help: 'Exempt or out of state: no sales tax charged' },
@@ -125,8 +127,23 @@ export function nzBoxesFor(kind: 'income' | 'expense', code: TaxCode | null): ('
 /** The tax codes that make sense on one side. Empty without tax support. */
 export function taxCodesFor(tax: CountryTax | null | undefined, kind: 'income' | 'expense'): TaxCodeInfo[] {
   if (!tax) return [];
-  return tax.codes.map((c) => TAX_CODE_MAP[c]).filter((t) => (kind === 'income' ? t.sales : t.purchases));
+  return tax.codes.map((c) => ({ ...TAX_CODE_MAP[c], ...tax.codeLabels?.[c] })).filter((t) => (kind === 'income' ? t.sales : t.purchases));
 }
+
+/** What a code is called in this country: the UK's 'GST' code reads VAT. */
+export function taxCodeLabel(tax: CountryTax | null | undefined, code: TaxCode) {
+  return tax?.codeLabels?.[code]?.label ?? TAX_CODE_MAP[code]?.label ?? code;
+}
+
+/** The rate to use on a line: the one given if it's on the country's list, or the fallback when none was. */
+export function lineRateOr(tax: CountryTax, input: unknown, fallback: number) {
+  if (input === null || input === undefined) return fallback;
+  const ppm = Number(input);
+  if (ppm !== fallback && !tax.lineRates?.some((r) => r.ppm === ppm)) throw new Error(`Choose a ${tax.name} rate from the list.`);
+  return ppm;
+}
+
+export const lineRateOptions = (tax: CountryTax | null | undefined) => (tax?.lineRates ?? []).map((r) => ({ label: r.label, value: r.ppm }));
 
 /** `code` when the country uses it on that side, otherwise the side's default. */
 export function taxCodeOr(tax: CountryTax | null | undefined, kind: 'income' | 'expense', code: unknown): TaxCode | null {

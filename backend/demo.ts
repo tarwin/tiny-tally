@@ -10,9 +10,13 @@
 //   IN  Chai & Ink Studio, Pune: GST monthly, customers in and out of the state,
 //       exports in dollars and pounds under a Letter of Undertaking with exchange
 //       gains and losses, a client that deducts TDS, advance tax
+//   CA  Birch & Harbour Studio, Toronto: GST/HST filed annually, customers charged
+//       by province, half the tax claimed on meals, instalments
+//   GB  Thistle & Wren Studio, Bristol: VAT quarterly, zero-rated printing beside
+//       design at 20%, services abroad outside the scope, payments on account
 //
-// Each has returns lodged for the last full year. All but India also have car
-// trips and an asset register with depreciation posted.
+// Each has returns lodged for the last full year. Australia, New Zealand and the
+// US also have car trips and an asset register with depreciation posted.
 import { all, getBooks, one, run } from './db';
 import { saveContact, saveEntry } from './entries';
 import {
@@ -37,6 +41,7 @@ import { postDepreciation, saveAsset } from './assets';
 import { RETURN_FORMS } from '../src/shared/taxReturns';
 import { basDue, nzGstDue, provisionalDue } from '../src/shared/dueDates';
 import { incomeYearOf, incomeYearRange } from '../src/shared/incomeYear';
+import { taxFromInclusive } from '../src/shared/tax';
 import type { Country } from '../src/shared/countries';
 
 export const DEMO_NAMES: Record<Country, string> = {
@@ -44,6 +49,8 @@ export const DEMO_NAMES: Record<Country, string> = {
   NZ: 'Kōwhai Lane Design (Demo)',
   US: 'Cedar & Finch Studio (Demo)',
   IN: 'Chai & Ink Studio (Demo)',
+  CA: 'Birch & Harbour Studio (Demo)',
+  GB: 'Thistle & Wren Studio (Demo)',
 };
 export const DEMO_NAME = DEMO_NAMES.AU;
 
@@ -53,6 +60,8 @@ export const DEMO_SETUP: Record<Country, { country: Country; fiscalYearStart: st
   NZ: { country: 'NZ', fiscalYearStart: '04-01', taxEnabled: true },
   US: { country: 'US', fiscalYearStart: '01-01', taxEnabled: false },
   IN: { country: 'IN', fiscalYearStart: '04-01', taxEnabled: true },
+  CA: { country: 'CA', fiscalYearStart: '01-01', taxEnabled: true },
+  GB: { country: 'GB', fiscalYearStart: '04-06', taxEnabled: true },
 };
 
 interface Spec {
@@ -208,6 +217,71 @@ const SPECS: Record<Country, Spec> = {
     scale: 15,
     sac: '998391',
   },
+  CA: {
+    fyMonth: 1,
+    settings: { taxId: '123456789 RT 0001', invoicePrefix: 'BH-', pricesIncludeTax: false, taxPeriod: 'annual', taxBasis: 'accrual', homeState: 'ON' },
+    sale: 'GST', exportCode: 'ZER', equipmentCode: 'GST', equipment: 'Equipment',
+    taxPayment: 'GST/HST Payment', taxRefund: 'GST/HST Refund',
+    template: { accent: '#0e7490', title: 'Invoice', showTaxColumn: true },
+    customers: {
+      bakery: ['Queen West Bakehouse', 'accounts@queenwestbake.example', '412 Queen St W\nToronto ON M5V 2A8'],
+      physio: ['Lakeshore Physiotherapy', 'admin@lakeshorephysio.example', '1200 Lake Shore Blvd W\nToronto ON M6K 1C4'],
+      wines: ['Okanagan Bench Winery', 'hello@okanaganbench.example', '9 Vineyard Rd\nKelowna BC V1W 4M6'],
+      arch: ['Foothills Architecture', 'studio@foothillsarch.example', 'Suite 500, 77 8 Ave SW\nCalgary AB T2P 1B5'],
+      festival: ['Harbourfront Arts Festival', 'finance@harbourfrontarts.example', '12 Water St\nHalifax NS B3J 1R2'],
+      abroad: ['Redwood Trails Inc', 'ap@redwoodtrails.example', '22 Water St\nPortland, OR 97209\nUSA'],
+    },
+    customerDetails: {
+      bakery: { state: 'ON' },
+      physio: { state: 'ON' },
+      wines: { state: 'BC' },
+      arch: { state: 'AB' },
+      festival: { state: 'NS' },
+      abroad: { country: 'US' },
+    },
+    vendors: {
+      cowork: 'King West Coworking', pixel: 'Pixelworks Software', cloud: 'Cloudnest Hosting', telco: 'Lakeland Mobile',
+      office: 'Office Hub Supplies', insure: 'Greenline Insurance', illo: 'Sam Rivera Illustration', cafe: 'Corner Coffee',
+      print: 'Inkwell Printers', tech: 'Tech Barn', accountant: 'Ledger & Co CPAs', air: 'Skyway Airlines',
+    },
+    tradingName: {
+      name: 'Birch & Harbour Studio', address: '18 Example Lane, Suite 2\nToronto ON M5V 1A1', email: 'hello@birchharbour.example',
+      phone: '(416) 555-0100', bank: 'Birch & Harbour Studio · Transit 00000 · Institution 000 · Account 1234567',
+    },
+    sideLine: { name: 'Harbour Trail Maps', email: 'maps@birchharbour.example', bank: 'Harbour Trail Maps · Transit 00000 · Institution 000 · Account 7654321' },
+    abroadWork: 'Trail map illustration (zero-rated: advisory and professional service to a non-resident)',
+    trip: null,
+    asset: null,
+  },
+  GB: {
+    fyMonth: 4,
+    settings: { taxId: 'GB 123 4567 89', invoicePrefix: 'TW-', pricesIncludeTax: false, taxPeriod: 'quarterly', taxBasis: 'accrual', vatQuarters: '01-01' },
+    sale: 'GST', exportCode: 'OOS', equipmentCode: 'GST', equipment: 'Equipment',
+    taxPayment: 'VAT Payment', taxRefund: 'VAT Refund',
+    template: { accent: '#7c3aed', title: 'VAT Invoice', showTaxColumn: true },
+    customers: {
+      bakery: ['Clifton Bakehouse', 'accounts@cliftonbake.example', '14 Princess Victoria St\nBristol BS8 4BX'],
+      physio: ['Harbourside Physio', 'admin@harboursidephysio.example', '120 Queen Square\nBristol BS1 4LH'],
+      wines: ['Mendip Vineyard', 'hello@mendipvineyard.example', '9 Vineyard Lane\nWells BA5 1AA'],
+      arch: ['Lumen Architects', 'studio@lumenarch.example', 'Suite 5, 77 Corn St\nBath BA1 1DA'],
+      festival: ['Severnside Festival', 'finance@severnside.example', 'PO Box 123\nCardiff CF10 1AA'],
+      abroad: ['Redwood Trails Inc', 'ap@redwoodtrails.example', '22 Water St\nPortland, OR 97209\nUSA'],
+    },
+    customerDetails: { abroad: { country: 'US' } },
+    vendors: {
+      cowork: 'Stokes Croft Coworking', pixel: 'Pixelworks Software', cloud: 'Cloudnest Hosting', telco: 'Severn Mobile',
+      office: 'Office Hub Supplies', insure: 'Greenline Insurance', illo: 'Sam Rivera Illustration', cafe: 'Corner Coffee',
+      print: 'Inkwell Printers', tech: 'Tech Barn', accountant: 'Ledger & Co Accountants', air: 'Skyway Airlines',
+    },
+    tradingName: {
+      name: 'Thistle & Wren Studio', address: '18 Example Lane\nBristol BS1 5TR', email: 'hello@thistlewren.example',
+      phone: '0117 496 0000', bank: 'Thistle & Wren Studio · Sort code 00-00-00 · Account 12345678',
+    },
+    sideLine: { name: 'Wren Trail Maps', email: 'maps@thistlewren.example', bank: 'Wren Trail Maps · Sort code 00-00-00 · Account 87654321' },
+    abroadWork: 'Trail map illustration (outside the scope of UK VAT)',
+    trip: null,
+    asset: null,
+  },
 };
 
 // Small deterministic PRNG so the demo is the same every time.
@@ -240,7 +314,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
   const r = rng(20250701);
   const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)];
   const between = (lo: number, hi: number) => Math.round(lo + r() * (hi - lo));
-  const fyStart = `${pad(S.fyMonth)}-01`;
+  const fyStart = DEMO_SETUP[country].fiscalYearStart;
 
   const [ty, tm] = today.split('-').map(Number);
   // Start of the previous financial year.
@@ -262,7 +336,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
   // ---- categories ------------------------------------------------------------
   const cat = (name: string) => one<{ id: number }>(db, 'SELECT id FROM categories WHERE name = ?', name)?.id ?? 0;
   const lineFor = (kind: 'income' | 'expense') =>
-    country === 'IN' ? null
+    country === 'IN' || country === 'CA' || country === 'GB' ? null
     : country === 'AU' ? (kind === 'income' ? 'au-other-income' : 'au-purchases')
     : country === 'NZ' ? (kind === 'income' ? 'nz-sales' : 'nz-purchases')
     : (kind === 'income' ? 'gross-receipts' : 'supplies');
@@ -349,9 +423,9 @@ export function seedDemo(today: string, country: Country = 'AU') {
   run(db, 'UPDATE contacts SET trading_name_id = ? WHERE id = ?', maps, customers.abroad);
 
   // `exact`: already worked out in this country's money.
-  const spend = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; taxCode?: any; exact?: boolean } = {}) => {
+  const spend = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; taxCode?: any; taxAmount?: number; exact?: boolean } = {}) => {
     if (date > today || !categoryId) return 0;
-    return saveEntry({ date, kind: 'expense', amount: opts.exact ? amount : M(amount), accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null, taxCode: opts.taxCode ?? null });
+    return saveEntry({ date, kind: 'expense', amount: opts.exact ? amount : M(amount), accountId: opts.account ?? bank, categoryId, contactId: opts.contactId ?? null, memo: opts.memo ?? null, taxCode: opts.taxCode ?? null, ...(opts.taxAmount === undefined ? {} : { taxAmount: opts.taxAmount }) });
   };
   const earn = (date: string, amount: number, categoryId: number, opts: { account?: number; contactId?: number; memo?: string; exact?: boolean } = {}) => {
     if (date > today || !categoryId) return;
@@ -375,6 +449,8 @@ export function seedDemo(today: string, country: Country = 'AU') {
     { c: customers.bakery, items: [['Menu boards', 1, 78000]] },
     // India: brochures are goods at 5% (HSN 4901), on the same invoice as design at 18%.
     ...(country === 'IN' ? [{ c: customers.bakery, items: [['Brochure design', 1, 45000], ['Printed brochures (500)', 1, 22000, 50_000, '4901']] }] : []),
+    // UK: printed brochures are zero-rated, on the same invoice as design at 20%.
+    ...(country === 'GB' ? [{ c: customers.bakery, items: [['Brochure design', 1, 45000], ['Printed brochures (500)', 1, 22000, null, null, 'ZER']] }] : []),
   ];
 
   let cardSpend = 124000; // the opening balance owed
@@ -414,6 +490,8 @@ export function seedDemo(today: string, country: Country = 'AU') {
         account: card, contactId: V.cafe, memo: pick(['Client coffee', 'Team lunch', 'Workshop catering']),
         // India: no credit is claimed on food and drink.
         taxCode: country === 'IN' ? 'NTR' : undefined,
+        // Canada: half the tax on meals and entertainment can be claimed. These are at Ontario's 13%.
+        taxAmount: country === 'CA' ? Math.round(taxFromInclusive(M(amt), 'GST', 130_000) / 2) : undefined,
       });
       cardSpend += amt;
     }
@@ -471,12 +549,12 @@ export function seedDemo(today: string, country: Country = 'AU') {
         pricesIncludeTax: false,
         templateId: tpl,
         reference: r() < 0.4 ? `PO ${between(1000, 9999)}` : null,
-        lines: job.items.map(([description, qty, price, taxRatePpm, hsn]) => ({
+        lines: job.items.map(([description, qty, price, taxRatePpm, hsn, code]) => ({
           description: description as string,
           qtyMilli: (qty as number) * 1000,
           unitPrice: M(Math.round((price as number) * (0.9 + r() * 0.3))),
           categoryId: C.design,
-          taxCode: sale,
+          taxCode: code ?? sale,
           hsn: hsn ?? S.sac,
           taxRatePpm,
         })),
@@ -579,7 +657,7 @@ export function seedDemo(today: string, country: Country = 'AU') {
       dueDate: addDays(issue, 30),
       reference: `INK-${between(20000, 29999)}`,
       pricesIncludeTax: !!S.sale,
-      lines: [{ description, qtyMilli: 1000, unitPrice: amount, categoryId: C.printing, taxCode: (S.sale ?? 'NTR') as any, taxRatePpm: country === 'IN' && description === 'Brochure print run' ? 50_000 : null }],
+      lines: [{ description, qtyMilli: 1000, unitPrice: amount, categoryId: C.printing, taxCode: (country === 'GB' && description === 'Brochure print run' ? 'ZER' : S.sale ?? 'NTR') as any, taxRatePpm: country === 'IN' && description === 'Brochure print run' ? 50_000 : null }],
       status: 'sent',
     });
     // Older bills are paid on the due date; the latest two are still open.
@@ -669,6 +747,15 @@ export function seedDemo(today: string, country: Country = 'AU') {
       for (const [i, d] of [`${fy}-06-15`, `${fy}-09-15`, `${fy}-12-15`, `${fy + 1}-03-15`].entries()) {
         instalments.push({ date: d, amount: 150000, memo: `Advance tax instalment ${i + 1}` });
       }
+    } else if (country === 'CA') {
+      // Quarterly instalments to the CRA.
+      for (const [i, d] of [`${y}-03-15`, `${y}-06-15`, `${y}-09-15`, `${y}-12-15`].entries()) {
+        instalments.push({ date: d, amount: 150000, memo: `Income tax instalment ${i + 1}` });
+      }
+    } else if (country === 'GB') {
+      // Payments on account: last year's second on 31 July, this year's first on 31 January.
+      instalments.push({ date: `${y - 1}-07-31`, amount: 400000, memo: 'Payment on account 2' });
+      instalments.push({ date: `${y}-01-31`, amount: 400000, memo: 'Payment on account 1' });
     } else if (country === 'AU') {
       setYearInputs({ year: y, paygOption: 'amount', paygAmount: 125000 });
       // With each quarter's BAS: 28 Oct, 28 Feb, 28 Apr, 28 Jul.
@@ -713,7 +800,9 @@ export function seedDemo(today: string, country: Country = 'AU') {
   // finished period as a draft to review. Each lodged one is paid from tax
   // savings on its due date, before lodging (which locks the books).
   if (S.sale) {
-    const months = country === 'AU' ? 3 : country === 'IN' ? 1 : 2;
+    const months = country === 'AU' || country === 'GB' ? 3 : country === 'IN' ? 1 : country === 'CA' ? 12 : 2;
+    const taxWord = country === 'GB' ? 'VAT' : country === 'CA' ? 'GST/HST' : 'GST';
+    const basis = S.settings.taxBasis === 'accrual' ? 'accrual' : 'cash';
     const periods: [string, string][] = [];
     for (let q = 0; q < 24 / months; q++) {
       const ps = ymd(startYear, S.fyMonth + q * months, 1);
@@ -722,22 +811,23 @@ export function seedDemo(today: string, country: Country = 'AU') {
       if (pe < today) periods.push([ps, pe]);
     }
     const lodgeUntil = incomeYearRange(lastYear, fyStart).to;
-    const kind = country === 'AU' ? 'bas' : country === 'IN' ? 'in-gst' : 'nz-gst';
+    const kind = country === 'AU' ? 'bas' : country === 'IN' ? 'in-gst' : country === 'CA' ? 'ca-gst' : country === 'GB' ? 'uk-vat' : 'nz-gst';
     const inputs = (): Record<string, number> => (country === 'AU' ? { t7: 125000 } : {});
     for (const [ps, pe] of periods) {
       if (pe > lodgeUntil) continue;
-      const report = taxReturnReport({ from: ps, to: pe, basis: 'cash' });
+      const report = taxReturnReport({ from: ps, to: pe, basis });
       // PAYG (T7) is paid with the BAS but recorded on its own above, so only the GST here.
       const owed = RETURN_FORMS[kind].net(report.figures, {});
       // India: GSTR-3B by the 20th of the next month.
-      const payDay = country === 'AU' ? basDue(ps, pe) : country === 'IN' ? addDays(pe, 20) : nzGstDue(pe);
+      // Canada, annual: by 30 April. UK: a month and seven days after the quarter.
+      const payDay = country === 'AU' ? basDue(ps, pe) : country === 'IN' ? addDays(pe, 20) : country === 'CA' ? `${Number(pe.slice(0, 4)) + 1}-04-30` : country === 'GB' ? addDays(pe, 38) : nzGstDue(pe);
       if (payDay > today) continue;
-      if (owed > 0) spend(payDay, owed, C.taxPayment, { account: savings, memo: `GST ${ps.slice(0, 7)} to ${pe.slice(0, 7)}`, exact: true });
-      else if (owed < 0) earn(payDay, -owed, C.taxRefund, { account: savings, memo: `GST refund ${ps.slice(0, 7)} to ${pe.slice(0, 7)}`, exact: true });
+      if (owed > 0) spend(payDay, owed, C.taxPayment, { account: savings, memo: `${taxWord} ${ps.slice(0, 7)} to ${pe.slice(0, 7)}`, exact: true });
+      else if (owed < 0) earn(payDay, -owed, C.taxRefund, { account: savings, memo: `${taxWord} refund ${ps.slice(0, 7)} to ${pe.slice(0, 7)}`, exact: true });
     }
     reconcile();
     for (const [ps, pe] of periods) {
-      saveTaxReturn({ periodStart: ps, periodEnd: pe, basis: country === 'IN' ? 'accrual' : 'cash', inputs: inputs(), lodge: pe <= lodgeUntil });
+      saveTaxReturn({ periodStart: ps, periodEnd: pe, basis, inputs: inputs(), lodge: pe <= lodgeUntil });
     }
   } else {
     reconcile();

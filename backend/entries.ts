@@ -1,9 +1,10 @@
 // Income, expenses, transfers and the contacts they name.
 import { all, getBooks, one, run } from './db';
 import { assertUnlocked, getSettings } from './settings';
-import { TAX_CODE_MAP, isTaxCode, taxCodeOr, taxFromInclusive, type TaxCode } from '../src/shared/tax';
-import { countryProfile } from '../src/shared/countries';
-import { gstRateOr, gstinError, isInState } from '../src/shared/india';
+import { TAX_CODE_MAP, isTaxCode, lineRateOr, taxCodeOr, taxFromInclusive, type TaxCode } from '../src/shared/tax';
+import { countryProfile, defaultLineRate } from '../src/shared/countries';
+import { gstinError, isInState } from '../src/shared/india';
+import { isCaProvince } from '../src/shared/canada';
 import { resolveTaxRate } from './usTax';
 
 type EntryKind = 'income' | 'expense' | 'transfer';
@@ -232,8 +233,9 @@ export function saveEntry(input: EntryInput) {
       const code = taxCodeOr(countryProfile(settings.country).tax, kind, isTaxCode(input.taxCode) ? input.taxCode : cat.tax_code) ?? 'NTR';
       taxCode = code;
       const override = input.taxAmount;
-      // India: the rate goes with what was bought or sold.
-      if (settings.country === 'IN' && TAX_CODE_MAP[code].taxable) taxRatePpm = gstRateOr(input.taxRatePpm ?? existing?.tax_rate_ppm, settings.taxRatePpm);
+      // India, Canada and the UK: each transaction has its own rate.
+      const taxRules = countryProfile(settings.country).tax;
+      if (taxRules?.lineRates && TAX_CODE_MAP[code].taxable) taxRatePpm = lineRateOr(taxRules, input.taxRatePpm ?? existing?.tax_rate_ppm, defaultLineRate(settings, null, input.date)!);
       if (!TAX_CODE_MAP[code].taxable) taxAmount = 0;
       else if (typeof override === 'number' && Number.isFinite(override)) {
         taxAmount = Math.round(override);
@@ -388,8 +390,9 @@ export function saveContact(input: ContactInput) {
   const au = country === 'AU';
   const customer = input.kind === 'customer';
   const india = country === 'IN';
-  const state = us || india ? clean(input.state)?.toUpperCase() ?? null : null;
-  if (state && (india ? !isInState(state) : !/^[A-Z]{2}$/.test(state))) throw new Error('Pick a state.');
+  const canada = country === 'CA';
+  const state = us || india || canada ? clean(input.state)?.toUpperCase() ?? null : null;
+  if (state && (india ? !isInState(state) : canada ? !isCaProvince(state) : !/^[A-Z]{2}$/.test(state))) throw new Error(canada ? 'Pick a province.' : 'Pick a state.');
   const abroad = clean(input.country)?.toUpperCase() ?? null;
   if (abroad && !/^[A-Z]{2}$/.test(abroad)) throw new Error('Pick a country.');
   const taxRateId = us && customer && typeof input.taxRateId === 'number'
@@ -406,7 +409,7 @@ export function saveContact(input: ContactInput) {
   const fields = [
     input.kind, name, clean(input.email), clean(input.phone), clean(input.address), clean(input.notes), tradingNameId,
     state, taxRateId, us && customer ? clean(input.taxExempt) : null,
-    reports && input.is1099 ? 1 : 0, reports ? clean(input.legalName) : null, india ? tin : us ? tidyTin(tin) : tidyAbn(tin), wht || null, india && abroad === 'IN' ? null : abroad,
+    reports && input.is1099 ? 1 : 0, reports ? clean(input.legalName) : null, india ? tin : us ? tidyTin(tin) : tidyAbn(tin), wht || null, (india || canada || country === 'GB') && abroad === country ? null : abroad,
   ];
   const cols = 'kind, name, email, phone, address, notes, trading_name_id, state, tax_rate_id, tax_exempt, is_1099, legal_name, tin, wht_rate_ppm, country';
   if (input.id) {

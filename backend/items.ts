@@ -1,11 +1,10 @@
 // Products and services: saved lines for invoices (things you sell) and
 // bills (things you buy). A document line copies what it takes from an item.
 import { TAX_CODE_MAP } from '../src/shared/tax';
-import { gstRateOr } from '../src/shared/india';
 import { all, getBooks, one, run } from './db';
 import { getSettings } from './settings';
 import { countryProfile } from '../src/shared/countries';
-import { isTaxCode, taxCodeOr } from '../src/shared/tax';
+import { isTaxCode, lineRateOr, taxCodeOr } from '../src/shared/tax';
 
 export interface ItemInput {
   id?: number;
@@ -53,7 +52,9 @@ export function saveItem(input: ItemInput) {
     ? taxCodeOr(countryProfile(settings.country).tax, input.kind, input.taxCode)
     : null;
   const hsn = settings.country === 'IN' ? String(input.hsn ?? '').trim() || null : null;
-  const taxRatePpm = settings.country === 'IN' && taxCode && TAX_CODE_MAP[taxCode].taxable ? gstRateOr(input.taxRatePpm, settings.taxRatePpm) : null;
+  // A product carries a rate where the rate goes with what's sold. In Canada it goes with where it's sold.
+  const tax = countryProfile(settings.country).tax;
+  const taxRatePpm = tax?.lineRates && !tax.rateFollowsPlace && taxCode && TAX_CODE_MAP[taxCode].taxable ? lineRateOr(tax, input.taxRatePpm, settings.taxRatePpm) : null;
   const fields = [input.kind, name, description, unitPrice, input.priceIncludesTax ? 1 : 0, categoryId, taxCode, hsn, taxRatePpm];
   if (input.id) {
     run(db,

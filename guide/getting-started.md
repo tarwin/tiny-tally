@@ -12,11 +12,13 @@ macOS (Apple Silicon and Intel), Windows and Linux. Free, and it updates itself.
 
 ## Try the demo first
 
-On the welcome screen, **Try demo books** asks which country you want. Each is a small design studio with over a year of transactions, invoices and bills, and all but India have car trips and an asset register:
+On the welcome screen, **Try demo books** asks which country you want. Each is a small design studio with over a year of transactions, invoices and bills. The Australian, New Zealand and US ones also have car trips and an asset register:
 
 - **Australia**: *Harbour & Pine Studio*, with quarterly BAS lodged and PAYG instalments.
+- **Canada**: *Birch & Harbour Studio*, in Toronto, with an annual GST/HST return, customers in five provinces at different rates, one in the US, and half the tax claimed on meals.
 - **India**: *Chai & Ink Studio*, with monthly GST, customers in and out of the state, exports in dollars and pounds with exchange gains and losses, goods at 5% beside services at 18%, and a client that deducts TDS.
 - **New Zealand**: *Kōwhai Lane Design*, with two-monthly GST returns, provisional tax, and a client that withholds tax.
+- **United Kingdom**: *Thistle & Wren Studio*, in Bristol, with quarterly VAT returns, zero-rated printed brochures beside standard-rated design, a client abroad outside the scope of UK VAT, and payments on account.
 - **United States**: *Cedar & Finch Studio*, in Oregon (no sales tax), with estimated tax and a contractor on a 1099-NEC.
 
 Each is a separate file, so poke at anything. When you're ready for your own, close it and start new books.
@@ -26,10 +28,10 @@ Each is a separate file, so poke at anything. When you're ready for your own, cl
 Choose **Create books** on the welcome screen (or **New Books…**, <kbd>⇧⌘N</kbd>) and fill in:
 
 - **Your name**, and **Trading as** if the business has another name. The file is named after it.
-- **Country**: Australia, New Zealand or the United States. This sets the currency, the tax rules and the reports you get. It can't be changed later.
+- **Country**: Australia, Canada, India, New Zealand, the United Kingdom or the United States. This sets the currency, the tax rules and the reports you get. It can't be changed later.
 - **Financial year starts**: filled in for your country; change it if your year is different.
-- **Tax**: in Australia and New Zealand, *Registered for GST* (on by default). In the US, *Charge sales tax* and your rate.
-- Your **ABN**, **GST number** or **EIN** if you have one.
+- **Tax**: in Australia, New Zealand and India, *Registered for GST* (on by default). In Canada, *Registered for GST/HST* and your province. In the UK, *Registered for VAT*. In the US, *Charge sales tax* and your rate.
+- Your **ABN**, **GST number**, **GSTIN**, **Business Number**, **VAT number** or **EIN** if you have one.
 - **Where should your books live?** Either *Store internally* (Tiny Tally looks after the file) or *In a folder I choose*.
 
 ::: tabs
