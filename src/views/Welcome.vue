@@ -218,7 +218,7 @@ function shortPath(path: string) {
                 <span class="Recent__name"><span v-if="r.color" class="Recent__dot" :style="{ background: r.color }" />{{ r.name }}</span>
                 <span class="Recent__path subdued">{{ shortPath(r.path) }}</span>
               </button>
-              <Button type="plain" icon="mdi:close" tooltip="Remove from list" @click="forget(r.path)" />
+              <Button type="plain" icon="mdi:close" tooltip="Remove from list" tooltip-position="left" @click="forget(r.path)" />
             </li>
           </ul>
         </CardSection>
@@ -251,7 +251,7 @@ function shortPath(path: string) {
               placeholder="Choose…"
               required
               :error="countryError ?? undefined"
-              :help-text="profile ? `Amounts are in ${profile.currency}. This can't be changed later.` : 'Sets the currency and tax rules.'"
+              :help-text="profile ? `${profile.summary} Amounts are in ${profile.currency}. This can't be changed later.` : 'Sets the currency and tax rules.'"
             />
             <template v-if="profile">
               <FormLayoutGroup>

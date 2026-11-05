@@ -28,7 +28,7 @@ Each is a separate file, so poke at anything. When you're ready for your own, cl
 Choose **Create books** on the welcome screen (or **New Books…**, <kbd>⇧⌘N</kbd>) and fill in:
 
 - **Your name**, and **Trading as** if the business has another name. The file is named after it.
-- **Country**: Australia, Canada, India, New Zealand, the United Kingdom or the United States. This sets the currency, the tax rules and the reports you get. It can't be changed later.
+- **Country**: Australia, Canada, India, New Zealand, the United Kingdom or the United States. This sets the currency, the tax rules and the reports you get, and the list says what each country includes. It can't be changed later.
 - **Financial year starts**: filled in for your country; change it if your year is different.
 - **Tax**: in Australia, New Zealand and India, *Registered for GST* (on by default). In Canada, *Registered for GST/HST* and your province. In the UK, *Registered for VAT*. In the US, *Charge sales tax* and your rate.
 - Your **ABN**, **GST number**, **GSTIN**, **Business Number**, **VAT number** or **EIN** if you have one.

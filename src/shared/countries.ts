@@ -62,6 +62,8 @@ export interface CountryTax {
 export interface CountryProfile {
   code: Country;
   name: string;
+  /** What these books get, shown when choosing a country. */
+  summary: string;
   currency: string;
   /** 'MM-DD' */
   fiscalYearStart: string;
@@ -192,6 +194,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   AU: {
     code: 'AU',
     name: 'Australia',
+    summary: "GST and BAS figures, PAYG instalments, taxable payments (TPAR), car trips and an asset register.",
     currency: 'AUD',
     fiscalYearStart: '07-01',
     dateOrder: 'dmy',
@@ -253,6 +256,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   NZ: {
     code: 'NZ',
     name: 'New Zealand',
+    summary: "GST return figures, IR10 summary, provisional tax, vehicle trips and an asset register.",
     currency: 'NZD',
     fiscalYearStart: '04-01',
     dateOrder: 'dmy',
@@ -317,6 +321,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   IN: {
     code: 'IN',
     name: 'India',
+    summary: "GST at a rate per line, split into CGST, SGST and IGST, with a summary for GSTR-1 and GSTR-3B. No income tax tools.",
     currency: 'INR',
     fiscalYearStart: '04-01',
     dateOrder: 'dmy',
@@ -354,6 +359,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   CA: {
     code: 'CA',
     name: 'Canada',
+    summary: "GST/HST at the rate for the customer's province, with return figures. No income tax tools, and PST and QST aren't tracked.",
     currency: 'CAD',
     // Sole proprietors generally keep a calendar year.
     fiscalYearStart: '01-01',
@@ -399,6 +405,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   GB: {
     code: 'GB',
     name: 'United Kingdom',
+    summary: "VAT at a rate per line and a 9-box return to send through bridging software. No self-assessment tools.",
     currency: 'GBP',
     // The tax year. Sole traders are taxed on it, whatever their accounting date.
     fiscalYearStart: '04-06',
@@ -441,6 +448,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   US: {
     code: 'US',
     name: 'United States',
+    summary: "Sales tax totals, Schedule C, estimated tax, 1099-NEC, mileage and an asset register.",
     currency: 'USD',
     fiscalYearStart: '01-01',
     dateOrder: 'mdy',
@@ -515,7 +523,7 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   },
 };
 
-export const COUNTRY_OPTIONS = (['AU', 'CA', 'IN', 'NZ', 'GB', 'US'] as Country[]).map((c) => ({ label: COUNTRIES[c].name, value: c }));
+export const COUNTRY_OPTIONS = (['AU', 'CA', 'IN', 'NZ', 'GB', 'US'] as Country[]).map((c) => ({ label: COUNTRIES[c].name, value: c, description: COUNTRIES[c].summary }));
 
 /** Whether car trips and the asset register are in for this country: they follow its income tax rules. */
 export const hasIncomeRules = (c: string | null | undefined) => c === 'AU' || c === 'NZ' || c === 'US';
