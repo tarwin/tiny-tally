@@ -48,7 +48,7 @@
    Linux tarballs to its `tiny-tally-v<version>` release with the same notes,
    writes Tiny Tally's catalog entry (marked `external`, which
    `shelf/gen-catalog.js` there keeps as is), commits and pushes. That repo
-   must have no uncommitted changes. Shelf on a Mac only installs apps whose
+   must be on `main` with no uncommitted changes. Shelf on a Mac only installs apps whose
    id starts `art.tarwin.`, hence Tiny Tally's id.
 
 ## Tax figures, once a year
