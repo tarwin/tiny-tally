@@ -1,5 +1,5 @@
 // Books settings live as key/value rows in `meta`.
-import { TAX_FREQUENCIES, isCountry, type Country, type TaxFrequency } from '../src/shared/countries';
+import { DATE_FORMATS, TAX_FREQUENCIES, countryProfile, isCountry, type Country, type DateFormat, type TaxFrequency } from '../src/shared/countries';
 import { getBooks, one } from './db';
 
 type CurrencyDisplay = 'narrow' | 'symbol' | 'code';
@@ -37,6 +37,8 @@ export interface BooksSettings {
   currencyDisplay: CurrencyDisplay;
   /** The same for documents sent out (invoices, statements), read by people who may not know the currency. */
   documentCurrencyDisplay: CurrencyDisplay;
+  /** Starts as the country's usual order. */
+  dateFormat: DateFormat;
   /** '#rrggbb' or '' — the stripe beside the menu that tells open books apart. */
   color: string;
   /** data: URL, or '' — shown top left instead of the app's logo. */
@@ -118,6 +120,7 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
   paymentTermsDays: { key: 'payment_terms_days', ...int(14, 0, 365) },
   currencyDisplay: { key: 'currency_display', ...oneOf(CURRENCY_DISPLAYS, 'narrow') },
   documentCurrencyDisplay: { key: 'document_currency_display', ...oneOf(CURRENCY_DISPLAYS, 'symbol') },
+  dateFormat: { key: 'date_format', ...oneOf<DateFormat | ''>(DATE_FORMATS, '') },
   logo: {
     key: 'books_logo',
     parse: (v) => v ?? '',
@@ -166,6 +169,7 @@ export function getSettings(): BooksSettings {
   const map = new Map(rows.map((r) => [r.key, r.value]));
   const out: any = {};
   for (const [name, f] of Object.entries(FIELDS)) out[name] = f.parse(map.get(f.key) ?? null);
+  out.dateFormat ||= countryProfile(out.country).dateOrder;
   return out;
 }
 

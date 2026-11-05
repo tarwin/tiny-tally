@@ -14,7 +14,7 @@
     "docs:build": "vitepress build guide"
   },
   "dependencies": {
-    "@octans/ui": "^1.11.0",
+    "@octans/ui": "^1.12.0",
     "vue": "^3.5.44",
     "vue-router": "^5.4.0"
   },

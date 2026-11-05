@@ -1,5 +1,6 @@
 // Date ranges, built in the user's local calendar as YYYY-MM-DD.
 import type { TaxFrequency } from '../shared/countries';
+import { dateDisplay } from './dates';
 const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 export { iso as toIso };
@@ -83,13 +84,16 @@ export interface TaxPeriod {
   current: boolean;
 }
 
-/** How a period's dates read: "Jul 2026" for a whole month, else "6 Apr–5 May 2026". */
+/** How a period's dates read: "Jul 2026" for a whole month, else "6 Apr–5 May 2026" (or "Apr 6–May 5, 2026"). */
 function span(start: Date, end: Date) {
   const sameYear = start.getFullYear() === end.getFullYear();
   if (start.getDate() === 1 && addDays(end, 1).getDate() === 1) {
     return start.getMonth() === end.getMonth() && sameYear
       ? `${MONTH_SHORT[start.getMonth()]} ${start.getFullYear()}`
       : `${MONTH_SHORT[start.getMonth()]}${sameYear ? '' : ' ' + start.getFullYear()}–${MONTH_SHORT[end.getMonth()]} ${end.getFullYear()}`;
+  }
+  if (dateDisplay.format === 'mdy') {
+    return `${MONTH_SHORT[start.getMonth()]} ${start.getDate()}${sameYear ? '' : `, ${start.getFullYear()}`}–${MONTH_SHORT[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
   }
   return `${start.getDate()} ${MONTH_SHORT[start.getMonth()]}${sameYear ? '' : ' ' + start.getFullYear()}–${end.getDate()} ${MONTH_SHORT[end.getMonth()]} ${end.getFullYear()}`;
 }

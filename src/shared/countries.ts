@@ -12,6 +12,10 @@ import { CA_RATES, businessNumberError, caRatePpm, caTaxWord } from './canada';
 import { EXPORT_PLACE, GST_RATES, gstHeads, gstRateText, gstinError } from './india';
 import { VAT_RATES, vatNumberError } from './uk';
 
+/** How the books show dates: '10 May 2026', 'May 10, 2026' or '2026-05-10'. */
+export type DateFormat = 'dmy' | 'mdy' | 'ymd';
+export const DATE_FORMATS: DateFormat[] = ['dmy', 'mdy', 'ymd'];
+
 export type Country = 'AU' | 'NZ' | 'US' | 'IN' | 'CA' | 'GB';
 
 /** How often tax returns are filed. */
@@ -61,7 +65,7 @@ export interface CountryProfile {
   currency: string;
   /** 'MM-DD' */
   fiscalYearStart: string;
-  /** For dates like 03/10/2026 when a file doesn't make it clear. */
+  /** How dates show until the books choose otherwise, and how to read 03/10/2026 when a file doesn't make it clear. */
   dateOrder: 'dmy' | 'mdy';
   taxId: {
     label: string;

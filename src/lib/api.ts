@@ -1,5 +1,5 @@
 // Typed front door to the backend (backend/main.ts). Keep names in sync.
-import type { Country, TaxFrequency } from '../shared/countries';
+import type { Country, DateFormat, TaxFrequency } from '../shared/countries';
 import type { Adjustment, AdjustmentContext, ReturnFigures, ReturnInputs, ReturnKind, RuleStatus } from '../shared/taxReturns';
 import type { TaxCode } from '../shared/tax';
 import type { TemplateLayout } from '../shared/templateLayout';
@@ -42,6 +42,7 @@ export interface BooksSettings {
   paymentTermsDays: number;
   currencyDisplay: CurrencyDisplay;
   documentCurrencyDisplay: CurrencyDisplay;
+  dateFormat: DateFormat;
   color: string;
   logo: string;
   lockDate: string | null;

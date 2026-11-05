@@ -7,7 +7,7 @@ There are two kinds: settings for these books, which are kept in the books file,
 **Settings** in the sidebar (<kbd>⌥⌘,</kbd>):
 
 - **Your name**, financial year start, tax ID, **Logo**, and a **Colour** for the sidebar, to tell sets of books apart. The country can't be changed.
-- How amounts are shown in the app and on documents.
+- How amounts are shown in the app and on documents, and how **Dates** are shown in both: `10 May 2026`, `May 10, 2026` or `2026-05-10`. New books start with their country's usual order. Fields you type a date into follow it too: `DD/MM/YYYY`, `MM/DD/YYYY` or `YYYY-MM-DD`.
 - **Trading names**. See [Templates and trading names](./templates#trading-names).
 - **Tax**: whether you're registered, how often you report, cash or accrual, and whether invoice prices include GST by default.
 - **Invoices**: prefixes and next numbers for each kind of document.

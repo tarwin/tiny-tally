@@ -1,6 +1,7 @@
 // Wording for the change log (Activity page and History): what each action
 // was, what each table holds, and how to show a changed field.
 import type { Change, ChangeBatch } from './api';
+import { formatDay } from './dates';
 import { formatMoney } from './money';
 
 /** Backend call → what the person did. Unknown calls fall back to the name. */
@@ -168,7 +169,10 @@ export const ACTION_WORD = { insert: 'Added', update: 'Changed', delete: 'Remove
 
 /** Local wall-clock time for a stored UTC instant. */
 export function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const at = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const day = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+  return `${formatDay(day)}, ${at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 /** Local midnight at the start of a YYYY-MM-DD day, as the UTC instant the log compares with. */
