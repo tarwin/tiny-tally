@@ -1,9 +1,12 @@
 // Imports from QuickBooks (IIF), bank files (OFX/QBO/QFX) and CSV. The page
 // parses the file into an ImportBatch; this resolves it against the books
 // and writes everything in one transaction.
+import { saveJournal } from './journals';
 import { all, getBooks, one, run } from './db';
 import { OFF_BAS, saveEntry } from './entries';
-import { getSettings } from './settings';
+import { recordPayment } from './invoices';
+import { resolveTradingName, snapshotOf } from './tradingNames';
+import { assertUnlocked, getSettings } from './settings';
 import { countryProfile } from '../src/shared/countries';
 import { taxCodeOr } from '../src/shared/tax';
 import type { ImportPlan, ImportResult } from '../src/shared/import';
@@ -16,8 +19,9 @@ export async function readImportFile(path: string) {
   if (st.size > MAX_FILE) throw new Error('That file is over 25 MB. Export a shorter date range and try again.');
   const bytes = await tjs.readFile(path);
   const name = path.split(/[\\/]/).pop() ?? path;
-  // Excel files are zips: the page unpacks them, so send the bytes.
-  if (bytes[0] === 0x50 && bytes[1] === 0x4b) return { name, text: '', base64: toBase64(bytes) };
+  // Excel files are zips and portable company files are compound files: the
+  // page unpacks them, so send the bytes.
+  if ((bytes[0] === 0x50 && bytes[1] === 0x4b) || /\.qbm$/i.test(name)) return { name, text: '', base64: toBase64(bytes) };
   let text = new TextDecoder('utf-8').decode(bytes);
   // Windows-1252 exports (older QuickBooks Desktop) decode with replacement
   // characters; fall back to a byte-for-byte reading so names survive.
@@ -78,6 +82,8 @@ export function commitImport(plan: ImportPlan): ImportResult {
     categoriesCreated: 0,
     contactsCreated: 0,
     entriesCreated: 0,
+    documentsCreated: 0,
+    journalsCreated: 0,
     duplicates: 0,
     skipped: 0,
     failed: [],
@@ -167,6 +173,67 @@ export function commitImport(plan: ImportPlan): ImportResult {
     };
     for (const c of batch.contacts) ensureContact(c.name, c.kind, c);
 
+    // ---- invoices, bills and credit notes ----
+    // Written directly: the source's exact cents, not worked out again from a rate.
+    const documentIds = new Map<string, number>();
+    const taxRules = countryProfile(settings.country).tax;
+    for (const d of batch.documents ?? []) {
+      const kind = d.docType === 'bill' ? 'expense' : 'income';
+      const contactId = ensureContact(d.contactName, d.docType === 'bill' ? 'vendor' : 'customer');
+      if (!contactId) {
+        fail(d.ref, d.issueDate, `${d.number} has nobody to go to.`);
+        continue;
+      }
+      const lines = d.lines.map((l) => {
+        const tax = settings.taxEnabled ? l.tax : 0;
+        return {
+          ...l,
+          // Without tax turned on, a line is simply what was charged.
+          net: settings.taxEnabled ? l.net : l.net + l.tax,
+          tax,
+          categoryId: categoryIds.get(l.categoryKey) ?? plan.fallbackCategory[kind],
+          taxCode: settings.taxEnabled ? taxCodeOr(taxRules, kind, l.taxCode) : null,
+        };
+      });
+      const net = lines.reduce((t, l) => t + l.net, 0);
+      const tax = lines.reduce((t, l) => t + l.tax, 0);
+      const same = one<{ id: number }>(db,
+        'SELECT id FROM invoices WHERE doc_type = ? AND contact_id = ? AND issue_date = ? AND total = ? AND (number = ? OR number LIKE ?)',
+        d.docType, contactId, d.issueDate, net + tax, d.number, `${d.number} (%)`);
+      if (same) {
+        documentIds.set(d.ref, same.id);
+        result.duplicates++;
+        continue;
+      }
+      if (lines.some((l) => !l.categoryId)) {
+        fail(d.ref, d.issueDate, `${d.number} has a line with no category.`);
+        continue;
+      }
+      try {
+        assertUnlocked(d.issueDate);
+      } catch (err) {
+        fail(d.ref, d.issueDate, err instanceof Error ? err.message : String(err));
+        continue;
+      }
+      let number = d.number;
+      for (let i = 2; one(db, 'SELECT id FROM invoices WHERE number = ?', number); i++) number = `${d.number} (${i})`;
+      const tradingNameId = d.docType === 'bill' ? null : resolveTradingName(null, contactId, null);
+      const id = one<{ id: number }>(db,
+        `INSERT INTO invoices (doc_type, number, contact_id, issue_date, due_date, status, notes, trading_name_id, from_snapshot,
+           prices_include_tax, net, tax, total, sent_at)
+         VALUES (?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        d.docType, number, contactId, d.issueDate, d.dueDate, d.notes ?? null, tradingNameId,
+        tradingNameId === null ? null : snapshotOf(tradingNameId), d.pricesIncludeTax ? 1 : 0, net, tax, net + tax, d.issueDate)!.id;
+      lines.forEach((l, sort) => {
+        run(db,
+          `INSERT INTO invoice_lines (invoice_id, sort, description, qty_milli, unit_price, category_id, tax_code, net, tax)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, sort, l.description, l.qtyMilli, l.unitPrice, l.categoryId, l.taxCode, l.net, l.tax);
+      });
+      documentIds.set(d.ref, id);
+      result.documentsCreated++;
+    }
+
     // ---- entries ----
     const dupe = db.prepare('SELECT 1 FROM entries WHERE account_id = ? AND import_ref = ?');
     try {
@@ -175,6 +242,21 @@ export function commitImport(plan: ImportPlan): ImportResult {
         if (!accountId) continue; // its account was skipped
         if (dupe.all(accountId, e.ref).length) {
           result.duplicates++;
+          continue;
+        }
+        if (e.documentRef) {
+          const invoiceId = documentIds.get(e.documentRef);
+          if (!invoiceId) {
+            fail(e.ref, e.date, 'The document this pays wasn’t brought in.');
+            continue;
+          }
+          try {
+            const id = recordPayment({ invoiceId, date: e.date, amount: e.amount, accountId, memo: e.memo ?? null });
+            run(db, 'UPDATE entries SET import_ref = ? WHERE id = ?', e.ref, id);
+            result.entriesCreated++;
+          } catch (err) {
+            fail(e.ref, e.date, err instanceof Error ? err.message : String(err));
+          }
           continue;
         }
         let toAccountId: number | null = null;
@@ -210,7 +292,8 @@ export function commitImport(plan: ImportPlan): ImportResult {
             categoryId,
             contactId,
             memo: e.memo ?? null,
-          });
+            ...(e.taxAmount === undefined ? {} : { taxCode: e.taxCode, taxAmount: e.taxAmount }),
+          } as Parameters<typeof saveEntry>[0]);
           run(db, 'UPDATE entries SET import_ref = ? WHERE id = ?', e.ref, id);
           result.entriesCreated++;
         } catch (err) {
@@ -219,6 +302,45 @@ export function commitImport(plan: ImportPlan): ImportResult {
       }
     } finally {
       dupe.finalize();
+    }
+
+    // ---- journals ----
+    if (batch.journals?.length) {
+      // They have no import reference, so one that's already here is known by its figures.
+      const signature = (date: string, lines: { account: string; amount: number }[]) =>
+        `${date}|${lines.map((l) => `${l.account}:${l.amount}`).sort().join(',')}`;
+      const already = new Map<number, { date: string; lines: { account: string; amount: number }[] }>();
+      for (const l of all<any>(db, 'SELECT j.id, j.date, l.category_id, l.system, l.amount FROM journal_lines l JOIN journals j ON j.id = l.journal_id')) {
+        const j = already.get(l.id) ?? { date: l.date as string, lines: [] as { account: string; amount: number }[] };
+        j.lines.push({ account: l.category_id !== null ? `cat:${l.category_id}` : l.system, amount: l.amount });
+        already.set(l.id, j);
+      }
+      const seen = new Map<string, number>();
+      for (const j of already.values()) {
+        const sig = signature(j.date, j.lines);
+        seen.set(sig, (seen.get(sig) ?? 0) + 1);
+      }
+      for (const j of batch.journals) {
+        // Leaving out a line would unbalance it, so a skipped category leaves out the whole journal.
+        if (j.lines.some((l) => l.categoryKey && !categoryIds.has(l.categoryKey))) {
+          result.skipped++;
+          continue;
+        }
+        const lines = j.lines.map((l) => ({ account: l.system ?? `cat:${categoryIds.get(l.categoryKey!)}`, amount: l.amount, memo: l.memo }));
+        const sig = signature(j.date, lines);
+        const left = seen.get(sig) ?? 0;
+        if (left) {
+          seen.set(sig, left - 1);
+          result.duplicates++;
+          continue;
+        }
+        try {
+          saveJournal({ date: j.date, memo: j.memo, lines });
+          result.journalsCreated++;
+        } catch (err) {
+          fail(`journal:${j.date}`, j.date, err instanceof Error ? err.message : String(err));
+        }
+      }
     }
   })();
 

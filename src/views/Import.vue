@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   Badge,
@@ -9,9 +9,12 @@ import {
   CardSection,
   Checkbox,
   Icon,
+  Modal,
+  ModalSection,
   Page,
   SegmentedControl,
   Select,
+  Spinner,
   ToggleSwitch,
   toast,
 } from '@octans/ui';
@@ -24,12 +27,15 @@ import {
   type ImportResult,
   type ImportTarget,
 } from '../lib/api';
+import { backupBooks } from '../lib/books';
 import { CLASS_INFO } from '../lib/categoryClass';
 
 import { formatShortDay } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { session } from '../lib/session';
 import { IIF_TYPE_LABELS, looksLikeIif, parseIif } from '../lib/import/iif';
+import type { TaxMode } from '../lib/import/split';
+import { parseQbm } from '../lib/import/qbm';
 import { looksLikeOfx, parseOfx } from '../lib/import/ofx';
 import {
   csvToBatch,
@@ -55,7 +61,10 @@ const step = ref<Step>('pick');
 const busy = ref(false);
 const fileName = ref('');
 const text = ref('');
-const format = ref<'iif' | 'ofx' | 'csv' | 'qbo'>('csv');
+const format = ref<'iif' | 'qbm' | 'ofx' | 'csv' | 'qbo'>('csv');
+const qbmBytes = shallowRef<Uint8Array | null>(null);
+/** How to read a separate tax line, when a file only has that. */
+const taxMode = ref<TaxMode>('merge');
 /** Excel files are read into rows; text files into `text`. */
 const excel = ref(false);
 
@@ -65,18 +74,25 @@ const categories = ref<Category[]>([]);
 // ---- step 1: choose a file ------------------------------------------------------
 
 async function chooseFile() {
-  const path = await tiny.dialog.openFile({ types: ['iif', 'qbo', 'qfx', 'ofx', 'csv', 'txt', 'xlsx', 'zip'] });
+  const path = await tiny.dialog.openFile({ types: ['iif', 'qbm', 'qbo', 'qfx', 'ofx', 'csv', 'txt', 'xlsx', 'zip'] });
   if (path) await loadFile(path);
 }
 
 async function loadFile(path: string) {
   busy.value = true;
   try {
+    if (/\.(qbb|qbw)$/i.test(path)) {
+      throw new Error('Tiny Tally can’t read this kind of company file. In QuickBooks or Reckon, choose File → Save Copy or Backup → Portable company file, then import the .QBM it makes.');
+    }
     const file = await api.readImportFile(path);
     [accounts.value, categories.value] = await Promise.all([api.listAccounts(), api.listCategories()]);
     fileName.value = file.name;
-    excel.value = !!file.base64;
-    if (file.base64) {
+    excel.value = !!file.base64 && !/\.qbm$/i.test(file.name);
+    if (file.base64 && !excel.value) {
+      qbmBytes.value = Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0));
+      text.value = '';
+      format.value = 'qbm';
+    } else if (file.base64) {
       const bytes = Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0));
       const bundle = await readXlsxBundle(bytes);
       if (bundle.length) {
@@ -156,6 +172,7 @@ const mappingRestored = ref(false);
 
 async function setupFormat() {
   mappingRestored.value = false;
+  taxMode.value = 'merge';
   if (format.value === 'iif') {
     iifDateOrder.value = parseIif(text.value, undefined, fallbackOrder).dateOrder;
   } else if (format.value === 'qbo') {
@@ -183,8 +200,9 @@ function rememberMapping() {
 }
 
 const parsed = computed(() => {
-  if (format.value === 'iif') return parseIif(text.value, iifDateOrder.value);
-  if (format.value === 'qbo') return parseQboReport(csvRows.value, iifDateOrder.value);
+  if (format.value === 'qbm') return qbmBytes.value ? parseQbm(qbmBytes.value, taxMode.value) : null;
+  if (format.value === 'iif') return parseIif(text.value, iifDateOrder.value, undefined, taxMode.value);
+  if (format.value === 'qbo') return parseQboReport(csvRows.value, iifDateOrder.value, undefined, taxMode.value);
   return null;
 });
 const batch = computed<ImportBatch>(() => {
@@ -195,8 +213,16 @@ const batch = computed<ImportBatch>(() => {
 });
 /** QuickBooks account type per category key ('' when unknown). */
 const qbTypes = computed<Record<string, string>>(() => parsed.value?.categoryTypes ?? {});
+/** Separate tax lines that don't read clearly: show real ones and let the user say which reading is right. */
+const taxReview = computed(() => {
+  const r = parsed.value?.taxReview;
+  return r && r.inferred && r.fit < 0.9 ? r : null;
+});
 /** Double-entry sources: categories come from the file, not payee groups. */
-const ledgerFile = computed(() => format.value === 'iif' || format.value === 'qbo');
+const ledgerFile = computed(() => format.value === 'iif' || format.value === 'qbm' || format.value === 'qbo');
+const iif = computed(() => (parsed.value && 'hasTransactions' in parsed.value ? parsed.value : null));
+/** A "Lists to IIF Files" export: accounts, categories and contacts, but no transactions. */
+const listsOnly = computed(() => !!iif.value && !iif.value.hasTransactions);
 
 // ---- mapping targets ---------------------------------------------------------------
 
@@ -236,7 +262,8 @@ function initTargets() {
     const same = categories.value.find((x) => x.kind === c.kind && !x.archived && x.name.toLowerCase() === c.name.toLowerCase());
     const qbType = qbTypes.value[c.key] ?? '';
     // Payments against receivables and payables are sales and purchases on the cash basis.
-    const control = qbType === 'AR' ? find('income', 'Sales', 'Other Income') : qbType === 'AP' ? fallbackExpense.value : null;
+    // A file can have either kind on either: a refund paid out of receivables is money out.
+    const control = qbType === 'AR' || qbType === 'AP' ? (c.kind === 'income' ? find('income', 'Sales', 'Other Income') : fallbackExpense.value) : null;
     cat[c.key] = same ? `id:${same.id}` : control ? `id:${control}` : qbType === 'NONPOSTING' ? 'skip' : 'create';
   }
   categoryTargets.value = cat;
@@ -246,7 +273,7 @@ function initTargets() {
 }
 
 watch(
-  () => [format.value === 'qbo' ? iifDateOrder.value : null, csvMode.value, bankMap.value?.amount, bankMap.value?.debit, bankMap.value?.credit, bankMap.value?.date, bankMap.value?.description, bankMap.value?.flip, bankMap.value?.dateOrder, iifDateOrder.value],
+  () => [format.value === 'qbo' ? iifDateOrder.value : null, csvMode.value, bankMap.value?.amount, bankMap.value?.debit, bankMap.value?.credit, bankMap.value?.date, bankMap.value?.description, bankMap.value?.flip, bankMap.value?.dateOrder, iifDateOrder.value, taxMode.value],
   () => {
     if (step.value === 'review') initTargets();
   },
@@ -397,6 +424,12 @@ const counts = computed(() => {
     entries: entries.length,
     leftOut: b.entries.length - entries.length,
     contacts: b.contacts.length,
+    invoices: (b.documents ?? []).filter((d) => d.docType === 'invoice').length,
+    bills: (b.documents ?? []).filter((d) => d.docType === 'bill').length,
+    credits: (b.documents ?? []).filter((d) => d.docType === 'credit').length,
+    journals: (b.journals ?? []).length,
+    newAccounts: b.accounts.filter((a) => accountTargets.value[a.key] === 'create').length,
+    newCategories: b.categories.filter((c) => categoryTargets.value[c.key] === 'create').length,
     from: range.from,
     to: range.to,
     income: entries.filter((e) => e.kind === 'income').reduce((t, e) => t + e.amount, 0),
@@ -404,18 +437,51 @@ const counts = computed(() => {
   };
 });
 
-const lockWarning = computed(() => {
+const lockedCount = computed(() => {
   const lock = books.value.lockDate;
-  if (!lock || !counts.value.entries) return null;
-  const n = batch.value.entries.filter((e) => e.date <= lock).length;
-  return n ? `${n} transaction${n === 1 ? ' is' : 's are'} dated on or before your lock date (${formatShortDay(lock)}) and will be left out.` : null;
+  if (!lock) return 0;
+  return batch.value.entries.filter((e) => e.date <= lock).length + (batch.value.documents ?? []).filter((d) => d.issueDate <= lock).length + (batch.value.journals ?? []).filter((j) => j.date <= lock).length;
+});
+/** A whole company's history can't be part-imported: balances would be off and payments would lose their invoices. */
+const lockBlocks = computed(() => format.value === 'qbm' && lockedCount.value > 0);
+const lockWarning = computed(() => {
+  const n = lockedCount.value;
+  if (!n || lockBlocks.value) return null;
+  return `${n} transaction${n === 1 ? ' is' : 's are'} dated on or before your lock date (${formatShortDay(books.value.lockDate!)}) and will be left out.`;
+});
+
+/** A portable company file is the whole history, so an opening balance on top would count it twice. */
+const openingClash = computed(() => {
+  if (format.value !== 'qbm') return [];
+  const ids = new Set(batch.value.accounts.map((a) => accountTargets.value[a.key]));
+  return accounts.value.filter((a) => a.openingBalance && ids.has(`id:${a.id}`));
 });
 
 const result = ref<ImportResult | null>(null);
 const rulesSaved = ref(0);
 
+/** A whole company's worth of records at once is worth a copy of the books first. */
+const askBackup = ref(false);
+/** What the overlay says while the books are being changed. */
+const working = ref<string | null>(null);
+
+function startImport() {
+  if (ledgerFile.value) askBackup.value = true;
+  else void commit();
+}
+
+async function backUpAndImport() {
+  askBackup.value = false;
+  working.value = 'Backing up your books…';
+  if (await backupBooks()) await commit();
+  else working.value = null;
+}
+
 async function commit() {
   const b = batch.value;
+  askBackup.value = false;
+  working.value = 'Importing…';
+  (document.activeElement as HTMLElement | null)?.blur();
   busy.value = true;
   try {
     const entries = b.entries.map((e) =>
@@ -441,28 +507,43 @@ async function commit() {
     toast({ title: 'Import failed. Nothing was changed.', content: errorMessage(e), tone: 'error' });
   } finally {
     busy.value = false;
+    working.value = null;
   }
 }
 
 function reset() {
   step.value = 'pick';
   text.value = '';
+  qbmBytes.value = null;
   result.value = null;
 }
 
 const formatLabel = computed(() => {
-  if (format.value === 'iif') return 'QuickBooks Desktop (IIF)';
+  if (iif.value) return `${iif.value.product} (${format.value === 'qbm' ? 'portable company file' : 'IIF'})`;
   if (format.value === 'ofx') return 'Bank statement (OFX / QBO / QFX)';
   if (format.value === 'qbo') return `QuickBooks Online ${parsed.value && 'report' in parsed.value && parsed.value.report === 'list' ? 'Transaction List' : 'Journal'}${excel.value ? ' (Excel)' : ''}`;
   return excel.value ? 'Excel spreadsheet' : 'CSV';
 });
-const importLabel = computed(() => {
-  const n = counts.value.entries;
-  const c = counts.value.contacts;
-  if (n && c) return `Import ${n} transactions and ${c} contacts`;
-  if (n) return `Import ${n} transaction${n === 1 ? '' : 's'}`;
-  if (c) return `Import ${c} contact${c === 1 ? '' : 's'}`;
-  return 'Nothing to import';
+/** Only an IIF file can bring accounts and categories across with no transactions to go in them. */
+const canImport = computed(() => {
+  const c = counts.value;
+  if (lockBlocks.value) return false;
+  return !!(c.entries || c.contacts || c.invoices || c.bills || c.credits || c.journals || ((format.value === 'iif' || format.value === 'qbm') && (c.newAccounts || c.newCategories)));
+});
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const doneSummary = computed(() => {
+  const r = result.value;
+  if (!r) return '';
+  const parts = [
+    r.entriesCreated && `${plural(r.entriesCreated, 'transaction')} added`,
+    r.documentsCreated && plural(r.documentsCreated, 'invoice or bill', 'invoices and bills'),
+    r.journalsCreated && plural(r.journalsCreated, 'journal entry', 'journal entries'),
+    r.contactsCreated && plural(r.contactsCreated, 'new contact'),
+    r.accountsCreated && plural(r.accountsCreated, 'new account'),
+    r.categoriesCreated && plural(r.categoriesCreated, 'new category', 'new categories'),
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(', ')}.` : 'Nothing new to add.';
 });
 </script>
 
@@ -481,7 +562,7 @@ const importLabel = computed(() => {
             <div class="Drop">
               <Icon icon="mdi:tray-arrow-down" class="Drop__icon" />
               <p class="Drop__title">Choose a file to import, or drop it on the window</p>
-              <p class="subdued">IIF, QBO, QFX, OFX, CSV, Excel, or a QuickBooks Online export zip. You'll see everything before it's saved.</p>
+              <p class="subdued">IIF, QBM, QBO, QFX, OFX, CSV, Excel, or a QuickBooks Online export zip. You'll see everything before it's saved.</p>
               <Button type="primary" icon="mdi:file-search-outline" :loading="busy" @click="chooseFile">Choose file…</Button>
             </div>
           </CardSection>
@@ -490,12 +571,14 @@ const importLabel = computed(() => {
         <div class="Help">
           <Card>
             <CardSection>
-              <h3><Icon icon="mdi:desktop-classic" /> QuickBooks Desktop</h3>
+              <h3><Icon icon="mdi:desktop-classic" /> QuickBooks Desktop or Reckon Accounts</h3>
               <p>
-                <strong>File → Utilities → Export → Lists to IIF Files</strong> for your chart of accounts, customers and vendors.
-                For transactions, export a date range from <strong>File → Utilities → Export</strong>, or use your bank file below.
+                Choose <strong>File → Save Copy or Backup → Portable company file</strong>, then import the <strong>.QBM</strong>.
+                It brings everything: accounts, contacts, transactions, invoices, bills and GST. Start with a new set of books so balances don't count twice.
               </p>
-              <p class="subdued Small">The .QBW company file itself is a locked, proprietary format that no other app can read.</p>
+              <p class="subdued">
+                .QBB and .QBW files can't be read, so make a portable file from them first. An IIF export (<strong>File → Utilities → Export → Lists to IIF Files</strong>) only has lists, with no transactions.
+              </p>
             </CardSection>
           </Card>
           <Card>
@@ -536,6 +619,21 @@ const importLabel = computed(() => {
 
       <div class="Grid">
         <div class="Main">
+          <Banner v-if="iif && listsOnly" status="warning" title="This file has no transactions">
+            It's a lists export from {{ iif.product }}, so it only holds accounts, categories and contacts.
+            To bring in transactions, export the Journal report to Excel or CSV and import that as well.
+          </Banner>
+
+          <Banner v-if="lockBlocks" status="warning" title="These books are locked">
+            {{ lockedCount }} items in this file are dated on or before your lock date ({{ formatShortDay(books.lockDate!) }}), usually because a tax return was lodged.
+            Bringing in only part of a company's history would leave its balances wrong. Import into a new set of books, or clear the lock date in Settings if you're sure.
+          </Banner>
+
+          <Banner v-if="openingClash.length" status="warning" title="These balances would count twice">
+            {{ openingClash.map((a) => a.name).join(', ') }} {{ openingClash.length === 1 ? 'already has an opening balance' : 'already have opening balances' }}.
+            This file has the full history, so set {{ openingClash.length === 1 ? 'it' : 'them' }} to zero in Money accounts before importing, or create new accounts below.
+          </Banner>
+
           <!-- CSV columns -->
           <Card v-if="format === 'csv'" title="What's in this file?">
             <CardSection>
@@ -595,7 +693,7 @@ const importLabel = computed(() => {
             </CardSection>
           </Card>
 
-          <Card v-if="ledgerFile" title="Dates">
+          <Card v-if="ledgerFile && !listsOnly && format !== 'qbm'" title="Dates">
             <CardSection>
               <SegmentedControl
                 v-model="iifDateOrder"
@@ -611,6 +709,29 @@ const importLabel = computed(() => {
             </CardSection>
           </Card>
 
+          <Card v-if="taxReview" title="Check how tax reads">
+            <CardSection>
+              <p class="subdued Small Top">
+                {{ taxReview.inferred }} transactions keep their tax on a separate line, and the amounts don't all fit one rate.
+                Here are some from your file. Pick the reading that matches what happened.
+              </p>
+              <SegmentedControl
+                v-model="taxMode"
+                :options="[
+                  { label: 'Tax is part of each amount', value: 'merge' },
+                  { label: 'Tax lines stand alone', value: 'separate' },
+                ]"
+              />
+              <div v-for="(x, i) in taxReview.examples" :key="i" class="TaxExample">
+                <div class="TaxExample__head">{{ formatShortDay(x.date) }}<template v-if="x.who"> · {{ x.who }}</template></div>
+                <div v-for="(row, j) in x[taxMode]" :key="j" class="TaxExample__row">
+                  <span>{{ row.label }}</span>
+                  <span class="money">{{ money(row.amount) }}<span v-if="row.tax" class="subdued Small"> including {{ money(row.tax) }} tax</span></span>
+                </div>
+              </div>
+            </CardSection>
+          </Card>
+
           <!-- Accounts -->
           <Card v-if="batch.accounts.length && !(format === 'csv' && csvMode !== 'bank')" title="Accounts">
             <CardSection>
@@ -619,7 +740,7 @@ const importLabel = computed(() => {
                   <div class="MapRow__name">{{ format === 'csv' ? 'Transactions in this file' : a.name }}</div>
                   <div class="subdued Small">
                     {{ a.kind === 'credit_card' ? 'Credit card' : 'Bank account' }}
-                    <template v-if="a.openingBalance"> · <span class="Nowrap">opening balance {{ money(a.openingBalance) }}</span></template>
+                    <template v-if="a.openingBalance"> · <span class="Nowrap">{{ listsOnly ? 'balance when exported' : 'opening balance' }} {{ money(a.openingBalance) }}</span></template>
                   </div>
                 </div>
                 <Icon icon="mdi:arrow-right" class="subdued" />
@@ -640,7 +761,7 @@ const importLabel = computed(() => {
                   <div class="MapRow__name">{{ c.name }}</div>
                   <div class="subdued Small">
                     {{ c.kind === 'income' ? 'Money in' : 'Money out' }}
-                    <template v-if="qbTypes[c.key]"> · QuickBooks {{ IIF_TYPE_LABELS[qbTypes[c.key]] ?? qbTypes[c.key] }}</template>
+                    <template v-if="qbTypes[c.key]"> · {{ iif?.product === 'Reckon Accounts' ? 'Reckon' : 'QuickBooks' }} {{ IIF_TYPE_LABELS[qbTypes[c.key]] ?? qbTypes[c.key] }}</template>
                   </div>
                 </div>
                 <Icon icon="mdi:arrow-right" class="subdued" />
@@ -714,10 +835,16 @@ const importLabel = computed(() => {
           <Card title="Summary">
             <CardSection>
               <dl class="Sum">
-                <div v-if="counts.entries"><dt>Transactions</dt><dd>{{ counts.entries }}</dd></div>
+                <div v-if="counts.entries || listsOnly"><dt>Transactions</dt><dd>{{ counts.entries || 'None in this file' }}</dd></div>
                 <div v-if="counts.entries"><dt>Dates</dt><dd>{{ formatShortDay(counts.from) }} – {{ formatShortDay(counts.to) }}</dd></div>
+                <div v-if="counts.invoices"><dt>Invoices</dt><dd>{{ counts.invoices }}</dd></div>
+                <div v-if="counts.bills"><dt>Bills</dt><dd>{{ counts.bills }}</dd></div>
+                <div v-if="counts.credits"><dt>Credit notes</dt><dd>{{ counts.credits }}</dd></div>
                 <div v-if="counts.income"><dt>Money in</dt><dd class="money In">{{ money(counts.income) }}</dd></div>
                 <div v-if="counts.expense"><dt>Money out</dt><dd class="money">{{ money(counts.expense) }}</dd></div>
+                <div v-if="counts.journals"><dt>Journal entries</dt><dd>{{ counts.journals }}</dd></div>
+                <div v-if="counts.newAccounts"><dt>New accounts</dt><dd>{{ counts.newAccounts }}</dd></div>
+                <div v-if="counts.newCategories"><dt>New categories</dt><dd>{{ counts.newCategories }}</dd></div>
                 <div v-if="counts.contacts"><dt>Contacts</dt><dd>{{ counts.contacts }}</dd></div>
                 <div v-if="counts.leftOut"><dt>Left out by your choices</dt><dd>{{ counts.leftOut }}</dd></div>
               </dl>
@@ -729,8 +856,8 @@ const importLabel = computed(() => {
               </ul>
             </CardSection>
             <CardSection>
-              <Button type="primary" full-width :loading="busy" :disabled="!counts.entries && !counts.contacts" @click="commit">
-                {{ importLabel }}
+              <Button type="primary" full-width :loading="busy" :disabled="!canImport" @click="startImport">
+                {{ canImport ? 'Import' : lockBlocks ? 'Unlock the books to import' : 'Nothing to import' }}
               </Button>
             </CardSection>
           </Card>
@@ -745,9 +872,7 @@ const importLabel = computed(() => {
           <div class="Done">
             <Icon icon="mdi:check-circle" class="Done__icon" />
             <h2>Import finished</h2>
-            <p>
-              {{ result.entriesCreated }} transaction{{ result.entriesCreated === 1 ? '' : 's' }} added<template v-if="result.contactsCreated">, {{ result.contactsCreated }} new contact{{ result.contactsCreated === 1 ? '' : 's' }}</template><template v-if="result.accountsCreated">, {{ result.accountsCreated }} new account{{ result.accountsCreated === 1 ? '' : 's' }}</template><template v-if="result.categoriesCreated">, {{ result.categoriesCreated }} new categor{{ result.categoriesCreated === 1 ? 'y' : 'ies' }}</template>.
-            </p>
+            <p>{{ doneSummary }}</p>
             <p v-if="result.duplicates" class="subdued">{{ result.duplicates }} were already imported before and were skipped.</p>
             <p v-if="result.skipped" class="subdued">{{ result.skipped }} were left out because of your choices.</p>
             <p v-if="rulesSaved" class="subdued">
@@ -769,10 +894,46 @@ const importLabel = computed(() => {
         </CardSection>
       </Card>
     </template>
+    <Modal
+      :visible="askBackup"
+      title="Back up first?"
+      :primary-action="{ label: 'Back up, then import', onAction: backUpAndImport }"
+      :secondary-actions="[{ label: 'Import without a backup', onAction: commit }, { label: 'Cancel', onAction: () => (askBackup = false) }]"
+      @close="askBackup = false"
+    >
+      <ModalSection>
+        <p>This file brings in a lot at once. A backup puts a dated copy of these books in the Backups folder beside them, so you can go back to them as they are now.</p>
+      </ModalSection>
+    </Modal>
+
+    <Teleport to="body">
+      <div v-if="working" class="Working" role="status" aria-live="polite">
+        <Spinner />
+        <p>{{ working }}</p>
+        <p class="subdued">Keep this window open until it finishes.</p>
+      </div>
+    </Teleport>
   </Page>
 </template>
 
 <style scoped>
+/* Over the whole window, menu included: nothing here should change while the books do. */
+.Working {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--octans-surface-raised) 85%, transparent);
+  font-size: 16px;
+}
+.Working p {
+  margin: 0;
+}
+
 .Group__rule {
   display: inline-flex;
   align-items: center;
@@ -990,6 +1151,24 @@ const importLabel = computed(() => {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+.TaxExample {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--octans-border);
+}
+
+.TaxExample__head {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.TaxExample__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
 }
 
 .Failed {

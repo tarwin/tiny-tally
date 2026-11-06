@@ -13,7 +13,7 @@
 // credit, both sides of a Transfer) with the account name as a fallback.
 import { hashRef, type ImportBatch, type ImportCategory } from '../../shared/import';
 import { detectDateOrder, occurrenceRefs, parseAmount, parseDate, type DateOrder } from './parse';
-import { splitTransactions, type SplitLine, type SplitTxn } from './split';
+import { looksLikeSalesTaxAccount, reviewTax, splitTransactions, type SplitLine, type SplitTxn, type TaxMode, type TaxReview } from './split';
 
 type Kind = 'journal' | 'list';
 
@@ -61,9 +61,10 @@ export interface QboReportParse extends ImportBatch {
   report: Kind;
   /** QuickBooks-style account type guessed from the name ('AR', 'AP' or ''). */
   categoryTypes: Record<string, string>;
+  taxReview: TaxReview;
 }
 
-export function parseQboReport(rows: string[][], order?: DateOrder, fallbackOrder: DateOrder = 'dmy'): QboReportParse {
+export function parseQboReport(rows: string[][], order?: DateOrder, fallbackOrder: DateOrder = 'dmy', taxMode: TaxMode = 'merge'): QboReportParse {
   const head = findHeader(rows)!;
   const { col } = head;
   const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '');
@@ -185,7 +186,10 @@ export function parseQboReport(rows: string[][], order?: DateOrder, fallbackOrde
     },
     addCategory,
     ref: occurrenceRefs(),
+    taxMode,
+    isTaxAccount: looksLikeSalesTaxAccount,
   });
+  const taxReview = reviewTax(txns, { isMoney, isTaxAccount: looksLikeSalesTaxAccount });
 
   const contacts: ImportBatch['contacts'] = [];
   const skipped: ImportBatch['skipped'] = [];
@@ -194,7 +198,7 @@ export function parseQboReport(rows: string[][], order?: DateOrder, fallbackOrde
   if (complex) skipped.push({ reason: "Transactions across several bank or card accounts that couldn't be split", count: complex });
   if (badDate) skipped.push({ reason: "Transactions with a date that couldn't be read", count: badDate });
 
-  return { source: 'qbo-report', accounts, categories, contacts, entries, skipped, dateOrder, report: head.kind, categoryTypes };
+  return { source: 'qbo-report', accounts, categories, contacts, entries, skipped, dateOrder, report: head.kind, categoryTypes, taxReview };
 }
 
 /** QuickBooks Online doesn't export account types in these reports; the name is the best guide. */

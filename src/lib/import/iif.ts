@@ -5,11 +5,12 @@
 //   !TRNS / !SPL / !ENDTRNS     -> transactions (one TRNS line, its SPL lines)
 // QuickBooks is double-entry; Tiny Tally is single-entry. split.ts turns each
 // transaction into entries on the bank or card side.
-import { hashRef, type ImportBatch, type ImportCategory } from '../../shared/import';
+import { hashRef, type ImportBatch, type ImportCategory, type ImportDocument, type ImportJournal, type ImportEntry } from '../../shared/import';
 import { detectDateOrder, occurrenceRefs, parseAmount, parseDate, type DateOrder } from './parse';
-import { classForQbType, splitTransactions, type SplitTxn } from './split';
+import { classForQbType, looksLikeSalesTaxAccount, reviewTax, splitTransactions, type SplitTxn, type TaxMode, type TaxReview } from './split';
 
-type Row = Record<string, string>;
+export type LedgerRow = Record<string, string>;
+type Row = LedgerRow;
 
 const MONEY_TYPES: Record<string, 'bank' | 'credit_card'> = { BANK: 'bank', CCARD: 'credit_card' };
 const INCOME_TYPES = new Set(['INC', 'EXINC']);
@@ -35,6 +36,7 @@ export const IIF_TYPE_LABELS: Record<string, string> = {
   LTLIAB: 'Long-term liability',
   EQUITY: 'Equity',
   NONPOSTING: 'Non-posting',
+  SUSPENSE: 'Suspense',
 };
 
 export function looksLikeIif(text: string) {
@@ -52,15 +54,28 @@ export interface IifParse extends ImportBatch {
   dateOrder: DateOrder;
   /** QuickBooks account type for each category key, shown in the review. */
   categoryTypes: Record<string, string>;
+  /** False for a "Lists to IIF Files" export, which has no transaction blocks at all. */
+  hasTransactions: boolean;
+  /** The program that wrote the file, for the review screen. */
+  product: 'Reckon Accounts' | 'QuickBooks Desktop';
+  taxReview: TaxReview;
 }
 
-export function parseIif(text: string, order?: DateOrder, fallbackOrder: DateOrder = 'mdy'): IifParse {
+/** Lists that mean nothing to Tiny Tally, so there's no point reporting them as left out. */
+const IGNORED_RECORDS = new Set([
+  'CLASS', 'INVITEM', 'EMP', 'CTYPE', 'VTYPE', 'TERMS', 'SHIPMETH', 'PAYMETH', 'BUD', 'TIMEACT', 'INVMEMO', 'SALESREP', 'SALESTAXCODE', 'TODO',
+  'TAXCODE', 'ENDTAX', 'JOBTYPE', 'PRICELEVEL', 'ENDGRP', 'CUSTITEMDICT', 'ENDCUSTITEMDICT', 'CUSTNAMEDICT', 'ENDCUSTNAMEDICT',
+  'QBP EMPLOYEE', 'CUSTOMPI', 'HOURLYPI', 'LOCALPI', 'ENDQBPEMP',
+]);
+
+export function parseIif(text: string, order?: DateOrder, fallbackOrder: DateOrder = 'mdy', taxMode: TaxMode = 'merge'): IifParse {
   const headers: Record<string, string[]> = {};
   const accnt: Row[] = [];
   const people: { kind: 'customer' | 'vendor'; row: Row }[] = [];
   const blocks: Row[][] = [];
   let current: Row[] | null = null;
   const unknownBlocks = new Map<string, number>();
+  let product: IifParse['product'] = 'QuickBooks Desktop';
 
   for (const raw of text.split(/\r?\n/)) {
     if (!raw.trim()) continue;
@@ -75,6 +90,9 @@ export function parseIif(text: string, order?: DateOrder, fallbackOrder: DateOrd
     const row: Row = {};
     if (head) head.forEach((h, i) => (row[h] = cells[i] ?? ''));
     switch (type) {
+      case 'HDR':
+        if (/reckon/i.test(row.PROD ?? '')) product = 'Reckon Accounts';
+        break;
       case 'ACCNT':
         accnt.push(row);
         break;
@@ -100,6 +118,24 @@ export function parseIif(text: string, order?: DateOrder, fallbackOrder: DateOrd
     }
   }
 
+  return parseLedger({ accnt, people, blocks, unknownBlocks, product }, order, fallbackOrder, taxMode);
+}
+
+/** What an IIF file or a portable company file (qbm.ts) comes down to. */
+export interface LedgerSource {
+  accnt: Row[];
+  people: { kind: 'customer' | 'vendor'; row: Row }[];
+  blocks: Row[][];
+  unknownBlocks: Map<string, number>;
+  product: IifParse['product'];
+  /** Invoices, bills and credit notes, with each line's account name for its category. */
+  documents?: (Omit<ImportDocument, 'lines'> & { lines: (Omit<ImportDocument['lines'][number], 'categoryKey'> & { accnt: string })[] })[];
+  /** Payments on those documents: `accnt` is the money account. */
+  payments?: (Omit<ImportEntry, 'accountKey' | 'categoryKey'> & { accnt: string })[];
+}
+
+export function parseLedger(source: LedgerSource, order?: DateOrder, fallbackOrder: DateOrder = 'mdy', taxMode: TaxMode = 'merge'): IifParse {
+  const { accnt, people, blocks, unknownBlocks, product } = source;
   const dateOrder = order ?? detectDateOrder(blocks.slice(0, 500).map((b) => b[0].DATE ?? ''), fallbackOrder);
 
   // ---- chart of accounts ----
@@ -163,9 +199,18 @@ export function parseIif(text: string, order?: DateOrder, fallbackOrder: DateOrd
     UNDEPOSITED.test(name) ||
     (!typeOf.has(name) && /\b(checking|cheque|savings|bank)\b/i.test(name));
   const txns: SplitTxn[] = [];
+  /** Could be a journal if nothing in it is a money account. A portable file's documents are already out, so anything left qualifies. */
+  const maybeJournal = new Set<SplitTxn>();
   let badDate = 0;
   for (const block of blocks) {
-    const lines = block.map((r) => ({ accnt: r.ACCNT ?? '', amount: parseAmount(r.AMOUNT ?? '') ?? 0, name: r.NAME ?? '', memo: r.MEMO ?? '' }));
+    const lines = block.map((r) => ({
+      accnt: r.ACCNT ?? '',
+      amount: parseAmount(r.AMOUNT ?? '') ?? 0,
+      name: r.NAME ?? '',
+      memo: r.MEMO ?? '',
+      // Only a portable company file records these per line.
+      ...(r.TAX === undefined ? {} : { tax: parseAmount(r.TAX) ?? 0, taxCode: r.TAXCODE || undefined, taxLine: r.TAXLINE === '1' }),
+    }));
     const date = parseDate(block[0].DATE ?? '', dateOrder);
     if (!date) {
       badDate++;
@@ -174,23 +219,70 @@ export function parseIif(text: string, order?: DateOrder, fallbackOrder: DateOrd
     const trnsType = (block[0].TRNSTYPE || '').toUpperCase();
     const live = lines.filter((l) => l.accnt && l.amount !== 0);
     const ref = block[0].TRNSID || hashRef(date, trnsType, ...live.map((l) => `${l.accnt}|${l.amount}|${l.name}|${l.memo}`));
-    txns.push({ date, ref, memo: block[0].MEMO || undefined, lines });
+    const txn: SplitTxn = { date, ref, memo: block[0].MEMO || undefined, lines };
+    txns.push(txn);
+    if (source.documents || trnsType === 'GENERAL JOURNAL') maybeJournal.add(txn);
   }
+  const isTaxAccount = (name: string) => ['OCLIAB', 'LTLIAB', ''].includes(typeOf.get(name) ?? '') && looksLikeSalesTaxAccount(name);
+  const moneyAccount = (name: string) => addAccount(name, MONEY_TYPES[typeOf.get(name) ?? ''] ?? 'bank');
   const { entries, noBank, complex } = splitTransactions(txns, {
     isMoney,
-    addAccount: (name) => addAccount(name, MONEY_TYPES[typeOf.get(name) ?? ''] ?? 'bank'),
+    addAccount: moneyAccount,
     addCategory,
     ref: occurrenceRefs(),
+    taxMode,
+    isTaxAccount,
   });
+  const taxReview = reviewTax(txns, { isMoney, isTaxAccount });
+
+  const documents: ImportDocument[] = (source.documents ?? []).map((d) => ({
+    ...d,
+    lines: d.lines.map(({ accnt: name, ...l }) => ({ ...l, categoryKey: addCategory(name, d.docType === 'bill' ? 'expense' : 'income') })),
+  }));
+  for (const { accnt: name, ...p } of source.payments ?? []) {
+    moneyAccount(name);
+    entries.push({ ...p, accountKey: name });
+  }
+
+  const journals: ImportJournal[] = [];
+  let unbooked = noBank;
+  for (const t of maybeJournal) {
+    const live = t.lines.filter((l) => l.accnt && l.amount !== 0);
+    if (live.some((l) => isMoney(l.accnt))) continue;
+    // All zeros: there's nothing to bring across, and nothing lost by leaving it.
+    if (!live.length) unbooked--;
+    if (live.length < 2 || live.reduce((n, l) => n + l.amount, 0) !== 0) continue;
+    unbooked--;
+    journals.push({
+      date: t.date,
+      memo: t.memo,
+      lines: live.map((l) => {
+        const type = typeOf.get(l.accnt);
+        const memo = l.memo || undefined;
+        // Tiny Tally works out receivables and payables from documents, so a journal posts beside them.
+        if (type === 'AR') return { system: 'prepayments' as const, amount: l.amount, memo };
+        if (type === 'AP') return { system: 'accruals' as const, amount: l.amount, memo };
+        const income = INCOME_TYPES.has(type ?? '') || (catKeys.has(`income:${l.accnt}`) && !catKeys.has(`expense:${l.accnt}`));
+        return { categoryKey: addCategory(l.accnt, income ? 'income' : 'expense'), amount: l.amount, memo };
+      }),
+    });
+  }
 
   const skipped: ImportBatch['skipped'] = [];
-  if (noBank) skipped.push({ reason: "Transactions that don't touch a bank or card account (invoices, bills, journals). Their payments are imported instead.", count: noBank });
+  if (unbooked) {
+    skipped.push({
+      reason: source.documents
+        ? "Transactions that don't touch a bank or card account and don't balance, so they can't be brought across"
+        : "Transactions that don't touch a bank or card account (invoices, bills). Their payments are imported instead.",
+      count: unbooked,
+    });
+  }
   if (complex) skipped.push({ reason: "Transactions across several bank or card accounts that couldn't be split", count: complex });
   if (badDate) skipped.push({ reason: "Transactions with a date that couldn't be read", count: badDate });
   for (const [type, count] of unknownBlocks) {
-    if (['HDR', 'CLASS', 'INVITEM', 'EMP', 'CTYPE', 'VTYPE', 'TERMS', 'SHIPMETH', 'PAYMETH', 'BUD', 'TIMEACT', 'INVMEMO', 'SALESREP', 'SALESTAXCODE', 'TODO'].includes(type)) continue;
+    if (IGNORED_RECORDS.has(type)) continue;
     skipped.push({ reason: `QuickBooks “${type}” records`, count });
   }
 
-  return { source: 'iif', accounts, categories, contacts, entries, skipped, dateOrder, categoryTypes };
+  return { source: 'iif', accounts, categories, contacts, entries, documents, skipped, dateOrder, categoryTypes, journals, hasTransactions: blocks.length > 0 || documents.length > 0, product, taxReview };
 }

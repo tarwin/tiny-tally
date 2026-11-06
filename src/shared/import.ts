@@ -1,7 +1,7 @@
 // The shape every importer (QuickBooks IIF, OFX/QBO bank files, CSV) produces.
 // Parsing happens in the page; the backend only resolves keys and writes rows.
 
-export type ImportSource = 'iif' | 'ofx' | 'csv' | 'qbo-report';
+export type ImportSource = 'iif' | 'qbm' | 'ofx' | 'csv' | 'qbo-report';
 
 /** Where an imported account/category ends up: an existing row, or a new one. */
 export type ImportTarget = { existingId: number } | { create: true } | { skip: true };
@@ -47,6 +47,50 @@ export interface ImportEntry {
   categoryId?: number;
   contactName?: string;
   memo?: string;
+  /** The tax the source recorded, so it isn't worked out again from the category. */
+  taxCode?: string;
+  taxAmount?: number;
+  /** This is a payment on that document, from the batch's `documents`. */
+  documentRef?: string;
+}
+
+/** A transaction with no bank or card account in it, such as depreciation. Its lines total zero. */
+export interface ImportJournal {
+  date: string;
+  memo?: string;
+  lines: {
+    /** Category key from the batch, or else one of the ledger's own accounts. */
+    categoryKey?: string;
+    system?: 'prepayments' | 'accruals';
+    /** Cents: debit positive, credit negative. */
+    amount: number;
+    memo?: string;
+  }[];
+}
+
+export interface ImportDocumentLine {
+  description: string;
+  categoryKey: string;
+  qtyMilli: number;
+  /** Cents, including tax when the document's prices do. */
+  unitPrice: number;
+  /** Exact cents from the source; never worked out again. */
+  net: number;
+  tax: number;
+  taxCode?: string;
+}
+
+/** An invoice, bill or credit note, as the source recorded it. Its total is the sum of its lines. */
+export interface ImportDocument {
+  ref: string;
+  docType: 'invoice' | 'bill' | 'credit';
+  number: string;
+  contactName: string;
+  issueDate: string;
+  dueDate: string;
+  pricesIncludeTax: boolean;
+  notes?: string;
+  lines: ImportDocumentLine[];
 }
 
 export interface ImportBatch {
@@ -55,6 +99,8 @@ export interface ImportBatch {
   categories: ImportCategory[];
   contacts: ImportContact[];
   entries: ImportEntry[];
+  documents?: ImportDocument[];
+  journals?: ImportJournal[];
   /** Things the parser understood but can't bring across (e.g. unpaid QuickBooks invoices). */
   skipped: { reason: string; count: number }[];
 }
@@ -72,6 +118,8 @@ export interface ImportResult {
   categoriesCreated: number;
   contactsCreated: number;
   entriesCreated: number;
+  documentsCreated: number;
+  journalsCreated: number;
   duplicates: number;
   /** Rows left out because their category or account was set to skip. */
   skipped: number;

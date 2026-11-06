@@ -18,6 +18,11 @@ export interface SplitLine {
   amount: number;
   name: string;
   memo: string;
+  /** Tax recorded on this line (same sign as amount), when the source has it per line. */
+  tax?: number;
+  taxCode?: string;
+  /** This line is the transaction's tax, on the tax account. */
+  taxLine?: boolean;
 }
 
 export interface SplitTxn {
@@ -34,6 +39,113 @@ export interface SplitContext {
   /** Returns the category key. */
   addCategory(accnt: string, kind: 'income' | 'expense'): string;
   ref(base: string): string;
+  /** How to read a separate tax line whose share of each line isn't recorded. Default 'merge'. */
+  taxMode?: TaxMode;
+  /** The file's sales tax account, when it can only be told by name or type. */
+  isTaxAccount?(accnt: string): boolean;
+}
+
+export type TaxMode = 'merge' | 'separate';
+
+const SALES_TAX_ACCOUNT = /\b(gst|vat|hst|pst|sales tax|tax payable|tax collected)\b/i;
+const NOT_SALES_TAX = /\b(payg|payroll|income tax|withh|wages?)\b/i;
+export const looksLikeSalesTaxAccount = (name: string) => SALES_TAX_ACCOUNT.test(name) && !NOT_SALES_TAX.test(name);
+
+/**
+ * A ledger keeps a sale's tax on a line of its own, but a Tiny Tally entry is
+ * tax-inclusive and holds its own tax. Folds tax lines into the others so the
+ * tax isn't counted once as a category and again worked out from the amount.
+ * A transaction that's only tax, like paying the BAS, stays as it is.
+ */
+function foldTax(lines: SplitLine[], ctx: Pick<SplitContext, 'isMoney' | 'isTaxAccount' | 'taxMode'>, fileHasTax: boolean): { lines: SplitLine[]; inferred: boolean } {
+  if (!fileHasTax) return { lines, inferred: false };
+  const isTax = (l: SplitLine) => l.taxLine ?? ctx.isTaxAccount?.(l.accnt) ?? false;
+  const taxLines = lines.filter(isTax);
+  const plain = lines.filter((l) => !isTax(l) && !ctx.isMoney(l.accnt));
+  const rest = lines.filter((l) => !isTax(l) && ctx.isMoney(l.accnt));
+  const noTax = (l: SplitLine): SplitLine => ({ ...l, tax: l.tax ?? 0, taxCode: l.taxCode ?? 'FRE' });
+  if (!taxLines.length) return { lines: [...rest, ...plain.map(noTax)], inferred: false };
+  if (!plain.length) return { lines, inferred: false };
+
+  const total = taxLines.reduce((t, l) => t + l.amount, 0);
+  const recorded = plain.reduce((t, l) => t + (l.tax ?? 0), 0);
+  if (recorded === total && plain.some((l) => l.tax)) {
+    return { lines: [...rest, ...plain.map((l) => (l.tax ? { ...l, amount: l.amount + l.tax } : noTax(l)))], inferred: false };
+  }
+  // Nothing says which lines the tax belongs to, or what's recorded disagrees.
+  const sameWay = plain.every((l) => Math.sign(l.amount) === Math.sign(total));
+  if (ctx.taxMode === 'separate' || !sameWay) {
+    return { lines: [...rest, ...taxLines, ...plain.map((l) => ({ ...l, tax: 0, taxCode: 'NTR' }))], inferred: true };
+  }
+  const base = plain.reduce((t, l) => t + l.amount, 0);
+  let given = 0;
+  return {
+    inferred: true,
+    lines: [
+      ...rest,
+      ...plain.map((l, i) => {
+        const tax = i === plain.length - 1 ? total - given : Math.round((total * l.amount) / base);
+        given += tax;
+        return { ...l, amount: l.amount + tax, tax, taxCode: 'GST' };
+      }),
+    ],
+  };
+}
+
+export interface TaxExample {
+  date: string;
+  who: string;
+  merge: { label: string; amount: number; tax: number }[];
+  separate: { label: string; amount: number; tax: number }[];
+}
+
+export interface TaxReview {
+  /** Transactions whose tax had to be read by inference. */
+  inferred: number;
+  /** Share of those at the file's most common rate. Low means the reading could be wrong. */
+  fit: number;
+  examples: TaxExample[];
+}
+
+/** How a file's separate tax lines read, with real transactions to show when it isn't clear. */
+export function reviewTax(txns: SplitTxn[], ctx: Pick<SplitContext, 'isMoney' | 'isTaxAccount'>): TaxReview {
+  const hasTax = fileHasTax(txns, ctx);
+  const rates = new Map<number, number>();
+  const seen: { t: SplitTxn; rate: number }[] = [];
+  let inferred = 0;
+  for (const t of txns) {
+    const lines = t.lines.filter((l) => l.accnt && l.amount !== 0);
+    if (!foldTax(lines, { ...ctx, taxMode: 'separate' }, hasTax).inferred) continue;
+    inferred++;
+    const isTax = (l: SplitLine) => l.taxLine ?? ctx.isTaxAccount?.(l.accnt) ?? false;
+    const tax = lines.filter(isTax).reduce((n, l) => n + l.amount, 0);
+    const base = lines.filter((l) => !isTax(l) && !ctx.isMoney(l.accnt)).reduce((n, l) => n + l.amount, 0);
+    const rate = base ? Math.round((tax / base) * 100) : 0;
+    rates.set(rate, (rates.get(rate) ?? 0) + 1);
+    seen.push({ t, rate });
+  }
+  const common = [...rates.entries()].sort((a, b) => b[1] - a[1])[0];
+  const fit = inferred ? (common?.[1] ?? 0) / inferred : 1;
+  const read = (t: SplitTxn, taxMode: TaxMode) =>
+    foldTax(t.lines.filter((l) => l.accnt && l.amount !== 0), { ...ctx, taxMode }, hasTax).lines
+      .filter((l) => !ctx.isMoney(l.accnt))
+      .map((l) => ({ label: l.accnt.replace(/:/g, ': '), amount: Math.abs(l.amount), tax: Math.abs(l.tax ?? 0) }));
+  // The odd ones out first: they're where a wrong reading shows.
+  const picks = [...seen.filter((s) => s.rate !== common?.[0]), ...seen.filter((s) => s.rate === common?.[0])].slice(0, 3);
+  return {
+    inferred,
+    fit,
+    examples: picks.map(({ t }) => ({
+      date: t.date,
+      who: t.lines.map((l) => l.name).find(Boolean) || t.memo || '',
+      merge: read(t, 'merge'),
+      separate: read(t, 'separate'),
+    })),
+  };
+}
+
+function fileHasTax(txns: SplitTxn[], ctx: Pick<SplitContext, 'isTaxAccount'>) {
+  return txns.some((t) => t.lines.some((l) => l.amount !== 0 && (l.taxLine ?? ctx.isTaxAccount?.(l.accnt) ?? false)));
 }
 
 /**
@@ -71,9 +183,10 @@ export function splitTransactions(txns: SplitTxn[], ctx: SplitContext) {
   const entries: ImportEntry[] = [];
   let noBank = 0;
   let complex = 0;
+  const hasTax = fileHasTax(txns, ctx);
 
   for (const t of txns) {
-    const lines = t.lines.filter((l) => l.accnt && l.amount !== 0);
+    const lines = foldTax(t.lines.filter((l) => l.accnt && l.amount !== 0), ctx, hasTax).lines.filter((l) => l.amount !== 0);
     const others = lines.filter((l) => !ctx.isMoney(l.accnt));
     // Net each money account: a transaction can touch the same one twice.
     const money = new Map<string, SplitLine>();
@@ -136,6 +249,8 @@ export function splitTransactions(txns: SplitTxn[], ctx: SplitContext) {
           categoryKey: ctx.addCategory(o.accnt, kind),
           contactName: o.name || bank.name || undefined,
           memo: o.memo || bank.memo || t.memo || undefined,
+          // A piece of a shared line carries its share of the line's tax.
+          ...(o.tax === undefined ? {} : { taxCode: o.taxCode, taxAmount: Math.round((Math.abs(o.tax) * amount) / Math.abs(o.amount)) }),
         };
       };
       if (left.length === 1) {
