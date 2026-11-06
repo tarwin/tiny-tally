@@ -44,16 +44,16 @@ const kindOptions = [
 
 const columns = computed<DataTableColumnType[]>(() => [
   { key: 'name', label: 'Name' },
-  { key: 'class', label: 'Type', width: 200, formatFunc: (v: CategoryClass) => (v === 'pnl' ? '' : CLASS_INFO[v].label) },
+  { key: 'class', label: 'Type', width: 200, format: (v: CategoryClass) => (v === 'pnl' ? '' : CLASS_INFO[v].label) },
   ...(taxOnFor(kind.value)
-    ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, formatFunc: (v: TaxCode | null) => (v ? taxCodeLabel(booksProfile().tax, v) : 'None') }]
+    ? [{ key: 'taxCode', label: 'Usual tax code', width: 220, format: (v: TaxCode | null) => (v ? taxCodeLabel(booksProfile().tax, v) : 'None') }]
     : []),
   ...(usesReturn.value
     ? [{
         key: 'reportLine',
         label: returnName.value,
         width: 240,
-        formatFunc: (v: string | null, row: Category) =>
+        format: (v: string | null, row: Category) =>
           v === 'estimated-tax' ? instalmentWord.value : row.class !== 'pnl' ? '' : `${lineText(v)}${row.lineGuessed ? ' (guessed: check)' : ''}`,
       }]
     : []),

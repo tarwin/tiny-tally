@@ -14,9 +14,9 @@ const loading = ref(true);
 
 const columns: DataTableColumnType[] = [
   { key: 'pattern', label: 'When the description contains', minWidth: 200 },
-  { key: 'kind', label: 'Money', width: 100, formatFunc: (v: CategoryKind) => (v === 'income' ? 'In' : 'Out') },
+  { key: 'kind', label: 'Money', width: 100, format: (v: CategoryKind) => (v === 'income' ? 'In' : 'Out') },
   { key: 'categoryName', label: 'Category', width: 220 },
-  { key: 'contactName', label: 'Contact', width: 180, formatFunc: (v) => v ?? '' },
+  { key: 'contactName', label: 'Contact', width: 180, format: (v) => v ?? '' },
 ];
 
 async function load() {

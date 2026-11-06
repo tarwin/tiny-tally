@@ -360,8 +360,8 @@ const labelOptions = computed(() => [
 const detailColumns: DataTableColumnType[] = [
   { key: 'date', label: 'Date', width: 110 },
   { key: 'memo', label: 'Description', minWidth: 200 },
-  { key: 'taxCode', label: 'Tax code', width: 140, formatFunc: (v) => taxCodeLabel(profile.value.tax, v as TaxCode) },
-  { key: 'labels', label: 'Boxes', width: 140, formatFunc: (v) => (v as string[]).join(', ') },
+  { key: 'taxCode', label: 'Tax code', width: 140, format: (v) => taxCodeLabel(profile.value.tax, v as TaxCode) },
+  { key: 'labels', label: 'Boxes', width: 140, format: (v) => (v as string[]).join(', ') },
   { key: 'gross', label: 'Amount', width: 120 },
   { key: 'tax', label: taxName.value, width: 100 },
 ];

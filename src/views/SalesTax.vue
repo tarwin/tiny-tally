@@ -63,8 +63,8 @@ const figures = computed(() => {
 const columns: DataTableColumnType[] = [
   { key: 'date', label: 'Date', width: 110 },
   { key: 'memo', label: 'Description', minWidth: 200 },
-  { key: 'taxCode', label: 'Tax code', width: 130, formatFunc: (v) => (v ? TAX_CODE_MAP[v as keyof typeof TAX_CODE_MAP]?.label ?? v : 'None') },
-  { key: 'taxRateName', label: 'Rate', width: 150, formatFunc: (v) => v ?? '' },
+  { key: 'taxCode', label: 'Tax code', width: 130, format: (v) => (v ? TAX_CODE_MAP[v as keyof typeof TAX_CODE_MAP]?.label ?? v : 'None') },
+  { key: 'taxRateName', label: 'Rate', width: 150, format: (v) => v ?? '' },
   { key: 'net', label: 'Sale', width: 120 },
   { key: 'tax', label: 'Sales tax', width: 110 },
 ];

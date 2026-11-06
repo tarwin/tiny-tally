@@ -36,15 +36,15 @@ const rows = computed(() => accounts.value.filter((a) => showArchived.value || !
 const hasArchived = computed(() => accounts.value.some((a) => a.archived));
 
 const columns: DataTableColumnType[] = [
-  { key: 'name', label: 'Name', formatFunc: (v, row) => (row.archived ? `${v} (archived)` : v) },
-  { key: 'kind', label: 'Type', formatFunc: (v) => KIND_LABELS[v as AccountKind] },
+  { key: 'name', label: 'Name', format: (v, row) => (row.archived ? `${v} (archived)` : v) },
+  { key: 'kind', label: 'Type', format: (v) => KIND_LABELS[v as AccountKind] },
   { key: 'openingDate', label: 'Opened' },
   { key: 'reconciledTo', label: 'Reconciled to' },
   {
     key: 'balance',
     label: 'Balance',
     type: 'numeric',
-    formatFunc: (v, row) =>
+    format: (v, row) =>
       row.kind === 'credit_card' && v < 0 ? `${formatMoney(-v, currency.value)} owed` : formatMoney(v, currency.value),
   },
 ];

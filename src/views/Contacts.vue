@@ -55,12 +55,12 @@ const filterOptions = [
 const kindOptions = filterOptions.slice(1);
 
 const columns = computed<DataTableColumnType[]>(() => [
-  { key: 'name', label: 'Name', minWidth: 200, formatFunc: (v, row) => (row.archived ? `${v} (archived)` : v) },
-  { key: 'kind', label: 'Type', width: 110, formatFunc: (v) => (v === 'customer' ? 'Customer' : 'Vendor') },
-  { key: 'email', label: 'Email', minWidth: 180, formatFunc: (v) => v ?? '' },
-  { key: 'received', label: 'Received', width: 130, formatFunc: (v) => (v ? formatMoney(v, currency.value) : '') },
-  { key: 'paid', label: 'Paid', width: 130, formatFunc: (v) => (v ? formatMoney(v, currency.value) : '') },
-  { key: 'lastDate', label: 'Last activity', width: 140, formatFunc: (v) => (v ? formatDay(v) : '') },
+  { key: 'name', label: 'Name', minWidth: 200, format: (v, row) => (row.archived ? `${v} (archived)` : v) },
+  { key: 'kind', label: 'Type', width: 110, format: (v) => (v === 'customer' ? 'Customer' : 'Vendor') },
+  { key: 'email', label: 'Email', minWidth: 180, format: (v) => v ?? '' },
+  { key: 'received', label: 'Received', width: 130, format: (v) => (v ? formatMoney(v, currency.value) : '') },
+  { key: 'paid', label: 'Paid', width: 130, format: (v) => (v ? formatMoney(v, currency.value) : '') },
+  { key: 'lastDate', label: 'Last activity', width: 140, format: (v) => (v ? formatDay(v) : '') },
 ]);
 
 const us = computed(() => session.books?.country === 'US');

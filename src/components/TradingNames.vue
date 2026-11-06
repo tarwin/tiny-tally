@@ -37,15 +37,15 @@ const templates = ref<InvoiceTemplate[]>([]);
 const loading = ref(true);
 
 const columns: DataTableColumnType[] = [
-  { key: 'name', label: 'Name', minWidth: 200, formatFunc: (v, row) => (row.isArchived ? `${v} (archived)` : row.isDefault ? `${v} (default)` : v) },
-  { key: 'email', label: 'Email', minWidth: 160, formatFunc: (v) => v ?? '' },
+  { key: 'name', label: 'Name', minWidth: 200, format: (v, row) => (row.isArchived ? `${v} (archived)` : row.isDefault ? `${v} (default)` : v) },
+  { key: 'email', label: 'Email', minWidth: 160, format: (v) => v ?? '' },
   {
     key: 'invoicePrefix',
     label: 'Numbering',
     minWidth: 140,
-    formatFunc: (_v, row) => (row.invoicePrefix || row.quotePrefix || row.creditPrefix ? `Own (${row.invoicePrefix ?? row.quotePrefix ?? row.creditPrefix}…)` : 'Shared'),
+    format: (_v, row) => (row.invoicePrefix || row.quotePrefix || row.creditPrefix ? `Own (${row.invoicePrefix ?? row.quotePrefix ?? row.creditPrefix}…)` : 'Shared'),
   },
-  { key: 'uses', label: 'Documents', width: 110, formatFunc: (v) => (v ? String(v) : '') },
+  { key: 'uses', label: 'Documents', width: 110, format: (v) => (v ? String(v) : '') },
 ];
 
 async function load() {

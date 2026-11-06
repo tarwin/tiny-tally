@@ -25,10 +25,10 @@ const rates = ref<TaxRate[]>([]);
 const loading = ref(true);
 
 const columns: DataTableColumnType[] = [
-  { key: 'name', label: 'Name', minWidth: 200, formatFunc: (v, row) => (row.archived ? `${v} (archived)` : v) },
-  { key: 'state', label: 'State', width: 160, formatFunc: (v) => (v ? US_STATE_MAP[v]?.name ?? v : '') },
-  { key: 'ratePpm', label: 'Rate', width: 100, formatFunc: (v) => `${ratePercent(v)}%` },
-  { key: 'uses', label: 'Used', width: 90, formatFunc: (v) => (v ? String(v) : '') },
+  { key: 'name', label: 'Name', minWidth: 200, format: (v, row) => (row.archived ? `${v} (archived)` : v) },
+  { key: 'state', label: 'State', width: 160, format: (v) => (v ? US_STATE_MAP[v]?.name ?? v : '') },
+  { key: 'ratePpm', label: 'Rate', width: 100, format: (v) => `${ratePercent(v)}%` },
+  { key: 'uses', label: 'Used', width: 90, format: (v) => (v ? String(v) : '') },
 ];
 
 async function load() {
