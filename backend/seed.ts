@@ -42,6 +42,9 @@ export function seedBooks(db: Database, setup: BooksSetup) {
   profile.categories.expense.forEach(add('expense'));
   cat.finalize();
 
+  // The same title a new template starts with. Unregistered books print the plain one.
+  db.prepare('UPDATE invoice_templates SET title = ? WHERE is_default = 1').run(profile.invoiceTitle(true));
+
   const today = new Date().toISOString().slice(0, 10);
   db.prepare('INSERT INTO trading_names (name, is_default) VALUES (?, 1)').run(setup.tradingName?.trim() || setup.name);
   db.prepare("INSERT INTO accounts (name, kind, opening_date, sort) VALUES ('Business Account', 'bank', ?, 0)").run(today);

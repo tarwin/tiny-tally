@@ -719,4 +719,12 @@ export const migrations: string[] = [
   ALTER TABLE items ADD COLUMN tax_rate_ppm INTEGER;
   ALTER TABLE entries ADD COLUMN tax_rate_ppm INTEGER;
   `,
+  // v25: the template every new set of books started with said "Invoice", but
+  // a GST-registered Australian business has to issue a "Tax Invoice". Books
+  // that aren't registered still print "Invoice" (InvoiceDocument).
+  `
+  UPDATE invoice_templates SET title = 'Tax Invoice'
+    WHERE title = 'Invoice' AND (name = 'Standard' OR is_default = 1)
+      AND (SELECT value FROM meta WHERE key = 'country') = 'AU';
+  `,
 ];
