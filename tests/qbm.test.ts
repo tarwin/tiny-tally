@@ -209,6 +209,23 @@ function withJournals() {
   return compound(Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, implode(ascii(v))])));
 }
 
+test('a stream that expands past the limit is refused', () => {
+  const big = implode(new Uint8Array(5000).fill(65));
+  assert.equal(implodeDecode(big).length, 5000);
+  assert.throws(() => implodeDecode(big, 1000), /too big/);
+});
+
+test('directory entries sharing one long sector chain are refused', () => {
+  const names = ['big', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const file = compound(Object.fromEntries(names.map((k, i) => [k, new Uint8Array(i ? 1 : 20000)])));
+  assert.ok(readCompoundFile(file) instanceof Map);
+  // Entry 0 is the root, then one per stream; the directory starts after the one FAT sector.
+  const view = new DataView(file.buffer);
+  const startOf = (i: number) => 2 * 512 + i * 128 + 116;
+  for (let i = 2; i <= names.length; i++) view.setUint32(startOf(i), view.getUint32(startOf(1), true), true);
+  assert.throws(() => readCompoundFile(file), /damaged/);
+});
+
 test('a transaction with no bank account comes across as a journal', async () => {
   const p = parseQbm(withJournals());
   assert.deepEqual(p.skipped, []);

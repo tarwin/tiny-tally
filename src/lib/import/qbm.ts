@@ -48,8 +48,16 @@ export function readCompoundFile(bytes: Uint8Array): Map<string, Uint8Array> {
     }
     return out;
   };
+  // Every sector belongs to one stream, so honest copying adds up to the file's
+  // size. Entries sharing a long chain would otherwise multiply it.
+  let copied = 0;
+  const spend = (n: number) => {
+    copied += n;
+    if (copied > bytes.length * 2) throw new Error('This portable company file is damaged.');
+  };
   const regular = (start: number) => {
     const sectors = chain(start, fat);
+    spend(sectors.length * sectorSize);
     const out = new Uint8Array(sectors.length * sectorSize);
     sectors.forEach((s, i) => out.set(bytes.subarray(offset(s), offset(s) + sectorSize), i * sectorSize));
     return out;
@@ -86,6 +94,7 @@ export function readCompoundFile(bytes: Uint8Array): Map<string, Uint8Array> {
       continue;
     }
     const sectors = e.size ? chain(e.start, miniFat) : [];
+    spend(sectors.length * miniSize);
     const out = new Uint8Array(sectors.length * miniSize);
     sectors.forEach((s, i) => out.set(mini.subarray(s * miniSize, (s + 1) * miniSize), i * miniSize));
     streams.set(e.name, out.subarray(0, e.size));
@@ -113,7 +122,10 @@ const DISTANCE_CODE = huffman([2, 20, 53, 230, 247, 151, 248]);
 const LENGTH_BASE = [3, 2, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 40, 72, 136, 264];
 const LENGTH_EXTRA = [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 
-export function implodeDecode(input: Uint8Array): Uint8Array {
+/** Far more than any real company file expands to. */
+const MAX_DECODED = 1024 ** 3;
+
+export function implodeDecode(input: Uint8Array, limit = MAX_DECODED): Uint8Array {
   const dictionaryBits = input[1];
   // Binary mode only: every stream seen is, and the literal table isn't needed.
   if (input[0] !== 0 || dictionaryBits < 4 || dictionaryBits > 6) throw new Error('This portable company file uses a format Tiny Tally doesn’t know.');
@@ -147,11 +159,12 @@ export function implodeDecode(input: Uint8Array): Uint8Array {
     throw damaged();
   };
 
-  let out = new Uint8Array(Math.max(1024, input.length * 4));
+  let out = new Uint8Array(Math.min(limit, Math.max(1024, input.length * 4)));
   let size = 0;
   const room = (n: number) => {
     if (size + n <= out.length) return;
-    const bigger = new Uint8Array(Math.max(out.length * 2, size + n));
+    if (size + n > limit) throw new Error('This portable company file is too big to read.');
+    const bigger = new Uint8Array(Math.min(limit, Math.max(out.length * 2, size + n)));
     bigger.set(out.subarray(0, size));
     out = bigger;
   };
@@ -255,9 +268,14 @@ const PAYMENT_LINKS: Record<string, { table: string; kind: 'income' | 'expense' 
 
 export function parseQbm(bytes: Uint8Array, taxMode: TaxMode = 'merge'): IifParse {
   const streams = readCompoundFile(bytes);
+  // Shared across streams, since a small file can expand enormously, and more than once.
+  let budget = MAX_DECODED;
   const stream = (name: string) => {
     const s = streams.get(name);
-    return s ? implodeDecode(s) : null;
+    if (!s) return null;
+    const out = implodeDecode(s, budget);
+    budget -= out.length;
+    return out;
   };
   const header = stream('header');
   const script = stream('reload.sql');
