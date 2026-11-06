@@ -22,7 +22,7 @@ import {
 import { api, errorMessage, type Books } from '../lib/api';
 import { appSettingsPanel } from '../lib/appSettings';
 import { backupBooks, closeBooks, runScheduledBackup } from '../lib/books';
-import type { BackupEvery } from '../shared/backups';
+import type { BackupEvery, BackupPlan } from '../shared/backups';
 import { formatDay } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
@@ -35,7 +35,7 @@ import { US_STATE_OPTIONS } from '../shared/usStates';
 
 type Form = Omit<
   Books,
-  'path' | 'internal' | 'country' | 'currency' | 'taxRatePpm' | 'lockDate' | 'backupEvery' | 'backupFolder' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
+  'path' | 'internal' | 'country' | 'currency' | 'taxRatePpm' | 'lockDate' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
 > & {
   invoiceNext: string;
   paymentTermsDays: string;
@@ -156,9 +156,15 @@ const BACKUP_OPTIONS: { label: string; value: BackupEvery }[] = [
   { label: 'Every month', value: 'month' },
 ];
 
-async function saveBackup(patch: { backupEvery?: BackupEvery; backupFolder?: string }) {
+const backupPlan = ref<BackupPlan>({ every: 'off', folder: '' });
+watch(() => books.value.path, async () => {
+  backupPlan.value = await api.backupPlan();
+}, { immediate: true });
+
+async function saveBackup(plan: BackupPlan) {
   try {
-    session.books = await api.updateSettings(patch);
+    await api.setBackupPlan(plan);
+    backupPlan.value = plan;
     await runScheduledBackup();
   } catch (e) {
     toast({ title: "Couldn't save settings", content: errorMessage(e), tone: 'error' });
@@ -167,18 +173,18 @@ async function saveBackup(patch: { backupEvery?: BackupEvery; backupFolder?: str
 
 /** Turning backups on needs somewhere to put them; cancelling the picker leaves them off. */
 const backupEvery = computed<BackupEvery>({
-  get: () => books.value.backupEvery,
-  set: async (v) => {
-    const backupFolder = v !== 'off' && !books.value.backupFolder ? await tiny.dialog.pickFolder() : undefined;
-    if (backupFolder === null) return;
-    void saveBackup({ backupEvery: v, ...(backupFolder ? { backupFolder } : {}) });
+  get: () => backupPlan.value.every,
+  set: async (every) => {
+    const folder = every !== 'off' && !backupPlan.value.folder ? await tiny.dialog.pickFolder() : backupPlan.value.folder;
+    if (folder === null) return;
+    void saveBackup({ every, folder });
   },
 });
 
 async function chooseBackupFolder() {
-  const backupFolder = await tiny.dialog.pickFolder();
-  if (!backupFolder) return;
-  void saveBackup({ backupFolder, ...(books.value.backupEvery === 'off' ? { backupEvery: 'week' as const } : {}) });
+  const folder = await tiny.dialog.pickFolder();
+  if (!folder) return;
+  void saveBackup({ folder, every: backupPlan.value.every === 'off' ? 'week' : backupPlan.value.every });
 }
 
 // ---- lock date ----------------------------------------------------------------
@@ -449,9 +455,9 @@ async function setLock(date: string | null) {
         </CardSection>
         <CardSection>
           <Select v-model="backupEvery" label="Back up to a folder" :options="BACKUP_OPTIONS" help-text="Checked when you open these books. Each backup is a dated copy, and old ones aren't removed." />
-          <p v-if="books.backupFolder" class="Path">{{ books.backupFolder }}</p>
+          <p v-if="backupPlan.folder" class="Path">{{ backupPlan.folder }}</p>
           <div class="Buttons">
-            <Button icon="mdi:folder-outline" @click="chooseBackupFolder">{{ books.backupFolder ? 'Change folder…' : 'Choose folder…' }}</Button>
+            <Button icon="mdi:folder-outline" @click="chooseBackupFolder">{{ backupPlan.folder ? 'Change folder…' : 'Choose folder…' }}</Button>
           </div>
         </CardSection>
         <CardSection>

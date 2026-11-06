@@ -96,7 +96,7 @@ import {
   type TradingNameInput,
 } from './tradingNames';
 import { commitImport, readImportFile, suggestCategories } from './importer';
-import { backupDue, backupName, latestBackupStamp } from '../src/shared/backups';
+import { BACKUP_EVERY, backupDue, backupName, latestBackupStamp, type BackupPlan } from '../src/shared/backups';
 import { cancelReconcile, finishReconcile, reconcileState, reconciledDates, startReconcile, tick, undoReconcile } from './reconcile';
 import { deleteSchedule, getSchedule, listSchedules, runSchedules, saveSchedule, skipNext, type ScheduleInput } from './schedules';
 import { deleteRule, listRules, matchRules, saveRule, type RuleInput } from './rules';
@@ -245,6 +245,13 @@ async function internalDir() {
 
 async function isInternal(path: string) {
   return path.startsWith((await internalDir()) + '/');
+}
+
+const BACKUP_PLANS = 'backup-plans';
+
+async function backupPlanFor(path: string): Promise<BackupPlan> {
+  const plans = (await appRef.store.get(BACKUP_PLANS)) as Record<string, BackupPlan> | null;
+  return plans?.[path] ?? { every: 'off', folder: '' };
 }
 
 async function readStore(): Promise<BooksStore> {
@@ -541,10 +548,19 @@ export const api: Record<string, TinyApiHandler> = {
     return dest;
   },
 
+  'books.backupPlan': async () => backupPlanFor(getBooks().path),
+  'books.setBackupPlan': async ({ every, folder }: BackupPlan) => {
+    const { path } = getBooks();
+    if (!BACKUP_EVERY.includes(every)) throw new Error('Choose how often to back up.');
+    const plans = ((await appRef.store.get(BACKUP_PLANS)) ?? {}) as Record<string, BackupPlan>;
+    await appRef.store.set(BACKUP_PLANS, { ...plans, [path]: { every, folder: String(folder ?? '') } });
+    return true;
+  },
+
   /** On opening, and overnight: a copy in the chosen folder, if one is due. */
   'books.scheduledBackup': async ({ stamp }: { stamp: string }, _app, { window: win }) => {
     const { path } = getBooks();
-    const { backupEvery, backupFolder } = getSettings();
+    const { every: backupEvery, folder: backupFolder } = await backupPlanFor(path);
     if (backupEvery === 'off' || !backupFolder) return null;
     const names: string[] = [];
     try {

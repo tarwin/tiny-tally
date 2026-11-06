@@ -1,5 +1,4 @@
 // Books settings live as key/value rows in `meta`.
-import { BACKUP_EVERY, type BackupEvery } from '../src/shared/backups';
 import { DATE_FORMATS, TAX_FREQUENCIES, countryProfile, isCountry, type Country, type DateFormat, type TaxFrequency } from '../src/shared/countries';
 import { getBooks, one } from './db';
 
@@ -46,10 +45,6 @@ export interface BooksSettings {
   logo: string;
   /** Entries dated on or before this can't change (set by lodging a tax return). */
   lockDate: string | null;
-  /** How often to back up to backupFolder when the books open. */
-  backupEvery: BackupEvery;
-  /** The folder for those backups, or ''. */
-  backupFolder: string;
   /** US: the state the business is in ('NY'), or ''. Sales into other states count towards their nexus thresholds. India: the GST state code ('27'). Canada: the province ('ON'). */
   homeState: string;
   /** UK: which set of quarters HMRC has the business on, as where a year of them starts ('01-01'). */
@@ -157,8 +152,6 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
   },
   taxRateName: { key: 'tax_rate_name', ...str() },
   basOnline: { key: 'bas_online', ...bool(false) },
-  backupEvery: { key: 'backup_every', ...oneOf(BACKUP_EVERY, 'off') },
-  backupFolder: { key: 'backup_folder', ...str() },
   lockDate: {
     key: 'lock_date',
     parse: (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null),

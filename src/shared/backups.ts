@@ -5,6 +5,16 @@
 export type BackupEvery = 'off' | 'day' | 'week' | 'month';
 export const BACKUP_EVERY: BackupEvery[] = ['off', 'day', 'week', 'month'];
 
+/**
+ * Kept on each computer, by the books' path, and never in the books file: a
+ * file from someone else mustn't be able to choose where your books get copied.
+ */
+export interface BackupPlan {
+  every: BackupEvery;
+  /** '' until one is chosen. */
+  folder: string;
+}
+
 const DAYS: Record<Exclude<BackupEvery, 'off'>, number> = { day: 1, week: 7, month: 30 };
 
 /** 'Harbour 2026-11-06 14-30-05.tally'. The stamp is local time, sent by the page. */
