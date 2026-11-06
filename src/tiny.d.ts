@@ -310,7 +310,7 @@ declare interface TinyAppInfo {
   version: string;
   /** the tinyjs version the app was built with ('dev' from a checkout) */
   tinyjs: string;
-  /** e.g. 'txiki.js 26.6.0' */
+  /** e.g. 'txiki.js 26.11.0' */
   runtime: string;
 }
 
@@ -437,6 +437,12 @@ declare interface TinyOpenWindowOptions {
    *  Windows/Linux gets no taskbar entry. Open-time only — it can't be set
    *  later. macOS difference: the window also MOVES with its parent. */
   parent?: true | string;
+  /** false: create, place and load the window but keep it hidden until
+   *  tiny.win.show() (from its page) or app.window(id).show(). Fill it in
+   *  first, then reveal it. A remembered placement still applies; a
+   *  remembered maximize/fullscreen lands on that first show. Nothing shows
+   *  it for you. Default true. */
+  show?: boolean;
 }
 
 declare interface TinyClipboardData {
@@ -858,7 +864,12 @@ declare interface Tiny {
   /** A correct file:// URL for a disk path on every platform — use for
    *  <audio>/<img>/<video> src of backend-provided paths. Hand-rolled
    *  'file://' + path breaks on Windows (the drive letter becomes the URL
-   *  host). */
+   *  host). macOS: a path outside the page's folder needs "readAccess" in
+   *  tinyjs.json, and a path on a DIFFERENT DISK than the page (/Volumes/…,
+   *  a network share, or the startup disk for an app run off a dmg) comes
+   *  back as tiny-media://file/<path>, which the launcher serves itself —
+   *  WebKit won't load file:// across volumes. Same readAccess root, the
+   *  app's own pages only. */
   fileURL(path: string): string;
 
   /** print to the backend's console (the tinyjs dev terminal); any JSON value */

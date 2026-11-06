@@ -4,12 +4,12 @@
 # that at 2.35 so the tarball loads on Ubuntu 22.04 / Debian 12 and newer.
 # Adapted from tinyjsapp-examples/shelf/pkg-linux-container.sh.
 #
-#   docker run --rm -v $PWD:/src:ro -v $OUT:/work -e TINYJS_TAG=v0.68.0 \
+#   docker run --rm -v $PWD:/src:ro -v $OUT:/work -e TINYJS_TAG=v0.71.1 \
 #     ubuntu:22.04 bash /src/scripts/pkg-linux-container.sh
 #
 # Output: /work/out/tiny-tally-<ver>-linux-<arch>.tar.gz
 set -euo pipefail
-: "${TINYJS_TAG:?set TINYJS_TAG to the tinyjs release to build against (e.g. v0.68.0)}"
+: "${TINYJS_TAG:?set TINYJS_TAG to the tinyjs release to build against (e.g. v0.71.1)}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq

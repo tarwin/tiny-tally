@@ -10,7 +10,7 @@
    and keep the old one so earlier returns still work out the same.
 1. Bump `version` in `tinyjs.json` and `package.json`, commit, push to `main`.
 2. Linux and Windows: run the **release** workflow (Actions → release → Run
-   workflow, or `gh workflow run release.yml -f tinyjs_tag=v0.68.0`). It
+   workflow, or `gh workflow run release.yml -f tinyjs_tag=v0.71.1`). It
    builds Linux x86_64 + arm64 in an ubuntu:22.04 container (glibc 2.35
    floor) and Windows x64 (smoke-tested), and uploads them to a **draft**
    release `v<version>`.

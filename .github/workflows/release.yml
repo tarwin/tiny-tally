@@ -16,7 +16,7 @@ on:
       tinyjs_tag:
         description: "tinyjs release tag to build against"
         required: true
-        default: v0.68.0
+        default: v0.71.1
         type: string
 
 concurrency:

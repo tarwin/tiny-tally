@@ -1,4 +1,4 @@
-# The tiny.* / app API — full tour (current as of tinyjs 0.68.0)
+# The tiny.* / app API — full tour (current as of tinyjs 0.70.3)
 
 The `tiny` global is injected into every page automatically (no script tag);
 TypeScript definitions ship in types/tiny.d.ts. Backend handlers receive the
@@ -132,6 +132,9 @@ tiny.win.open('settings', { page: 'settings.html', title: 'Settings',
 // parent: stays above THAT window (not other apps, unlike setLevel), hides/
 // minimizes/closes with it; no taskbar entry on Windows; macOS also moves it
 // with the parent. Open-time only.
+// show: false — built, placed (rememberWindows too) and loaded but hidden
+// until tiny.win.show() / app.window(id).show(): fill it, then reveal it.
+// Don't fake this with size '1x1' — a remembered size overrides it.
 // page: an http(s) URL or a file INSIDE the frontend dir — from a page,
 // anything else (../ walks, other absolute paths, file:) is refused;
 // backend app.win.open takes any path.
@@ -442,7 +445,8 @@ const r = await tiny.fetch(url, { method, headers, body });  // backend-proxied,
 audio.src = tiny.fileURL(path);  // file:// URL for a disk path — ALWAYS this,
    // never 'file://' + path (Windows drive letter becomes the URL host).
 // file:// media loads only under the frontend dir by default — widen with
-// "readAccess": true | "/path" in tinyjs.json.
+// "readAccess": true | "/path" in tinyjs.json. macOS: a path on ANOTHER disk
+// than the page (/Volumes/…) comes back as tiny-media://file/… (0.70.2+).
 await tiny.app.paths();   // { home, data, cache, logs, temp, downloads,
                           //   desktop, documents, resources, executables } — per-OS correct; backend
                           //   twin: await app.paths() (same shape). data/cache/logs
@@ -570,6 +574,8 @@ await tiny.app.matchScreen(saved);  // saved screen -> connected one, or null
 tiny.app.onScreensChanged(fn);      // backend: onSystem('screens')
 // "rememberWindows": true in tinyjs.json restores every window's place per
 // screen layout (main shown once restored) — don't hand-roll it.
+// Changing "size" (or a win.open size) wins over a saved size next launch
+// (0.70.3+); only the saved position is kept.
 await tiny.app.mousePosition();  // { x, y, window: { x, y, inside }, screen }
 // Linux: X11 only — pure Wayland hides the global pointer (capabilities()
 // says so; "windowPlacement": true forces XWayland, or use mouseTracking):
