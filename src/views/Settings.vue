@@ -21,7 +21,8 @@ import {
 } from '@octans/ui';
 import { api, errorMessage, type Books } from '../lib/api';
 import { appSettingsPanel } from '../lib/appSettings';
-import { backupBooks, closeBooks } from '../lib/books';
+import { backupBooks, closeBooks, runScheduledBackup } from '../lib/books';
+import type { BackupEvery } from '../shared/backups';
 import { formatDay } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
@@ -34,7 +35,7 @@ import { US_STATE_OPTIONS } from '../shared/usStates';
 
 type Form = Omit<
   Books,
-  'path' | 'internal' | 'country' | 'currency' | 'taxRatePpm' | 'lockDate' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
+  'path' | 'internal' | 'country' | 'currency' | 'taxRatePpm' | 'lockDate' | 'backupEvery' | 'backupFolder' | 'invoiceNext' | 'paymentTermsDays' | 'billNext' | 'quoteNext' | 'creditNext'
 > & {
   invoiceNext: string;
   paymentTermsDays: string;
@@ -144,6 +145,40 @@ async function save() {
   } finally {
     saving.value = false;
   }
+}
+
+// ---- scheduled backups --------------------------------------------------------
+
+const BACKUP_OPTIONS: { label: string; value: BackupEvery }[] = [
+  { label: 'Off', value: 'off' },
+  { label: 'Every day', value: 'day' },
+  { label: 'Every week', value: 'week' },
+  { label: 'Every month', value: 'month' },
+];
+
+async function saveBackup(patch: { backupEvery?: BackupEvery; backupFolder?: string }) {
+  try {
+    session.books = await api.updateSettings(patch);
+    await runScheduledBackup();
+  } catch (e) {
+    toast({ title: "Couldn't save settings", content: errorMessage(e), tone: 'error' });
+  }
+}
+
+/** Turning backups on needs somewhere to put them; cancelling the picker leaves them off. */
+const backupEvery = computed<BackupEvery>({
+  get: () => books.value.backupEvery,
+  set: async (v) => {
+    const backupFolder = v !== 'off' && !books.value.backupFolder ? await tiny.dialog.pickFolder() : undefined;
+    if (backupFolder === null) return;
+    void saveBackup({ backupEvery: v, ...(backupFolder ? { backupFolder } : {}) });
+  },
+});
+
+async function chooseBackupFolder() {
+  const backupFolder = await tiny.dialog.pickFolder();
+  if (!backupFolder) return;
+  void saveBackup({ backupFolder, ...(books.value.backupEvery === 'off' ? { backupEvery: 'week' as const } : {}) });
 }
 
 // ---- lock date ----------------------------------------------------------------
@@ -409,7 +444,14 @@ async function setLock(date: string | null) {
           <p class="Path">{{ books.path }}</p>
           <div class="Buttons">
             <Button icon="mdi:folder-search-outline" @click="reveal">Show in Finder</Button>
-            <Button icon="mdi:content-save-move-outline" @click="backupBooks">Back up now</Button>
+            <Button icon="mdi:content-save-move-outline" @click="backupBooks()">Back up now</Button>
+          </div>
+        </CardSection>
+        <CardSection>
+          <Select v-model="backupEvery" label="Back up to a folder" :options="BACKUP_OPTIONS" help-text="Checked when you open these books. Each backup is a dated copy, and old ones aren't removed." />
+          <p v-if="books.backupFolder" class="Path">{{ books.backupFolder }}</p>
+          <div class="Buttons">
+            <Button icon="mdi:folder-outline" @click="chooseBackupFolder">{{ books.backupFolder ? 'Change folder…' : 'Choose folder…' }}</Button>
           </div>
         </CardSection>
         <CardSection>

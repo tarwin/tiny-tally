@@ -96,6 +96,7 @@ import {
   type TradingNameInput,
 } from './tradingNames';
 import { commitImport, readImportFile, suggestCategories } from './importer';
+import { backupDue, backupName, latestBackupStamp } from '../src/shared/backups';
 import { cancelReconcile, finishReconcile, reconcileState, reconciledDates, startReconcile, tick, undoReconcile } from './reconcile';
 import { deleteSchedule, getSchedule, listSchedules, runSchedules, saveSchedule, skipNext, type ScheduleInput } from './schedules';
 import { deleteRule, listRules, matchRules, saveRule, type RuleInput } from './rules';
@@ -535,7 +536,25 @@ export const api: Record<string, TinyApiHandler> = {
     const base = path.slice(path.lastIndexOf('/') + 1).replace(new RegExp(`\\.${FILE_EXT}$`), '');
     // The page sends its local time (no Intl/time zones here); fall back to UTC.
     const when = /^[\d -]+$/.test(stamp ?? '') ? stamp! : new Date().toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '-');
-    const dest = `${dir}/${base} ${when}.${FILE_EXT}`;
+    const dest = `${dir}/${backupName(base, when, FILE_EXT)}`;
+    inWindow(win, () => backupBooks(dest));
+    return dest;
+  },
+
+  /** On opening, and overnight: a copy in the chosen folder, if one is due. */
+  'books.scheduledBackup': async ({ stamp }: { stamp: string }, _app, { window: win }) => {
+    const { path } = getBooks();
+    const { backupEvery, backupFolder } = getSettings();
+    if (backupEvery === 'off' || !backupFolder) return null;
+    const names: string[] = [];
+    try {
+      for await (const e of await tjs.readDir(backupFolder)) names.push(e.name);
+    } catch {
+      throw new Error(`Can't reach ${backupFolder}. If it's on a drive that isn't connected, connect it and reopen the books, or choose another folder in Settings.`);
+    }
+    const base = path.slice(path.lastIndexOf('/') + 1).replace(new RegExp(`\\.${FILE_EXT}$`), '');
+    if (!backupDue(backupEvery, latestBackupStamp(names, base, FILE_EXT), stamp)) return null;
+    const dest = `${backupFolder.replace(/\/$/, '')}/${backupName(base, stamp, FILE_EXT)}`;
     inWindow(win, () => backupBooks(dest));
     return dest;
   },

@@ -16,7 +16,7 @@ import { hasIncomeRules } from './shared/countries';
 import { HANDOFF_EXT } from './shared/invoiceHandoff';
 import { dropAttachments } from './lib/attachments';
 import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density, stepZoom } from './lib/appSettings';
-import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession } from './lib/books';
+import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession, runScheduledBackup } from './lib/books';
 import { today } from './lib/dates';
 import { newEntry } from './lib/entryEditor';
 import { booksChanged, booksVersion } from './lib/live';
@@ -322,7 +322,10 @@ watch(
   () => session.books?.path,
   (path) => {
     void syncMenus();
-    if (path) void runSchedules();
+    if (path) {
+      void runSchedules();
+      void runScheduledBackup();
+    }
   },
 );
 
@@ -331,7 +334,10 @@ let lastDay = today();
 const dayTimer = setInterval(() => {
   if (today() === lastDay) return;
   lastDay = today();
-  if (session.books) void runSchedules();
+  if (session.books) {
+    void runSchedules();
+    void runScheduledBackup();
+  }
 }, 10 * 60 * 1000);
 
 // Item urls are router paths. Left as plain links they'd reload the page

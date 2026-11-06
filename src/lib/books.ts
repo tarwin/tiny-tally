@@ -66,20 +66,40 @@ export async function newBooks() {
   if (session.books) await api.newWindow();
 }
 
+function localStamp() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+function backupSaved(dest: string) {
+  toast({
+    title: 'Backup saved',
+    content: dest.slice(dest.lastIndexOf('/') + 1),
+    tone: 'success',
+    actions: [{ label: 'Show', onAction: () => void tiny.app.shell.reveal(dest) }],
+  });
+}
+
+/** The new file's path, or null if it failed (which has already been said). */
 export async function backupBooks() {
   try {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, '0');
-    const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
-    const dest = await api.backupBooks(stamp);
-    toast({
-      title: 'Backup saved',
-      content: dest.slice(dest.lastIndexOf('/') + 1),
-      tone: 'success',
-      actions: [{ label: 'Show', onAction: () => void tiny.app.shell.reveal(dest) }],
-    });
+    const dest = await api.backupBooks(localStamp());
+    backupSaved(dest);
+    return dest;
   } catch (e) {
     toast({ title: 'Backup failed', content: errorMessage(e), tone: 'error' });
+    return null;
+  }
+}
+
+/** Backs up to the folder chosen in Settings, when one is due. */
+export async function runScheduledBackup() {
+  try {
+    const dest = await api.scheduledBackup(localStamp());
+    if (dest) backupSaved(dest);
+  } catch (e) {
+    toast({ title: "The scheduled backup didn't run", content: errorMessage(e), tone: 'error' });
   }
 }
 

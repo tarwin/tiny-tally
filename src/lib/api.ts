@@ -1,4 +1,5 @@
 // Typed front door to the backend (backend/main.ts). Keep names in sync.
+import type { BackupEvery } from '../shared/backups';
 import type { Country, DateFormat, TaxFrequency } from '../shared/countries';
 import type { Adjustment, AdjustmentContext, ReturnFigures, ReturnInputs, ReturnKind, RuleStatus } from '../shared/taxReturns';
 import type { TaxCode } from '../shared/tax';
@@ -46,6 +47,8 @@ export interface BooksSettings {
   color: string;
   logo: string;
   lockDate: string | null;
+  backupEvery: BackupEvery;
+  backupFolder: string;
   /** US: the business's state ('NY'), or ''. */
   homeState: string;
   /** US: what the books' own sales tax rate is called. */
@@ -1252,6 +1255,8 @@ export const api = {
   closeBooks: () => call<true>('books.close'),
   forgetBooks: (path: string) => call<RecentBooks[]>('books.forget', { path }),
   backupBooks: (stamp: string) => call<string>('books.backup', { stamp }),
+  /** Backs up to the chosen folder if one is due; the new file's path, or null. */
+  scheduledBackup: (stamp: string) => call<string | null>('books.scheduledBackup', { stamp }),
   updateSettings: (p: Partial<BooksSettings>) => call<Books>('settings.update', p),
 
   listAccounts: () => call<Account[]>('accounts.list'),

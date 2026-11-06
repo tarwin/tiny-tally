@@ -10,7 +10,9 @@ While the books are open, Tiny Tally leaves a small `.lock` file beside them. If
 
 ## Backups
 
-**Back Up Now** in the File menu (or in Settings) copies the books into a `Backups` folder next to the file, named with the date and time. Tiny Tally doesn't back up on its own, so do this before big changes, and keep the file somewhere your usual backups reach.
+**Back Up Now** in the File menu (or in Settings) copies the books into a `Backups` folder next to the file, named with the date and time. Do this before big changes, and keep the file somewhere your usual backups reach.
+
+To have it happen by itself, go to **Settings → Books file**, choose **Every day**, **Every week** or **Every month** under **Back up to a folder**, and pick a folder. When you open the books and a backup is due, a dated copy goes in that folder. Old copies aren't removed, so clear them out now and then. If the folder can't be reached, such as a drive that isn't connected, Tiny Tally tells you and carries on.
 
 **Show in Finder** (*Show in File Explorer* on Windows) takes you to the file.
 
