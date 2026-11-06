@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onActivated, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   Badge,
@@ -17,7 +17,7 @@ import {
 } from '@octans/ui';
 import InvoiceDocument, { type InvoiceDocData } from '../components/InvoiceDocument.vue';
 import PaperPreview from '../components/PaperPreview.vue';
-import { api, errorMessage, type InvoiceTemplate, type Sender, type TemplateInput, type TemplateStyle } from '../lib/api';
+import { api, errorMessage, type InvoiceTemplate, type Sender, type TemplateInput, type TemplateStyle, type TradingName } from '../lib/api';
 import { addDays, today } from '../lib/dates';
 import { session } from '../lib/session';
 import { countryProfile } from '../shared/countries';
@@ -85,14 +85,26 @@ function select(t: InvoiceTemplate | null) {
   dirty.value = false;
 }
 
-/** The preview is from the default trading name. */
-const sender = ref<Sender | null>(null);
+/** The preview is from the default trading name, whose details can be edited here. */
+const tradingName = ref<TradingName | null>(null);
+const tradingNameCount = ref(0);
+const details = ref({ name: '', address: '', email: '', phone: '', paymentDetails: '' });
+const detailsDirty = ref(false);
+const sender = computed<Sender | null>(() => {
+  const t = tradingName.value;
+  if (!t) return null;
+  const d = details.value;
+  return { tradingNameId: t.id, name: d.name, address: d.address || null, email: d.email || null, phone: d.phone || null, paymentDetails: d.paymentDetails || null, logo: t.logo };
+});
 
 async function load(keep?: number | null) {
   const [list, names] = await Promise.all([api.listTemplates(), api.listTradingNames()]);
   templates.value = list;
-  const t0 = names.find((n) => n.isDefault) ?? names[0];
-  sender.value = t0 ? { tradingNameId: t0.id, name: t0.name, address: t0.address, email: t0.email, phone: t0.phone, paymentDetails: t0.paymentDetails, logo: t0.logo } : null;
+  const t0 = names.find((n) => n.isDefault) ?? names[0] ?? null;
+  tradingName.value = t0;
+  tradingNameCount.value = names.filter((n) => !n.isArchived).length;
+  details.value = { name: t0?.name ?? '', address: t0?.address ?? '', email: t0?.email ?? '', phone: t0?.phone ?? '', paymentDetails: t0?.paymentDetails ?? '' };
+  detailsDirty.value = false;
   const t = templates.value.find((x) => x.id === (keep ?? selectedId.value)) ?? templates.value[0] ?? null;
   select(t);
 }
@@ -103,12 +115,52 @@ function touch() {
 
 // ---- wording and layout ----------------------------------------------------------
 
-const panel = ref<'style' | 'wording' | 'layout'>('style');
+const panel = ref<'style' | 'wording' | 'layout' | 'details'>('style');
 const panelOptions = [
   { label: 'Style', value: 'style' },
   { label: 'Wording', value: 'wording' },
   { label: 'Layout', value: 'layout' },
+  { label: 'Details', value: 'details' },
 ];
+
+const side = ref<HTMLElement | null>(null);
+let hot: Element | null = null;
+
+/** The part of the preview under the pointer: the innermost one that names a field. */
+function hoverPreview(e: Event) {
+  const el = (e.target as Element).closest?.('[data-edit]') ?? null;
+  if (el === hot) return;
+  hot?.classList.remove('Hot');
+  el?.classList.add('Hot');
+  hot = el;
+}
+
+function leavePreview() {
+  hot?.classList.remove('Hot');
+  hot = null;
+}
+
+/** Clicking a part of the preview opens the panel that sets it and focuses the field. */
+async function clickPreview(e: Event) {
+  const field = (e.target as Element).closest?.('[data-edit]')?.getAttribute('data-edit');
+  if (!field) return;
+  panel.value = field.startsWith('from.')
+    ? 'details'
+    : field.startsWith('section.')
+      ? 'layout'
+      : field === 'intro' || field.startsWith('label.') || field.startsWith('show.')
+        ? 'wording'
+        : 'style';
+  await nextTick();
+  const el = side.value?.querySelector<HTMLElement>(`[data-edit="${field}"]`);
+  if (!el) return;
+  el.scrollIntoView({ block: 'nearest' });
+  // A section has no one field to type in, so it's only pointed out.
+  if (!field.startsWith('section.')) el.querySelector<HTMLElement>('input, textarea, select, button:not(:disabled)')?.focus();
+  el.classList.remove('Flash');
+  void el.offsetWidth; // restarts the animation on a second click
+  el.classList.add('Flash');
+}
 
 const labelKeys = (Object.keys(LABELS) as LabelKey[]).filter((k) => books.value.taxEnabled || !['gst', 'gstTotal', 'subtotal'].includes(k));
 const showKeys = Object.keys(SHOW) as ShowKey[];
@@ -161,8 +213,15 @@ const SIZE_OPTIONS = [
 async function save() {
   saving.value = true;
   try {
-    const id = await api.saveTemplate(form.value);
-    toast({ title: 'Template saved', tone: 'success' });
+    if (detailsDirty.value && tradingName.value) {
+      // As it is now: its next numbers move on every time a document is numbered.
+      const current = (await api.listTradingNames()).find((t) => t.id === tradingName.value!.id);
+      if (!current) throw new Error('That trading name no longer exists.');
+      await api.saveTradingName({ ...current, ...details.value });
+    }
+    detailsDirty.value = false;
+    const id = dirty.value ? await api.saveTemplate(form.value) : selectedId.value;
+    toast({ title: dirty.value ? 'Template saved' : 'Your details saved', tone: 'success' });
     await load(id);
   } catch (e) {
     toast({ title: "Couldn't save template", content: errorMessage(e), tone: 'error' });
@@ -243,6 +302,10 @@ const sample = computed<InvoiceDocData>(() => {
 });
 
 onMounted(() => load());
+// Coming back to this tab: pick up anything changed in Settings, unless there are edits to keep.
+onActivated(() => {
+  if (!dirty.value && !detailsDirty.value) void load();
+});
 </script>
 
 <template>
@@ -253,7 +316,7 @@ onMounted(() => load());
     :primary-action="{ label: 'New template', icon: 'mdi:plus', onAction: startNew }"
   >
     <div class="Grid">
-      <aside class="Side">
+      <aside ref="side" class="Side">
         <Card>
           <CardSection>
             <ul class="List">
@@ -303,7 +366,7 @@ onMounted(() => load());
                   </label>
                 </div>
               </div>
-              <div>
+              <div data-edit="logo">
                 <div class="Label">Logo <span class="subdued Small">· leave empty to use the trading name's</span></div>
                 <div class="Logo">
                   <img v-if="form.logo" :src="form.logo" alt="" />
@@ -311,57 +374,103 @@ onMounted(() => load());
                   <Button v-if="form.logo" type="plain" @click="(form.logo = null), touch()">Remove</Button>
                 </div>
               </div>
-              <TextField
-                v-model="form.title"
-                label="Document title"
-                :help-text="tax?.report === 'bas' ? 'GST-registered businesses must use “Tax Invoice” for taxable sales.' : ''"
-                @update:model-value="touch"
-              />
-              <TextField v-model="form.footer" label="Footer" multiline="2" placeholder="Thank-you note, terms, website…" @update:model-value="touch" />
+              <div data-edit="title">
+                <TextField
+                  v-model="form.title"
+                  label="Document title"
+                  :help-text="tax?.report === 'bas' ? 'GST-registered businesses must use “Tax Invoice” for taxable sales.' : ''"
+                  @update:model-value="touch"
+                />
+              </div>
+              <div data-edit="footer">
+                <TextField v-model="form.footer" label="Footer" multiline="2" placeholder="Thank-you note, terms, website…" @update:model-value="touch" />
+              </div>
               <ToggleSwitch v-if="tax" v-model="form.showTaxColumn" :label="`Show ${tax.short} on each line`" @update:model-value="touch" />
             </FormLayout>
           </CardSection>
 
           <CardSection v-else-if="panel === 'wording'">
             <FormLayout>
-              <TextField
-                :model-value="form.layout.intro"
-                label="Intro text"
-                multiline="3"
-                placeholder="Hi {customer}, thanks for your business. Here's invoice {number}."
-                @update:model-value="(v) => ((form.layout.intro = String(v ?? '')), touch())"
-              />
+              <div data-edit="intro">
+                <TextField
+                  :model-value="form.layout.intro"
+                  label="Intro text"
+                  multiline="3"
+                  placeholder="Hi {customer}, thanks for your business. Here's invoice {number}."
+                  @update:model-value="(v) => ((form.layout.intro = String(v ?? '')), touch())"
+                />
+              </div>
               <p class="subdued Small Flush">
                 The intro, payment details and footer can use <code>{{ placeholderText }}</code>.
               </p>
               <div>
                 <div class="Label">Show</div>
                 <div class="Checks">
-                  <Checkbox
-                    v-for="k in showKeys"
-                    :key="k"
-                    :model-value="k === 'taxId' && books.taxEnabled ? true : form.layout.show[k]"
-                    :disabled="k === 'taxId' && books.taxEnabled"
-                    :label="k === 'taxId' ? profile.taxId.label : SHOW[k]"
-                    @update:model-value="(v: boolean) => setShow(k, v)"
-                  />
+                  <div v-for="k in showKeys" :key="k" :data-edit="`show.${k}`">
+                    <Checkbox
+                      :model-value="k === 'taxId' && books.taxEnabled ? true : form.layout.show[k]"
+                      :disabled="k === 'taxId' && books.taxEnabled"
+                      :label="k === 'taxId' ? profile.taxId.label : SHOW[k]"
+                      @update:model-value="(v: boolean) => setShow(k, v)"
+                    />
+                  </div>
                 </div>
                 <p v-if="books.taxEnabled" class="subdued Small Flush">Tax invoices must show your {{ profile.taxId.label }}, so it can't be hidden.</p>
               </div>
               <div>
                 <div class="Label">Labels <span class="subdued Small">· leave blank for the standard wording</span></div>
                 <div class="Labels">
-                  <TextField
-                    v-for="k in labelKeys"
-                    :key="k"
-                    :model-value="form.layout.labels[k] ?? ''"
-                    :label="LABELS[k].label"
-                    :placeholder="k === 'price' ? priceDefault : labelDefault(k, tax)"
-                    size="small"
-                    @update:model-value="(v) => setLabel(k, String(v ?? ''))"
-                  />
+                  <div v-for="k in labelKeys" :key="k" :data-edit="`label.${k}`">
+                    <TextField
+                      :model-value="form.layout.labels[k] ?? ''"
+                      :label="LABELS[k].label"
+                      :placeholder="k === 'price' ? priceDefault : labelDefault(k, tax)"
+                      size="small"
+                      @update:model-value="(v) => setLabel(k, String(v ?? ''))"
+                    />
+                  </div>
                 </div>
                 <p class="subdued Small Flush">Quotes and credit notes keep their own wording for the number, customer and total.</p>
+              </div>
+            </FormLayout>
+          </CardSection>
+
+          <CardSection v-else-if="panel === 'details'">
+            <p class="subdued Small Top">
+              <template v-if="tradingNameCount > 1">Your default trading name. Others are in <a href="#/settings">Settings</a>. </template>
+              These go on every template. Documents already sent keep the details they went out with.
+            </p>
+            <FormLayout>
+              <div data-edit="from.name">
+                <TextField v-model="details.name" label="Name" @update:model-value="detailsDirty = true" />
+              </div>
+              <div data-edit="from.address">
+                <TextField
+                  v-model="details.address"
+                  label="Your address"
+                  multiline="3"
+                  :help-text="form.layout.show.fromAddress ? '' : 'This template hides it. Turn it back on under Wording.'"
+                  @update:model-value="detailsDirty = true"
+                />
+              </div>
+              <div data-edit="from.email">
+                <TextField v-model="details.email" label="Email" @update:model-value="detailsDirty = true" />
+              </div>
+              <div data-edit="from.phone">
+                <TextField v-model="details.phone" label="Phone" @update:model-value="detailsDirty = true" />
+              </div>
+              <div data-edit="from.paymentDetails">
+                <TextField
+                  v-model="details.paymentDetails"
+                  label="Payment details"
+                  multiline="3"
+                  placeholder="Bank, BSB and account number…"
+                  @update:model-value="detailsDirty = true"
+                />
+              </div>
+              <div data-edit="from.taxId" class="TaxId">
+                <span>{{ profile.taxId.label }}: {{ books.taxId || 'not set' }}</span>
+                <Button size="small" @click="router.push('/settings')">Change in Settings</Button>
               </div>
             </FormLayout>
           </CardSection>
@@ -369,7 +478,7 @@ onMounted(() => load());
           <CardSection v-else>
             <p class="subdued Small Top">Top to bottom. Sections pinned to the bottom sit side by side at the foot of the page.</p>
             <ol class="Sections">
-              <li v-for="(sec, i) in form.layout.sections" :key="sec.key" class="Sec">
+              <li v-for="(sec, i) in form.layout.sections" :key="sec.key" class="Sec" :data-edit="`section.${sec.key}`">
                 <div class="Sec__head">
                   <span class="Sec__name">{{ SECTION_INFO[sec.key].label }}</span>
                   <Button size="small" type="plain" icon="mdi:arrow-up" tooltip="Move up" :disabled="i === 0" @click="move(i, -1)" />
@@ -406,21 +515,19 @@ onMounted(() => load());
               <Button v-if="selectedId && !templates.find((t) => t.id === selectedId)?.isDefault" type="plain" @click="makeDefault">Make default</Button>
               <Button v-if="selectedId && !templates.find((t) => t.id === selectedId)?.isDefault" type="plain" icon="mdi:delete-outline" @click="remove" />
               <span class="Spacer" />
-              <Button type="primary" :disabled="!dirty" :loading="saving" @click="save">Save</Button>
+              <Button type="primary" :disabled="!dirty && !detailsDirty" :loading="saving" @click="save">Save</Button>
             </div>
           </CardSection>
         </Card>
       </aside>
 
       <div class="Preview">
-        <div class="Preview__label subdued">Preview with sample data</div>
+        <div class="Preview__label subdued">Preview with sample data. Click any part to edit it.</div>
         <PaperPreview zoomable>
-          <InvoiceDocument :invoice="sample" :books="books" :sender="sender" :template="form" />
+          <div class="Editable" @click="clickPreview" @mouseover="hoverPreview" @mouseleave="leavePreview">
+            <InvoiceDocument :invoice="sample" :books="books" :sender="sender" :template="form" editing />
+          </div>
         </PaperPreview>
-        <p v-if="!books.taxId || !sender?.address || !sender?.paymentDetails" class="subdued Preview__hint">
-          Add your {{ profile.taxId.label }}, and your trading name's address and payment details, in
-          <a href="#/settings">Settings</a> so they appear on invoices.
-        </p>
       </div>
     </div>
   </Page>
@@ -618,13 +725,42 @@ onMounted(() => load());
   margin-bottom: 12px;
 }
 
-.Preview__hint {
-  margin: 16px 0 0;
-  font-size: 13px;
-  text-align: center;
+.Editable :deep([data-edit]) {
+  cursor: pointer;
 }
 
-.Preview__hint a {
+/* currentColor: it has to show on white paper and on a Modern template's accent band. */
+.Editable :deep(.Hot) {
+  outline: 1px dashed currentColor;
+  outline-offset: 2px;
+  border-radius: 2px;
+  background-color: rgba(127, 127, 127, 0.12);
+}
+
+.Flash {
+  animation: flash 1.2s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes flash {
+  from {
+    box-shadow: 0 0 0 3px var(--octans-border-focus, #2f6fde);
+  }
+
+  to {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+.TaxId {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.Top a {
   color: var(--octans-text-link);
 }
 </style>

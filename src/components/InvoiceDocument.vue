@@ -56,7 +56,11 @@ const props = defineProps<{
   template: Pick<InvoiceTemplate, 'style' | 'accent' | 'logo' | 'title' | 'footer' | 'showTaxColumn'> & {
     layout?: InvoiceTemplate['layout'];
   } | null;
+  /** In the template designer: parts name the field that sets them, and empty details show where they'd go. */
+  editing?: boolean;
 }>();
+
+const edit = (field: string) => (props.editing ? field : undefined);
 
 const t = computed(
   () =>
@@ -171,13 +175,14 @@ function hasContent(key: TemplateSection['key']) {
     case 'notes':
       return !!props.invoice.notes;
     case 'payment':
-      return type.value === 'invoice' && !!fill(from.value.paymentDetails);
+      return type.value === 'invoice' && !!paymentText.value;
     case 'footer':
       return !!fill(t.value.footer);
     default:
       return true;
   }
 }
+const paymentText = computed(() => fill(from.value.paymentDetails) || (props.editing ? 'Your payment details' : ''));
 const body = computed(() => layout.value.sections.filter((s) => !s.bottom && hasContent(s.key)));
 const foot = computed(() => layout.value.sections.filter((s) => s.bottom && hasContent(s.key)));
 const sectionClass = (s: TemplateSection) => [`Doc__sec--${s.align}`, `Doc__sec--${s.size}`];
@@ -210,55 +215,58 @@ const stamp = computed(() => {
     <div v-if="stamp" class="Doc__stamp" :class="`Doc__stamp--${invoice.status}`">{{ stamp }}</div>
 
     <template v-for="s in body" :key="s.key">
-      <header v-if="s.key === 'header'" class="Doc__head" :class="sectionClass(s)">
+      <header v-if="s.key === 'header'" class="Doc__head" :class="sectionClass(s)" :data-edit="edit('section.header')">
         <div class="Doc__from">
-          <img v-if="logo" :src="logo" alt="" class="Doc__logo" />
-          <div class="Doc__fromName">{{ from.name }}</div>
-          <div v-if="books.taxId && show.taxId" class="Doc__taxId">{{ taxIdLabel }} {{ books.taxId }}</div>
+          <img v-if="logo" :src="logo" alt="" class="Doc__logo" :data-edit="edit('logo')" />
+          <div class="Doc__fromName" :data-edit="edit('from.name')">{{ from.name }}</div>
+          <div v-if="books.taxId && show.taxId" class="Doc__taxId" :data-edit="edit('from.taxId')">{{ taxIdLabel }} {{ books.taxId }}</div>
+          <div v-else-if="editing && taxOn" class="Doc__taxId Doc__ghost" data-edit="from.taxId">Your {{ taxIdLabel }}</div>
           <div v-if="india && stateLine(homeState)" class="Doc__taxId">State: {{ stateLine(homeState) }}</div>
-          <div v-if="from.address && show.fromAddress" class="Doc__pre">{{ from.address }}</div>
-          <div v-if="(from.email || from.phone) && show.fromContact" class="Doc__muted">
+          <div v-if="from.address && show.fromAddress" class="Doc__pre" :data-edit="edit('from.address')">{{ from.address }}</div>
+          <div v-else-if="editing && show.fromAddress" class="Doc__ghost" data-edit="from.address">Your address</div>
+          <div v-if="(from.email || from.phone) && show.fromContact" class="Doc__muted" :data-edit="edit('from.email')">
             {{ [from.email, from.phone].filter(Boolean).join(' · ') }}
           </div>
+          <div v-else-if="editing && show.fromContact" class="Doc__ghost" data-edit="from.email">Your email and phone</div>
         </div>
         <div class="Doc__titleBlock">
-          <h1 class="Doc__title">{{ title }}</h1>
+          <h1 class="Doc__title" :data-edit="edit('title')">{{ title }}</h1>
           <dl class="Doc__meta">
-            <div><dt>{{ label('invoiceNo') }}</dt><dd>{{ invoice.number }}</dd></div>
-            <div><dt>{{ label('issued') }}</dt><dd>{{ formatDay(invoice.issueDate) }}</dd></div>
+            <div :data-edit="edit('label.invoiceNo')"><dt>{{ label('invoiceNo') }}</dt><dd>{{ invoice.number }}</dd></div>
+            <div :data-edit="edit('label.issued')"><dt>{{ label('issued') }}</dt><dd>{{ formatDay(invoice.issueDate) }}</dd></div>
             <div v-if="type === 'quote'"><dt>Valid until</dt><dd>{{ formatDay(invoice.dueDate) }}</dd></div>
-            <div v-else-if="type === 'invoice' && show.dueDate"><dt>{{ label('due') }}</dt><dd>{{ formatDay(invoice.dueDate) }}</dd></div>
+            <div v-else-if="type === 'invoice' && show.dueDate" :data-edit="edit('label.due')"><dt>{{ label('due') }}</dt><dd>{{ formatDay(invoice.dueDate) }}</dd></div>
             <div v-if="type === 'credit' && invoice.sourceNumber"><dt>For invoice</dt><dd>{{ invoice.sourceNumber }}</dd></div>
-            <div v-if="invoice.reference && show.reference"><dt>{{ label('reference') }}</dt><dd>{{ invoice.reference }}</dd></div>
+            <div v-if="invoice.reference && show.reference" :data-edit="edit('label.reference')"><dt>{{ label('reference') }}</dt><dd>{{ invoice.reference }}</dd></div>
             <div v-if="india && placeLine"><dt>Place of supply</dt><dd>{{ placeLine }}</dd></div>
             <div v-if="india"><dt>Reverse charge</dt><dd>{{ invoice.reverseCharge ? 'Yes' : 'No' }}</dd></div>
           </dl>
         </div>
       </header>
 
-      <section v-else-if="s.key === 'to'" class="Doc__to" :class="sectionClass(s)">
-        <div class="Doc__label">{{ label('billTo') }}</div>
+      <section v-else-if="s.key === 'to'" class="Doc__to" :class="sectionClass(s)" :data-edit="edit('section.to')">
+        <div class="Doc__label" :data-edit="edit('label.billTo')">{{ label('billTo') }}</div>
         <div class="Doc__toName">{{ invoice.contactName }}</div>
-        <div v-if="invoice.contactAddress && show.customerAddress" class="Doc__pre">{{ invoice.contactAddress }}</div>
+        <div v-if="invoice.contactAddress && show.customerAddress" class="Doc__pre" :data-edit="edit('show.customerAddress')">{{ invoice.contactAddress }}</div>
         <div v-if="countryName">{{ countryName }}</div>
         <div v-if="india && invoice.contactTin">GSTIN {{ invoice.contactTin }}</div>
         <div v-if="india && !countryName && stateLine(invoice.contactState)">State: {{ stateLine(invoice.contactState) }}</div>
-        <div v-if="invoice.contactEmail && show.customerEmail" class="Doc__muted">{{ invoice.contactEmail }}</div>
+        <div v-if="invoice.contactEmail && show.customerEmail" class="Doc__muted" :data-edit="edit('show.customerEmail')">{{ invoice.contactEmail }}</div>
       </section>
 
-      <section v-else-if="s.key === 'intro'" class="Doc__intro Doc__pre" :class="sectionClass(s)">{{ fill(layout.intro) }}</section>
+      <section v-else-if="s.key === 'intro'" class="Doc__intro Doc__pre" :class="sectionClass(s)" :data-edit="edit('intro')">{{ fill(layout.intro) }}</section>
 
-      <div v-else-if="s.key === 'lines'" :class="sectionClass(s)">
+      <div v-else-if="s.key === 'lines'" :class="sectionClass(s)" :data-edit="edit('section.lines')">
         <table class="Doc__table">
           <thead>
             <tr>
-              <th class="Doc__desc">{{ label('description') }}</th>
+              <th class="Doc__desc" :data-edit="edit('label.description')">{{ label('description') }}</th>
               <template v-if="show.qtyPrice">
-                <th class="num">{{ label('qty') }}</th>
-                <th class="num">{{ label('price') }}</th>
+                <th class="num" :data-edit="edit('label.qty')">{{ label('qty') }}</th>
+                <th class="num" :data-edit="edit('label.price')">{{ label('price') }}</th>
               </template>
-              <th v-if="showTax" class="num">{{ label('gst') }}</th>
-              <th class="num">{{ label('amount') }}</th>
+              <th v-if="showTax" class="num" :data-edit="edit('label.gst')">{{ label('gst') }}</th>
+              <th class="num" :data-edit="edit('label.amount')">{{ label('amount') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -280,16 +288,16 @@ const stamp = computed(() => {
         </table>
       </div>
 
-      <section v-else-if="s.key === 'totals'" class="Doc__totals" :class="sectionClass(s)">
+      <section v-else-if="s.key === 'totals'" class="Doc__totals" :class="sectionClass(s)" :data-edit="edit('section.totals')">
         <dl>
           <template v-if="taxOn">
-            <div><dt>{{ india ? 'Taxable value' : label('subtotal') }}</dt><dd>{{ money(shown.net) }}</dd></div>
+            <div :data-edit="india ? undefined : edit('label.subtotal')"><dt>{{ india ? 'Taxable value' : label('subtotal') }}</dt><dd>{{ money(shown.net) }}</dd></div>
             <template v-if="lineRated">
               <div v-for="h in shown.tax ? taxHeads : []" :key="h.label"><dt>{{ h.label }}</dt><dd>{{ money(h.value) }}</dd></div>
             </template>
-            <div v-else><dt>{{ label('gstTotal') }}</dt><dd>{{ money(shown.tax) }}</dd></div>
+            <div v-else :data-edit="edit('label.gstTotal')"><dt>{{ label('gstTotal') }}</dt><dd>{{ money(shown.tax) }}</dd></div>
           </template>
-          <div class="Doc__grand">
+          <div class="Doc__grand" :data-edit="edit('label.total')">
             <dt>{{ label('total') }}{{ tax?.spellOut ? ` (inc. ${tax.short})` : '' }}</dt><dd>{{ money(shown.total) }}</dd>
           </div>
           <template v-if="type === 'invoice' && (invoice.paid || invoice.credited)">
@@ -306,29 +314,29 @@ const stamp = computed(() => {
         <p v-if="endorsement && invoice.exportMode !== 'igst' && books.lutNumber" class="Doc__muted">Letter of Undertaking {{ books.lutNumber }}</p>
       </section>
 
-      <section v-else-if="s.key === 'notes'" class="Doc__notes Doc__pre" :class="sectionClass(s)">{{ invoice.notes }}</section>
+      <section v-else-if="s.key === 'notes'" class="Doc__notes Doc__pre" :class="sectionClass(s)" :data-edit="edit('section.notes')">{{ invoice.notes }}</section>
 
-      <section v-else-if="s.key === 'payment'" class="Doc__pay" :class="sectionClass(s)">
-        <div class="Doc__label">{{ label('payment') }}</div>
-        <div class="Doc__pre">{{ fill(from.paymentDetails) }}</div>
+      <section v-else-if="s.key === 'payment'" class="Doc__pay" :class="sectionClass(s)" :data-edit="edit('section.payment')">
+        <div class="Doc__label" :data-edit="edit('label.payment')">{{ label('payment') }}</div>
+        <div class="Doc__pre" :class="{ Doc__ghost: !fill(from.paymentDetails) }" :data-edit="edit('from.paymentDetails')">{{ paymentText }}</div>
       </section>
 
-      <section v-else-if="s.key === 'footer'" class="Doc__footer Doc__pre" :class="sectionClass(s)">{{ fill(t.footer) }}</section>
+      <section v-else-if="s.key === 'footer'" class="Doc__footer Doc__pre" :class="sectionClass(s)" :data-edit="edit('footer')">{{ fill(t.footer) }}</section>
     </template>
 
     <footer v-if="foot.length" class="Doc__foot">
       <template v-for="s in foot" :key="s.key">
-        <div v-if="s.key === 'payment'" class="Doc__pay" :class="sectionClass(s)">
-          <div class="Doc__label">{{ label('payment') }}</div>
-          <div class="Doc__pre">{{ fill(from.paymentDetails) }}</div>
+        <div v-if="s.key === 'payment'" class="Doc__pay" :class="sectionClass(s)" :data-edit="edit('section.payment')">
+          <div class="Doc__label" :data-edit="edit('label.payment')">{{ label('payment') }}</div>
+          <div class="Doc__pre" :class="{ Doc__ghost: !fill(from.paymentDetails) }" :data-edit="edit('from.paymentDetails')">{{ paymentText }}</div>
         </div>
-        <div v-else-if="s.key === 'footer'" class="Doc__footer Doc__pre" :class="sectionClass(s)">{{ fill(t.footer) }}</div>
-        <div v-else-if="s.key === 'intro'" class="Doc__intro Doc__pre" :class="sectionClass(s)">{{ fill(layout.intro) }}</div>
-        <div v-else-if="s.key === 'notes'" class="Doc__notes Doc__pre" :class="sectionClass(s)">{{ invoice.notes }}</div>
-        <div v-else-if="s.key === 'to'" class="Doc__to" :class="sectionClass(s)">
-          <div class="Doc__label">{{ label('billTo') }}</div>
+        <div v-else-if="s.key === 'footer'" class="Doc__footer Doc__pre" :class="sectionClass(s)" :data-edit="edit('footer')">{{ fill(t.footer) }}</div>
+        <div v-else-if="s.key === 'intro'" class="Doc__intro Doc__pre" :class="sectionClass(s)" :data-edit="edit('intro')">{{ fill(layout.intro) }}</div>
+        <div v-else-if="s.key === 'notes'" class="Doc__notes Doc__pre" :class="sectionClass(s)" :data-edit="edit('section.notes')">{{ invoice.notes }}</div>
+        <div v-else-if="s.key === 'to'" class="Doc__to" :class="sectionClass(s)" :data-edit="edit('section.to')">
+          <div class="Doc__label" :data-edit="edit('label.billTo')">{{ label('billTo') }}</div>
           <div class="Doc__toName">{{ invoice.contactName }}</div>
-          <div v-if="invoice.contactAddress && show.customerAddress" class="Doc__pre">{{ invoice.contactAddress }}</div>
+          <div v-if="invoice.contactAddress && show.customerAddress" class="Doc__pre" :data-edit="edit('show.customerAddress')">{{ invoice.contactAddress }}</div>
         </div>
       </template>
     </footer>
@@ -396,6 +404,13 @@ const stamp = computed(() => {
 
 .Doc__muted {
   color: var(--muted);
+}
+
+/* Only in the template designer: where a detail you haven't filled in would go. */
+.Doc__ghost {
+  color: #9aa0a8;
+  font-style: italic;
+  font-weight: 400;
 }
 
 .Doc__titleBlock {
@@ -661,6 +676,10 @@ const stamp = computed(() => {
 
 .Doc--modern .Doc__title {
   color: #fff;
+}
+
+.Doc--modern .Doc__head .Doc__ghost {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .Doc--modern .Doc__table th {
