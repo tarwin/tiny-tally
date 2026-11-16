@@ -8,6 +8,7 @@ import {
   CardSection,
   Checkbox,
   FormLayout,
+  FormLayoutGroup,
   Page,
   SegmentedControl,
   TextField,
@@ -23,6 +24,8 @@ import { session } from '../lib/session';
 import { countryProfile } from '../shared/countries';
 import { lineTotals, sumTotals } from '../shared/tax';
 import {
+  DEFAULT_FROM,
+  FROM_PLACEHOLDERS,
   LABELS,
   labelDefault,
   priceLabel,
@@ -88,13 +91,16 @@ function select(t: InvoiceTemplate | null) {
 /** The preview is from the default trading name, whose details can be edited here. */
 const tradingName = ref<TradingName | null>(null);
 const tradingNameCount = ref(0);
-const details = ref({ name: '', address: '', email: '', phone: '', paymentDetails: '' });
+const details = ref({ name: '', personName: '', postnominals: '', address: '', email: '', phone: '', website: '', paymentDetails: '' });
 const detailsDirty = ref(false);
 const sender = computed<Sender | null>(() => {
   const t = tradingName.value;
   if (!t) return null;
   const d = details.value;
-  return { tradingNameId: t.id, name: d.name, address: d.address || null, email: d.email || null, phone: d.phone || null, paymentDetails: d.paymentDetails || null, logo: t.logo };
+  return {
+    tradingNameId: t.id, name: d.name, personName: d.personName || null, postnominals: d.postnominals || null, address: d.address || null,
+    email: d.email || null, phone: d.phone || null, website: d.website || null, paymentDetails: d.paymentDetails || null, logo: t.logo,
+  };
 });
 
 async function load(keep?: number | null) {
@@ -103,7 +109,10 @@ async function load(keep?: number | null) {
   const t0 = names.find((n) => n.isDefault) ?? names[0] ?? null;
   tradingName.value = t0;
   tradingNameCount.value = names.filter((n) => !n.isArchived).length;
-  details.value = { name: t0?.name ?? '', address: t0?.address ?? '', email: t0?.email ?? '', phone: t0?.phone ?? '', paymentDetails: t0?.paymentDetails ?? '' };
+  details.value = {
+    name: t0?.name ?? '', personName: t0?.personName ?? '', postnominals: t0?.postnominals ?? '', address: t0?.address ?? '',
+    email: t0?.email ?? '', phone: t0?.phone ?? '', website: t0?.website ?? '', paymentDetails: t0?.paymentDetails ?? '',
+  };
   detailsDirty.value = false;
   const t = templates.value.find((x) => x.id === (keep ?? selectedId.value)) ?? templates.value[0] ?? null;
   select(t);
@@ -148,7 +157,7 @@ async function clickPreview(e: Event) {
     ? 'details'
     : field.startsWith('section.')
       ? 'layout'
-      : field === 'intro' || field.startsWith('label.') || field.startsWith('show.')
+      : field === 'intro' || field === 'fromLayout' || field.startsWith('label.') || field.startsWith('show.')
         ? 'wording'
         : 'style';
   await nextTick();
@@ -165,6 +174,7 @@ async function clickPreview(e: Event) {
 const labelKeys = (Object.keys(LABELS) as LabelKey[]).filter((k) => books.value.taxEnabled || !['gst', 'gstTotal', 'subtotal'].includes(k));
 const showKeys = Object.keys(SHOW) as ShowKey[];
 const placeholderText = Object.keys(PLACEHOLDERS).map((k) => `{${k}}`).join(' ');
+const fromPlaceholderText = Object.keys(FROM_PLACEHOLDERS).map((k) => `{${k}}`).join(' ');
 const tax = computed(() => (books.value.taxEnabled ? profile.value.tax : null));
 const priceDefault = computed(() =>
   tax.value?.spellOut ? `${priceLabel(tax.value, false)} / inc. ${tax.value.short}` : priceLabel(tax.value, false),
@@ -403,6 +413,17 @@ onActivated(() => {
               <p class="subdued Small Flush">
                 The intro, payment details and footer can use <code>{{ placeholderText }}</code>.
               </p>
+              <div data-edit="fromLayout">
+                <TextField
+                  :model-value="form.layout.from"
+                  label="Your details layout"
+                  multiline="5"
+                  :placeholder="DEFAULT_FROM"
+                  help-text="Leave blank for the standard layout. The first line is printed larger, **double asterisks** make text bold, and a line whose details are all empty is left out."
+                  @update:model-value="(v) => ((form.layout.from = String(v ?? '')), touch())"
+                />
+              </div>
+              <p class="subdued Small Flush">Your details can use <code>{{ fromPlaceholderText }}</code>.</p>
               <div>
                 <div class="Label">Show</div>
                 <div class="Checks">
@@ -442,8 +463,22 @@ onActivated(() => {
             </p>
             <FormLayout>
               <div data-edit="from.name">
-                <TextField v-model="details.name" label="Name" @update:model-value="detailsDirty = true" />
+                <TextField v-model="details.name" label="Business name" @update:model-value="detailsDirty = true" />
               </div>
+              <FormLayoutGroup>
+                <div data-edit="from.personName">
+                  <TextField
+                    v-model="details.personName"
+                    label="Your name"
+                    :placeholder="books.name"
+                    :help-text="form.layout.show.fromPerson ? 'In bold under the business name.' : 'This template hides it. Turn it back on under Wording.'"
+                    @update:model-value="detailsDirty = true"
+                  />
+                </div>
+                <div data-edit="from.postnominals">
+                  <TextField v-model="details.postnominals" label="Post-nominals" placeholder="BA (Hons), MPRIA" @update:model-value="detailsDirty = true" />
+                </div>
+              </FormLayoutGroup>
               <div data-edit="from.address">
                 <TextField
                   v-model="details.address"
@@ -458,6 +493,9 @@ onActivated(() => {
               </div>
               <div data-edit="from.phone">
                 <TextField v-model="details.phone" label="Phone" @update:model-value="detailsDirty = true" />
+              </div>
+              <div data-edit="from.website">
+                <TextField v-model="details.website" label="Website" placeholder="example.com" @update:model-value="detailsDirty = true" />
               </div>
               <div data-edit="from.paymentDetails">
                 <TextField

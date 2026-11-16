@@ -771,4 +771,11 @@ export const migrations: string[] = [
     UNION ALL
     SELECT NULL, NULL, date, kind, category_id, NULL, gross, 0, 'NTR', memo FROM journal_amounts;
   `,
+  // v27: your own name (with post-nominals) and website on a trading name, each
+  // on its own line under the business name (templateLayout's fromLines).
+  `
+  ALTER TABLE trading_names ADD COLUMN person_name TEXT;
+  ALTER TABLE trading_names ADD COLUMN postnominals TEXT;
+  ALTER TABLE trading_names ADD COLUMN website TEXT;
+  `,
 ];

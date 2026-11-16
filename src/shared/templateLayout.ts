@@ -68,8 +68,9 @@ export function priceLabel(tax: CountryTax | null, pricesIncludeTax: boolean) {
 
 /** Details that can be left off. The tax ID can't be hidden on a tax invoice. */
 export const SHOW = {
+  fromPerson: 'Your name',
   fromAddress: 'Your address',
-  fromContact: 'Your email and phone',
+  fromContact: 'Your phone, email and website',
   taxId: 'Tax ID',
   customerAddress: "Customer's address",
   customerEmail: "Customer's email",
@@ -86,6 +87,8 @@ export interface TemplateLayout {
   show: Record<ShowKey, boolean>;
   /** Shown in the intro section; may use placeholders. */
   intro: string;
+  /** Your details at the top, laid out with FROM_PLACEHOLDERS. Blank is DEFAULT_FROM. */
+  from: string;
 }
 
 const ORDER: SectionKey[] = ['header', 'to', 'intro', 'lines', 'totals', 'notes', 'payment', 'footer'];
@@ -105,6 +108,7 @@ export function defaultLayout(): TemplateLayout {
     labels: {},
     show: Object.fromEntries(Object.keys(SHOW).map((k) => [k, true])) as Record<ShowKey, boolean>,
     intro: '',
+    from: '',
   };
 }
 
@@ -146,7 +150,13 @@ export function normaliseLayout(raw: unknown): TemplateLayout {
       if (typeof v === 'boolean') show[k] = v;
     }
   }
-  return { sections, labels, show, intro: typeof r.intro === 'string' ? r.intro.slice(0, 2000) : '' };
+  return {
+    sections,
+    labels,
+    show,
+    intro: typeof r.intro === 'string' ? r.intro.slice(0, 2000) : '',
+    from: typeof r.from === 'string' ? r.from.trim().slice(0, 2000) : '',
+  };
 }
 
 /** Placeholders usable in the intro, payment details and footer. */
@@ -164,4 +174,67 @@ export type PlaceholderKey = keyof typeof PLACEHOLDERS;
 /** Replaces {customer}, {due_date}… Unknown names are left as typed. */
 export function fillPlaceholders(text: string, values: Record<PlaceholderKey, string>) {
   return text.replace(/\{([a-z_]+)\}/g, (m, k: string) => (k in values ? values[k as PlaceholderKey] : m));
+}
+
+// ---- your details ("from") -------------------------------------------------------
+
+/** What can go in your details at the top, and the field each one is edited in. */
+export const FROM_PLACEHOLDERS = {
+  business: { label: 'Business name', field: 'from.name' },
+  name: { label: 'Your name', field: 'from.personName' },
+  postnominals: { label: 'Post-nominals', field: 'from.postnominals' },
+  address: { label: 'Your address', field: 'from.address' },
+  phone: { label: 'Phone', field: 'from.phone' },
+  email: { label: 'Email', field: 'from.email' },
+  website: { label: 'Website', field: 'from.website' },
+  tax_id: { label: 'Tax ID', field: 'from.taxId' },
+} as const;
+export type FromKey = keyof typeof FROM_PLACEHOLDERS;
+
+/** Used when a template doesn't lay its own out. */
+export const DEFAULT_FROM = ['{business}', '**{name}** {postnominals}', '{address}', '{phone}', '{email}', '{website}', '{tax_id}'].join('\n');
+
+export interface FromLine {
+  /** Text runs, bold or not. A value can hold line breaks (an address). */
+  parts: { text: string; bold: boolean }[];
+  /** The field that sets it, for clicking it in the template preview. */
+  field: string | null;
+  /** Every placeholder in it was empty: only shown, as `ghost`, while editing. */
+  empty: boolean;
+  ghost: string;
+}
+
+/**
+ * Your details as lines. `**…**` is bold. A line whose placeholders are all
+ * empty is left out (or kept, empty, while editing), so nothing leaves a gap.
+ * The tax ID goes on the end when it has to show and the layout leaves it out.
+ */
+export function fromLines(layout: string, values: Record<FromKey, string>, opts: { taxIdRequired?: boolean; editing?: boolean } = {}): FromLine[] {
+  let text = layout.trim() || DEFAULT_FROM;
+  if (opts.taxIdRequired && !text.includes('{tax_id}')) text += '\n{tax_id}';
+  const out: FromLine[] = [];
+  for (const raw of text.split('\n')) {
+    const keys = [...raw.matchAll(/\{([a-z_]+)\}/g)].map((m) => m[1]).filter((k): k is FromKey => k in FROM_PLACEHOLDERS);
+    const fill = (t: string) => t.replace(/\{([a-z_]+)\}/g, (m, k: string) => (k in FROM_PLACEHOLDERS ? values[k as FromKey] ?? '' : m));
+    const parts = raw
+      .split(/\*\*(.*?)\*\*/)
+      .map((t, i) => ({ text: fill(t), bold: i % 2 === 1 }))
+      .filter((p) => p.text);
+    // Spaces and commas left between empty placeholders go too.
+    while (parts.length && !parts[parts.length - 1].text.trim()) parts.pop();
+    while (parts.length && !parts[0].text.trim()) parts.shift();
+    if (parts.length) {
+      parts[0].text = parts[0].text.replace(/^[\s,·|–]+/, '');
+      parts[parts.length - 1].text = parts[parts.length - 1].text.replace(/[\s,·|–]+$/, '');
+    }
+    const empty = keys.length > 0 && keys.every((k) => !values[k]?.trim());
+    if (!raw.trim() || (empty && !opts.editing) || (!empty && !parts.some((p) => p.text.trim()))) continue;
+    out.push({
+      parts: empty ? [] : parts,
+      field: keys.length ? FROM_PLACEHOLDERS[keys[0]].field : null,
+      empty,
+      ghost: keys.map((k) => FROM_PLACEHOLDERS[k].label).join(' '),
+    });
+  }
+  return out;
 }

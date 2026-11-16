@@ -10,7 +10,7 @@ import { countryProfile, lineRateText, taxHeadsFor } from '../shared/countries';
 import { foreignBalance, fxRateText } from '../shared/currency';
 import { EXPORT_PLACE, exportEndorsement, gstSplit, gstinState, inStateName } from '../shared/india';
 import { TAX_CODE_MAP, taxCodeLabel } from '../shared/tax';
-import { fillPlaceholders, labelDefault, normaliseLayout, priceLabel, type LabelKey, type TemplateSection } from '../shared/templateLayout';
+import { fillPlaceholders, fromLines, labelDefault, normaliseLayout, priceLabel, type FromLine, type LabelKey, type ShowKey, type TemplateSection } from '../shared/templateLayout';
 
 export interface InvoiceDocData {
   docType?: DocType;
@@ -99,9 +99,47 @@ const layout = computed(() => normaliseLayout(props.template?.layout));
 const show = computed(() => ({ ...layout.value.show, taxId: layout.value.show.taxId || taxOn.value }));
 const taxIdLabel = computed(() => profile.value.taxId.label);
 const showTax = computed(() => taxOn.value && t.value.showTaxColumn);
-const from = computed(() => props.sender ?? { name: props.books.name, address: null, email: null, phone: null, paymentDetails: null, logo: null });
+const from = computed(() => props.sender ?? { name: props.books.name, personName: null, postnominals: null, address: null, email: null, phone: null, website: null, paymentDetails: null, logo: null });
 // A template's own logo wins; otherwise the trading name's.
 const logo = computed(() => t.value.logo || from.value.logo);
+
+/** Which "show" switch hides each of your details. */
+const SHOWN_BY: Record<string, ShowKey> = {
+  'from.personName': 'fromPerson',
+  'from.postnominals': 'fromPerson',
+  'from.address': 'fromAddress',
+  'from.phone': 'fromContact',
+  'from.email': 'fromContact',
+  'from.website': 'fromContact',
+  'from.taxId': 'taxId',
+};
+/** Your details at the top, line by line, as the template lays them out. */
+const fromBlock = computed(() => {
+  const f = from.value;
+  const s = show.value;
+  const on = (key: ShowKey, v: string | null | undefined) => (s[key] ? v ?? '' : '');
+  const lines = fromLines(
+    layout.value.from,
+    {
+      business: f.name,
+      name: on('fromPerson', f.personName),
+      postnominals: on('fromPerson', f.postnominals),
+      address: on('fromAddress', f.address),
+      phone: on('fromContact', f.phone),
+      email: on('fromContact', f.email),
+      website: on('fromContact', f.website),
+      tax_id: s.taxId && props.books.taxId ? `${taxIdLabel.value} ${props.books.taxId}` : '',
+    },
+    { taxIdRequired: s.taxId && (!!props.books.taxId || (!!props.editing && taxOn.value)), editing: !!props.editing },
+  );
+  // While editing, an empty detail shows where it would go, unless the template hides it.
+  return lines.filter((l) => !l.empty || !l.field || !SHOWN_BY[l.field] || s[SHOWN_BY[l.field]]);
+});
+const fromClass = (l: FromLine, i: number) => [
+  i === 0 ? 'Doc__fromName' : l.field === 'from.taxId' ? 'Doc__taxId' : ['from.phone', 'from.email', 'from.website'].includes(l.field ?? '') ? 'Doc__muted' : '',
+  { Doc__ghost: l.empty },
+];
+const ghostFor = (l: FromLine) => (l.field === 'from.taxId' ? `Your ${taxIdLabel.value}` : l.ghost);
 const money = (v: number) => formatMoney(v, currency.value, props.books.documentCurrencyDisplay);
 
 /** Wording that only makes sense on invoices keeps its quote/credit-note form there. */
@@ -218,16 +256,11 @@ const stamp = computed(() => {
       <header v-if="s.key === 'header'" class="Doc__head" :class="sectionClass(s)" :data-edit="edit('section.header')">
         <div class="Doc__from">
           <img v-if="logo" :src="logo" alt="" class="Doc__logo" :data-edit="edit('logo')" />
-          <div class="Doc__fromName" :data-edit="edit('from.name')">{{ from.name }}</div>
-          <div v-if="books.taxId && show.taxId" class="Doc__taxId" :data-edit="edit('from.taxId')">{{ taxIdLabel }} {{ books.taxId }}</div>
-          <div v-else-if="editing && taxOn" class="Doc__taxId Doc__ghost" data-edit="from.taxId">Your {{ taxIdLabel }}</div>
-          <div v-if="india && stateLine(homeState)" class="Doc__taxId">State: {{ stateLine(homeState) }}</div>
-          <div v-if="from.address && show.fromAddress" class="Doc__pre" :data-edit="edit('from.address')">{{ from.address }}</div>
-          <div v-else-if="editing && show.fromAddress" class="Doc__ghost" data-edit="from.address">Your address</div>
-          <div v-if="(from.email || from.phone) && show.fromContact" class="Doc__muted" :data-edit="edit('from.email')">
-            {{ [from.email, from.phone].filter(Boolean).join(' · ') }}
+          <div v-for="(l, i) in fromBlock" :key="i" class="Doc__pre" :class="fromClass(l, i)" :data-edit="edit(l.field ?? 'fromLayout')">
+            <template v-if="l.empty">{{ ghostFor(l) }}</template>
+            <template v-else><component :is="p.bold ? 'strong' : 'span'" v-for="(p, j) in l.parts" :key="j">{{ p.text }}</component></template>
           </div>
-          <div v-else-if="editing && show.fromContact" class="Doc__ghost" data-edit="from.email">Your email and phone</div>
+          <div v-if="india && stateLine(homeState)" class="Doc__taxId">State: {{ stateLine(homeState) }}</div>
         </div>
         <div class="Doc__titleBlock">
           <h1 class="Doc__title" :data-edit="edit('title')">{{ title }}</h1>

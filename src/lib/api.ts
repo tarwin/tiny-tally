@@ -644,6 +644,10 @@ export interface TradingName {
   address: string | null;
   email: string | null;
   phone: string | null;
+  /** Your own name, the letters after it (printed regular beside it), and a web address. */
+  personName: string | null;
+  postnominals: string | null;
+  website: string | null;
   paymentDetails: string | null;
   templateId: number | null;
   /** Its own numbering per type: a prefix, or null to share the books' numbering. */
@@ -659,15 +663,20 @@ export interface TradingName {
   uses: number;
 }
 
-export type TradingNameInput = Omit<TradingName, 'id' | 'isDefault' | 'isArchived' | 'uses'> & { id?: number };
+export type TradingNameInput = Omit<TradingName, 'id' | 'isDefault' | 'isArchived' | 'uses' | 'personName' | 'postnominals' | 'website'>
+  & Partial<Pick<TradingName, 'personName' | 'postnominals' | 'website'>> & { id?: number };
 
 /** Who a document is from, as printed on it (a snapshot once sent). */
 export interface Sender {
   tradingNameId: number;
   name: string;
+  /** Missing on documents sent before these were added. */
+  personName?: string | null;
+  postnominals?: string | null;
   address: string | null;
   email: string | null;
   phone: string | null;
+  website?: string | null;
   paymentDetails: string | null;
   logo: string | null;
 }

@@ -69,9 +69,12 @@ const blank = () => ({
   id: undefined as number | undefined,
   name: '',
   logo: null as string | null,
+  personName: '',
+  postnominals: '',
   address: '',
   email: '',
   phone: '',
+  website: '',
   paymentDetails: '',
   templateId: null as number | null,
   ownNumbering: false,
@@ -112,9 +115,12 @@ function openEditor(t?: TradingName) {
         id: t.id,
         name: t.name,
         logo: t.logo,
+        personName: t.personName ?? '',
+        postnominals: t.postnominals ?? '',
         address: t.address ?? '',
         email: t.email ?? '',
         phone: t.phone ?? '',
+        website: t.website ?? '',
         paymentDetails: t.paymentDetails ?? '',
         templateId: t.templateId,
         ownNumbering: !!(t.invoicePrefix || t.quotePrefix || t.creditPrefix),
@@ -236,11 +242,16 @@ onMounted(load);
       <ModalSection>
         <FormLayout>
           <TextField v-model="form.name" label="Name" required :error="nameError" placeholder="e.g. Acme Design Studio" />
+          <FormLayoutGroup>
+            <TextField v-model="form.personName" label="Your name (optional)" help-text="In bold under the business name." />
+            <TextField v-model="form.postnominals" label="Post-nominals (optional)" placeholder="BA (Hons), MPRIA" />
+          </FormLayoutGroup>
           <TextField v-model="form.address" label="Address" multiline="3" />
           <FormLayoutGroup>
-            <TextField v-model="form.email" label="Email" type="email" />
             <TextField v-model="form.phone" label="Phone" />
+            <TextField v-model="form.email" label="Email" type="email" />
           </FormLayoutGroup>
+          <TextField v-model="form.website" label="Website (optional)" placeholder="example.com" />
           <TextField
             v-model="form.paymentDetails"
             label="Payment details"

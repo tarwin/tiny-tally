@@ -11,6 +11,10 @@ export interface TradingNameInput {
   address?: string | null;
   email?: string | null;
   phone?: string | null;
+  /** Your own name and letters after it, and a web address. Left out, they stay as they are. */
+  personName?: string | null;
+  postnominals?: string | null;
+  website?: string | null;
   paymentDetails?: string | null;
   templateId?: number | null;
   /** Its own numbering: a prefix per type, or null to share the books' numbering. */
@@ -29,12 +33,16 @@ export interface Sender {
   address: string | null;
   email: string | null;
   phone: string | null;
+  personName?: string | null;
+  postnominals?: string | null;
+  website?: string | null;
   paymentDetails: string | null;
   /** Always the trading name's current logo: images aren't copied into snapshots. */
   logo: string | null;
 }
 
 const COLUMNS = `t.id, t.name, t.logo, t.address, t.email, t.phone, t.payment_details AS paymentDetails,
+  t.person_name AS personName, t.postnominals, t.website,
   t.template_id AS templateId, t.is_default AS isDefault, t.is_archived AS isArchived,
   t.invoice_prefix AS invoicePrefix, t.invoice_next AS invoiceNext, t.quote_prefix AS quotePrefix,
   t.quote_next AS quoteNext, t.credit_prefix AS creditPrefix, t.credit_next AS creditNext`;
@@ -95,7 +103,10 @@ export function resolveTradingName(asked: unknown, contactId: number | null, kee
 function live(id: number): Sender | null {
   const t = one<any>(getBooks().db, `SELECT ${COLUMNS} FROM trading_names t WHERE t.id = ?`, id);
   return t
-    ? { tradingNameId: t.id, name: t.name, address: t.address, email: t.email, phone: t.phone, paymentDetails: t.paymentDetails, logo: t.logo }
+    ? {
+        tradingNameId: t.id, name: t.name, personName: t.personName, postnominals: t.postnominals, address: t.address,
+        email: t.email, phone: t.phone, website: t.website, paymentDetails: t.paymentDetails, logo: t.logo,
+      }
     : null;
 }
 
@@ -137,20 +148,27 @@ export function saveTradingName(input: TradingNameInput) {
     name, input.logo || null, clean(input.address), clean(input.email), clean(input.phone), clean(input.paymentDetails), templateId,
     ...numbering(input),
   ];
+  const was = input.id ? one<any>(db, 'SELECT * FROM trading_names WHERE id = ?', input.id) : null;
+  if (input.id && !was) throw new Error('That trading name no longer exists.');
+  // Added later: a caller that doesn't know them leaves them be.
+  const keep = (v: unknown, column: string) => (v === undefined ? was?.[column] ?? null : clean(v));
+  const website = keep(input.website, 'website');
+  if (website && website.length > 200) throw new Error('Keep the website to 200 characters or fewer.');
+  const extra = [keep(input.personName, 'person_name'), keep(input.postnominals, 'postnominals'), website];
   if (input.id) {
-    if (!one(db, 'SELECT id FROM trading_names WHERE id = ?', input.id)) throw new Error('That trading name no longer exists.');
     run(db,
       `UPDATE trading_names SET name = ?, logo = ?, address = ?, email = ?, phone = ?, payment_details = ?, template_id = ?,
-         invoice_prefix = ?, invoice_next = ?, quote_prefix = ?, quote_next = ?, credit_prefix = ?, credit_next = ?
-       WHERE id = ?`, ...fields, input.id);
+         invoice_prefix = ?, invoice_next = ?, quote_prefix = ?, quote_next = ?, credit_prefix = ?, credit_next = ?,
+         person_name = ?, postnominals = ?, website = ?
+       WHERE id = ?`, ...fields, ...extra, input.id);
     return input.id;
   }
   const first = !one(db, 'SELECT id FROM trading_names');
   return one<{ id: number }>(db,
     `INSERT INTO trading_names (name, logo, address, email, phone, payment_details, template_id,
-       invoice_prefix, invoice_next, quote_prefix, quote_next, credit_prefix, credit_next, is_default, sort)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM trading_names)) RETURNING id`,
-    ...fields, first ? 1 : 0)!.id;
+       invoice_prefix, invoice_next, quote_prefix, quote_next, credit_prefix, credit_next, person_name, postnominals, website, is_default, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM trading_names)) RETURNING id`,
+    ...fields, ...extra, first ? 1 : 0)!.id;
 }
 
 export function setDefaultTradingName(id: number) {
