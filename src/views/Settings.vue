@@ -408,12 +408,6 @@ async function setLock(date: string | null) {
         </CardSection>
       </Card>
 
-      <div v-if="changed" class="SaveBar">
-        <span class="subdued">You have unsaved changes</span>
-        <Button type="plain" @click="form = fromBooks(books)">Discard</Button>
-        <Button type="primary" :loading="saving" @click="save">Save changes</Button>
-      </div>
-
       <Card title="Lock date">
         <CardSection>
           <p class="Hint Top">
@@ -466,6 +460,13 @@ async function setLock(date: string | null) {
           </div>
         </CardSection>
       </Card>
+
+      <!-- Last in the page: sticky only holds to the bottom until its own place has scrolled past. -->
+      <div v-if="changed" class="SaveBar">
+        <span class="subdued">You have unsaved changes</span>
+        <Button type="plain" @click="form = fromBooks(books)">Discard</Button>
+        <Button type="primary" :loading="saving" @click="save">Save changes</Button>
+      </div>
     </div>
   </Page>
 </template>
