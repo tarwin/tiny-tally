@@ -28,6 +28,12 @@ If one of your [rules](./importing#rules) matches, the category is filled in for
 
 A transfer moves money between two of your accounts, such as paying off a credit card or putting money aside for tax. It isn't income or an expense.
 
+### Refunds
+
+Money back from a supplier isn't income: it takes away from what you spent. Choose **Income**, turn on **Refund from a supplier**, and pick the expense category it came off. It comes off that category's total, and off the GST you claimed. Paying a customer back works the same way: **Expense**, **Refund to a customer**, and the income category it came off. In the list a refund shows as *Refund · Category*.
+
+A category that has transactions can't switch between income and expense, because that would turn them all into refunds. Make a new category instead.
+
 ## Receipts and attachments
 
 **Attach receipt**, or drop a file on the window while a transaction is open. PDFs and photos (JPEG, PNG, GIF, WebP, HEIC) up to 25 MB are kept inside the books file. Big photos are shrunk to a sensible size. A paperclip shows in your lists, and you can view each file, save a copy, or remove it.

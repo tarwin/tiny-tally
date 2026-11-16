@@ -4,7 +4,7 @@
 
 **Contacts** holds your customers and suppliers: name, email, phone, address and notes. A customer can be set to be **invoiced as** one of your [trading names](./templates#trading-names).
 
-From a contact you can start a **New invoice** or **New bill**, or see their **Statement**. Archive contacts you no longer deal with; their history stays.
+Double-click a contact to edit it. From a contact you can start a **New invoice** or **New bill**, or see their **Statement**. Archive contacts you no longer deal with; their history stays.
 
 ## Statements {#statements}
 
@@ -22,4 +22,4 @@ Add one on an invoice with **Add saved item…**, or turn any line into one with
 
 **Categories** sorts your income and expenses: *Rent*, *Software*, *Design services*. Each has a type and a usual tax code, which new transactions pick up. In the US, each can be mapped to a Schedule C line.
 
-A category can sit **inside** another (*Car › Fuel*), one level deep. Reports total them under their parent.
+Double-click a category to edit it. A category can sit **inside** another (*Car › Fuel*), one level deep; clear **Inside** to bring it back to the top level. Reports total them under their parent.
