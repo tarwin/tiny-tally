@@ -30,8 +30,10 @@ function addDays(date: string, n: number) {
 function instalmentsPaid(after: string, upTo: string) {
   const { db } = getBooks();
   const payments = all<{ id: number; date: string; amount: number; memo: string | null }>(db,
-    `SELECT e.id, e.date, e.amount, e.memo FROM entries e JOIN categories c ON c.id = e.category_id
-     WHERE c.report_line = 'estimated-tax' AND e.kind = 'expense' AND e.date > ? AND e.date <= ?
+    // An instalment refunded comes off what's been paid.
+    `SELECT e.id, e.date, CASE e.kind WHEN 'expense' THEN e.amount ELSE -e.amount END AS amount, e.memo
+     FROM entries e JOIN categories c ON c.id = e.category_id
+     WHERE c.report_line = 'estimated-tax' AND e.kind <> 'transfer' AND e.date > ? AND e.date <= ?
      ORDER BY e.date, e.id`, after, upTo);
   const hasCategory = !!one(db, "SELECT id FROM categories WHERE report_line = 'estimated-tax' AND is_archived = 0");
   return { payments, totalPaid: payments.reduce((s, x) => s + x.amount, 0), hasCategory };

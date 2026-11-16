@@ -727,4 +727,48 @@ export const migrations: string[] = [
     WHERE title = 'Invoice' AND (name = 'Standard' OR is_default = 1)
       AND (SELECT value FROM meta WHERE key = 'country') = 'AU';
   `,
+  // v26: refunds. An entry's kind is still which way the money went; one whose
+  // category is the other kind is a refund (money back from a supplier on an
+  // expense category, or back to a customer on an income one). The ledger
+  // reports it under its category's kind with negative amounts, the way a
+  // credit note already is, so it takes away from that category and its tax.
+  `
+  DROP VIEW ledger_cash;
+  DROP VIEW ledger_accrual;
+
+  CREATE VIEW ledger_cash AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, COALESCE(c.kind, e.kind) AS kind, e.category_id, e.contact_id,
+           CASE WHEN c.kind <> e.kind THEN -e.amount ELSE e.amount END AS gross,
+           CASE WHEN c.kind <> e.kind THEN -e.tax_amount ELSE e.tax_amount END AS tax, e.tax_code, e.memo
+    FROM entries e LEFT JOIN categories c ON c.id = e.category_id
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT e.id, l.invoice_id, e.date, l.kind, l.category_id, l.contact_id,
+           l.sign * (CAST(ROUND(1.0 * e.amount * l.cum_gross / l.doc_total) AS INTEGER)
+                   - CAST(ROUND(1.0 * e.amount * (l.cum_gross - l.net - l.tax) / l.doc_total) AS INTEGER)),
+           l.sign * (CAST(ROUND(1.0 * e.amount * l.cum_tax / l.doc_total) AS INTEGER)
+                   - CAST(ROUND(1.0 * e.amount * (l.cum_tax - l.tax) / l.doc_total) AS INTEGER)),
+           l.tax_code,
+           CASE l.doc_type WHEN 'bill' THEN 'Bill payment ' WHEN 'credit' THEN 'Refund for ' ELSE 'Payment for ' END || l.number
+    FROM entries e
+    JOIN doc_lines l ON l.invoice_id = e.invoice_id
+    WHERE l.doc_total > 0
+    UNION ALL
+    SELECT NULL, NULL, date, kind, category_id, NULL, gross, 0, 'NTR', memo FROM journal_amounts;
+
+  CREATE VIEW ledger_accrual AS
+    SELECT e.id AS entry_id, NULL AS invoice_id, e.date, COALESCE(c.kind, e.kind) AS kind, e.category_id, e.contact_id,
+           CASE WHEN c.kind <> e.kind THEN -e.amount ELSE e.amount END AS gross,
+           CASE WHEN c.kind <> e.kind THEN -e.tax_amount ELSE e.tax_amount END AS tax, e.tax_code, e.memo
+    FROM entries e LEFT JOIN categories c ON c.id = e.category_id
+    WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL
+    UNION ALL
+    SELECT NULL, l.invoice_id, l.issue_date, l.kind, l.category_id, l.contact_id,
+           l.sign * (l.net + l.tax), l.sign * l.tax, l.tax_code,
+           l.number || CASE WHEN l.description <> '' THEN ': ' || l.description ELSE '' END
+    FROM doc_lines l
+    WHERE l.doc_status = 'sent'
+    UNION ALL
+    SELECT NULL, NULL, date, kind, category_id, NULL, gross, 0, 'NTR', memo FROM journal_amounts;
+  `,
 ];

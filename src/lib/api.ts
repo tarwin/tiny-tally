@@ -154,6 +154,8 @@ export interface Entry {
   invoiceNumber: string | null;
   invoiceType: DocType | null;
   categoryClass: CategoryClass | null;
+  /** Money back on the category's other side: income on an expense category, or the reverse. */
+  refund: boolean;
   recId: number | null;
   toRecId: number | null;
   scheduleId: number | null;
@@ -173,6 +175,8 @@ export interface EntryInput {
   accountId: number;
   toAccountId?: number | null;
   categoryId?: number | null;
+  /** Income on an expense category (a supplier's refund), or an expense on an income one. */
+  refund?: boolean;
   contactId?: number | null;
   memo?: string | null;
   taxCode?: TaxCode | null;

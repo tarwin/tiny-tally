@@ -706,8 +706,11 @@ function taxLedgerRows(view: 'ledger_accrual' | 'ledger_cash', from: string, to:
 function gstByRate(from: string, to: string, booksRate: number) {
   const rows = all<{ kind: string; ratePpm: number; net: number; tax: number }>(getBooks().db,
     `SELECT kind, rate AS ratePpm, SUM(net) AS net, SUM(tax) AS tax FROM (
-       SELECT e.kind, COALESCE(e.tax_rate_ppm, ?1) AS rate, e.amount - e.tax_amount AS net, e.tax_amount AS tax
-       FROM entries e
+       -- A refund counts against its category's side.
+       SELECT COALESCE(c.kind, e.kind) AS kind, COALESCE(e.tax_rate_ppm, ?1) AS rate,
+              CASE WHEN c.kind <> e.kind THEN -1 ELSE 1 END * (e.amount - e.tax_amount) AS net,
+              CASE WHEN c.kind <> e.kind THEN -1 ELSE 1 END * e.tax_amount AS tax
+       FROM entries e LEFT JOIN categories c ON c.id = e.category_id
        WHERE e.kind <> 'transfer' AND e.invoice_id IS NULL AND e.tax_code = 'GST' AND e.date BETWEEN ?2 AND ?3
        UNION ALL
        SELECT d.kind, COALESCE(l.tax_rate_ppm, i.tax_rate_ppm, ?1), d.sign * d.net, d.sign * d.tax

@@ -259,7 +259,11 @@ function initTargets() {
 
   const cat: Record<string, string> = {};
   for (const c of b.categories) {
-    const same = categories.value.find((x) => x.kind === c.kind && !x.archived && x.name.toLowerCase() === c.name.toLowerCase());
+    const live = (x: Category) => x.kind === c.kind && !x.archived;
+    // A sub-category is "Parent › Child" here too; failing that, anything of its name.
+    const path = categoryPath(c).toLowerCase();
+    const same = categories.value.find((x) => live(x) && x.path.toLowerCase() === path)
+      ?? categories.value.find((x) => live(x) && x.name.toLowerCase() === c.name.toLowerCase());
     const qbType = qbTypes.value[c.key] ?? '';
     // Payments against receivables and payables are sales and purchases on the cash basis.
     // A file can have either kind on either: a refund paid out of receivables is money out.
@@ -290,6 +294,12 @@ function accountOptions(kind: string, name: string) {
       .map((a) => ({ label: a.name, value: `id:${a.id}`, description: a.kind === kind ? undefined : a.kind === 'credit_card' ? 'Credit card' : a.kind === 'cash' ? 'Cash' : 'Bank' })),
     { label: "Don't import", value: 'skip' },
   ];
+}
+
+/** "Parent › Child" for a sub-category in the file, the way the app shows them. */
+function categoryPath(c: ImportCategory) {
+  const parent = c.parent ? batch.value.categories.find((p) => p.key === c.parent) : undefined;
+  return parent ? `${parent.name} › ${c.name}` : c.name;
 }
 
 function categoryOptions(kind: 'income' | 'expense', name: string, cls: ImportCategory['class'] = 'pnl') {
@@ -755,17 +765,19 @@ const doneSummary = computed(() => {
               <p class="subdued Small Top">
                 Equity, loans, tax and asset accounts come across as categories that don't count towards profit.
                 Payments against receivables and payables count as sales and purchases.
+                Sub-accounts become sub-categories, and money back on an expense account, like a supplier's refund,
+                comes off that expense.
               </p>
               <div v-for="c in batch.categories" :key="c.key" class="MapRow">
                 <div class="MapRow__from">
-                  <div class="MapRow__name">{{ c.name }}</div>
+                  <div class="MapRow__name">{{ categoryPath(c) }}</div>
                   <div class="subdued Small">
-                    {{ c.kind === 'income' ? 'Money in' : 'Money out' }}
+                    {{ c.kind === 'income' ? 'Income' : 'Expense' }}
                     <template v-if="qbTypes[c.key]"> · {{ iif?.product === 'Reckon Accounts' ? 'Reckon' : 'QuickBooks' }} {{ IIF_TYPE_LABELS[qbTypes[c.key]] ?? qbTypes[c.key] }}</template>
                   </div>
                 </div>
                 <Icon icon="mdi:arrow-right" class="subdued" />
-                <Select v-model="categoryTargets[c.key]" :options="categoryOptions(c.kind, c.name, c.class)" searchable show-description class="MapRow__to" />
+                <Select v-model="categoryTargets[c.key]" :options="categoryOptions(c.kind, categoryPath(c), c.class)" searchable show-description class="MapRow__to" />
               </div>
             </CardSection>
           </Card>

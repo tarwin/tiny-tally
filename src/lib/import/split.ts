@@ -38,6 +38,11 @@ export interface SplitContext {
   addAccount(accnt: string): void;
   /** Returns the category key. */
   addCategory(accnt: string, kind: 'income' | 'expense'): string;
+  /**
+   * Whether the file says the account is income or expense. Money going the
+   * other way on it is then a refund, not a category of its own.
+   */
+  sideOf?(accnt: string): 'income' | 'expense' | null;
   ref(base: string): string;
   /** How to read a separate tax line whose share of each line isn't recorded. Default 'merge'. */
   taxMode?: TaxMode;
@@ -240,13 +245,15 @@ export function splitTransactions(txns: SplitTxn[], ctx: SplitContext) {
       const entry = (o: SplitLine, bank: SplitLine, amount: number, ref: string): ImportEntry => {
         // A line credited (negative) means money came in; debited means it went out.
         const kind: 'income' | 'expense' = o.amount < 0 ? 'income' : 'expense';
+        const side = ctx.sideOf?.(o.accnt) ?? kind;
         return {
           ref,
           date: t.date,
           kind,
           amount,
           accountKey: bank.accnt,
-          categoryKey: ctx.addCategory(o.accnt, kind),
+          categoryKey: ctx.addCategory(o.accnt, side),
+          ...(side === kind ? {} : { refund: true }),
           contactName: o.name || bank.name || undefined,
           memo: o.memo || bank.memo || t.memo || undefined,
           // A piece of a shared line carries its share of the line's tax.

@@ -171,8 +171,10 @@ export function estimatedTax(p: { year: number; today: string; project?: boolean
   // Payments made after last year's final due date and up to this year's count towards this year.
   const windowFrom = usTaxYear(year - 1).rules.estimatedDue[3];
   const payments = all<{ id: number; date: string; amount: number; memo: string | null }>(getBooks().db,
-    `SELECT e.id, e.date, e.amount, e.memo FROM entries e JOIN categories c ON c.id = e.category_id
-     WHERE c.report_line = 'estimated-tax' AND e.kind = 'expense' AND e.date > ? AND e.date <= ?
+    // A payment refunded comes off what's been paid.
+    `SELECT e.id, e.date, CASE e.kind WHEN 'expense' THEN e.amount ELSE -e.amount END AS amount, e.memo
+     FROM entries e JOIN categories c ON c.id = e.category_id
+     WHERE c.report_line = 'estimated-tax' AND e.kind <> 'transfer' AND e.date > ? AND e.date <= ?
      ORDER BY e.date, e.id`, windowFrom, rules.estimatedDue[3]);
   const totalPaid = payments.reduce((s, x) => s + x.amount, 0);
   const hasCategory = !!one(getBooks().db, "SELECT id FROM categories WHERE report_line = 'estimated-tax' AND is_archived = 0");

@@ -55,11 +55,16 @@ export function suggestCategories(names: string[]) {
   const out: Record<string, { categoryId: number; kind: 'income' | 'expense' }> = {};
   const byContact = db.prepare(
     `SELECT e.category_id AS categoryId, e.kind FROM entries e JOIN contacts c ON c.id = e.contact_id
-     WHERE c.name = ? COLLATE NOCASE AND e.category_id IS NOT NULL ORDER BY e.date DESC, e.id DESC LIMIT 1`,
+     WHERE c.name = ? COLLATE NOCASE AND e.category_id IS NOT NULL
+       -- A refund isn't how that payee is usually categorised.
+       AND e.kind = (SELECT kind FROM categories WHERE id = e.category_id)
+     ORDER BY e.date DESC, e.id DESC LIMIT 1`,
   );
   const byMemo = db.prepare(
-    `SELECT category_id AS categoryId, kind FROM entries
-     WHERE memo = ? COLLATE NOCASE AND category_id IS NOT NULL ORDER BY date DESC, id DESC LIMIT 1`,
+    `SELECT e.category_id AS categoryId, e.kind FROM entries e
+     WHERE e.memo = ? COLLATE NOCASE AND e.category_id IS NOT NULL
+       AND e.kind = (SELECT kind FROM categories WHERE id = e.category_id)
+     ORDER BY e.date DESC, e.id DESC LIMIT 1`,
   );
   try {
     for (const name of new Set(names.filter(Boolean).slice(0, 5000))) {
@@ -119,6 +124,7 @@ export function commitImport(plan: ImportPlan): ImportResult {
 
     // ---- categories ----
     const categoryIds = new Map<string, number>();
+    const batchCategory = new Map(batch.categories.map((c) => [c.key, c]));
     for (const c of batch.categories) {
       const target = plan.categories[c.key] ?? { create: true };
       if ('skip' in target) continue;
@@ -129,18 +135,35 @@ export function commitImport(plan: ImportPlan): ImportResult {
         categoryIds.set(c.key, target.existingId);
         continue;
       }
-      const name = c.name.trim() || 'Imported';
-      const same = one<{ id: number }>(db, 'SELECT id FROM categories WHERE kind = ? AND name = ? COLLATE NOCASE', c.kind, name);
+      const cls = c.class && ['pnl', 'tax', 'owner', 'loan', 'asset'].includes(c.class) ? c.class : 'pnl';
+      // A sub-category goes inside its parent, wherever that landed, if it can hold it:
+      // top level, and the same type.
+      const from = c.parent ? batchCategory.get(c.parent) : undefined;
+      const landed = from ? categoryIds.get(from.key) : undefined;
+      const parent = landed === undefined ? null
+        : one<{ id: number; name: string; kind: string; class: string; parent_id: number | null }>(db,
+            'SELECT id, name, kind, class, parent_id FROM categories WHERE id = ?', landed);
+      const under = parent && parent.parent_id === null && parent.kind === c.kind && parent.class === cls ? parent : null;
+      const leaf = c.name.trim() || 'Imported';
+      // Left at the top level, it keeps its parent's name so nothing is lost.
+      let name = from && !under ? `${from.name}: ${leaf}` : leaf;
+      const named = (n: string) =>
+        one<{ id: number; parent_id: number | null }>(db, 'SELECT id, parent_id FROM categories WHERE kind = ? AND name = ? COLLATE NOCASE', c.kind, n);
+      let same = named(name);
+      if (same && under && same.parent_id !== under.id) {
+        // The name's taken by a category somewhere else: tell this one apart by its parent.
+        name = `${leaf} (${under.name})`;
+        same = named(name);
+      }
       if (same) {
         categoryIds.set(c.key, same.id);
         continue;
       }
-      const cls = c.class && ['pnl', 'tax', 'owner', 'loan', 'asset'].includes(c.class) ? c.class : 'pnl';
       // Tax payments, owner's money and loans never carry GST; assets bought are capital purchases.
       const taxCode = !settings.taxEnabled ? null : OFF_BAS.includes(cls) ? 'NTR' : taxCodeOr(countryProfile(settings.country).tax, c.kind, cls === 'asset' ? 'CAP' : null);
       const id = one<{ id: number }>(db,
-        'INSERT INTO categories (name, kind, tax_code, class) VALUES (?, ?, ?, ?) RETURNING id',
-        name, c.kind, taxCode, cls)!.id;
+        'INSERT INTO categories (name, kind, tax_code, class, parent_id) VALUES (?, ?, ?, ?, ?) RETURNING id',
+        name, c.kind, taxCode, cls, under?.id ?? null)!.id;
       categoryIds.set(c.key, id);
       result.categoriesCreated++;
     }
@@ -236,6 +259,11 @@ export function commitImport(plan: ImportPlan): ImportResult {
 
     // ---- entries ----
     const dupe = db.prepare('SELECT 1 FROM entries WHERE account_id = ? AND import_ref = ?');
+    const kinds = new Map<number, 'income' | 'expense'>();
+    const kindOf = (id: number) => {
+      if (!kinds.has(id)) kinds.set(id, one<{ kind: 'income' | 'expense' }>(db, 'SELECT kind FROM categories WHERE id = ?', id)?.kind ?? 'expense');
+      return kinds.get(id)!;
+    };
     try {
       for (const e of batch.entries) {
         const accountId = accountIds.get(e.accountKey);
@@ -279,8 +307,12 @@ export function commitImport(plan: ImportPlan): ImportResult {
             continue;
           }
         }
+        // Money back on the other side (a supplier's refund on an expense category). Anywhere
+        // else, such as the catch-all category, it's just income or an expense.
+        const side = categoryId === null ? null : kindOf(categoryId);
+        const refund = !!e.refund && side !== null && side !== e.kind;
         const contactId = e.contactName && e.kind !== 'transfer'
-          ? ensureContact(e.contactName, e.kind === 'income' ? 'customer' : 'vendor')
+          ? ensureContact(e.contactName, (refund ? side : e.kind) === 'income' ? 'customer' : 'vendor')
           : null;
         try {
           const id = saveEntry({
@@ -290,6 +322,7 @@ export function commitImport(plan: ImportPlan): ImportResult {
             accountId,
             toAccountId,
             categoryId,
+            refund,
             contactId,
             memo: e.memo ?? null,
             ...(e.taxAmount === undefined ? {} : { taxCode: e.taxCode, taxAmount: e.taxAmount }),

@@ -705,6 +705,14 @@ export const api: Record<string, TinyApiHandler> = {
       if (parent.kind !== kind || parent.class !== klass) throw new Error(`“${parent.name}” is a different type of category, so this can't go inside it.`);
     }
     if (id) {
+      // Its transactions' kinds say which are refunds, so they'd all flip.
+      const was = one<{ kind: string }>(db, 'SELECT kind FROM categories WHERE id = ?', id);
+      if (was && was.kind !== kind && (
+        one(db, 'SELECT 1 FROM entries WHERE category_id = ? LIMIT 1', id)
+        || one(db, 'SELECT 1 FROM invoice_lines WHERE category_id = ? LIMIT 1', id)
+        || one(db, 'SELECT 1 FROM journal_lines WHERE category_id = ? LIMIT 1', id))) {
+        throw new Error(`This category has transactions, so it stays ${was.kind === 'income' ? 'an income' : 'an expense'} category. Make a new one instead.`);
+      }
       const children = all<{ class: string; kind: string }>(db, 'SELECT class, kind FROM categories WHERE parent_id = ?', id);
       if (children.length && parent) throw new Error('This category has sub-categories of its own, so it has to stay at the top level.');
       if (children.some((c) => c.class !== klass || c.kind !== kind)) throw new Error('Its sub-categories are a different type. Change or move them first.');

@@ -161,14 +161,27 @@ export function parseLedger(source: LedgerSource, order?: DateOrder, fallbackOrd
   const categories: ImportCategory[] = [];
   const categoryTypes: Record<string, string> = {};
   const catKeys = new Set<string>();
-  const addCategory = (name: string, kind: 'income' | 'expense') => {
+  /** Income or expense, when the account's type says so. */
+  const sideOf = (name: string) => {
+    const type = typeOf.get(name) ?? '';
+    return INCOME_TYPES.has(type) ? 'income' : EXPENSE_TYPES.has(type) ? 'expense' : null;
+  };
+  const classOf = (name: string) => classForQbType(typeOf.get(name) ?? '', name) ?? 'pnl';
+  const addCategory = (name: string, kind: 'income' | 'expense'): string => {
     const key = `${kind}:${name}`;
-    if (!catKeys.has(key)) {
-      catKeys.add(key);
-      const type = typeOf.get(name) ?? '';
-      categories.push({ key, name: prettyName(name), kind, class: classForQbType(type, name) ?? 'pnl' });
-      categoryTypes[key] = type;
+    if (catKeys.has(key)) return key;
+    catKeys.add(key);
+    const category: ImportCategory = { key, name: prettyName(name), kind, class: classOf(name) };
+    // "Parent:Child" goes inside its parent when they're the same type. Tiny
+    // Tally's go one level deep, so "A:B:C" is "B: C" inside "A".
+    const cut = name.indexOf(':');
+    const top = cut > 0 ? name.slice(0, cut) : '';
+    if (top && typeOf.has(top) && (sideOf(top) ?? kind) === kind && classOf(top) === category.class) {
+      category.parent = addCategory(top, kind);
+      category.name = prettyName(name.slice(cut + 1));
     }
+    categories.push(category);
+    categoryTypes[key] = typeOf.get(name) ?? '';
     return key;
   };
   for (const a of accnt) {
@@ -229,6 +242,7 @@ export function parseLedger(source: LedgerSource, order?: DateOrder, fallbackOrd
     isMoney,
     addAccount: moneyAccount,
     addCategory,
+    sideOf,
     ref: occurrenceRefs(),
     taxMode,
     isTaxAccount,

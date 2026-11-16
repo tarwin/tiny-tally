@@ -39,6 +39,8 @@ const form = ref({
   accountId: null as number | null,
   toAccountId: null as number | null,
   categoryId: null as number | null,
+  /** Money back: the category is on the other side (see `side`). */
+  refund: false,
   contactId: null as number | null,
   memo: '',
   taxCode: null as TaxCode | null,
@@ -61,6 +63,15 @@ const currency = computed(() => session.books?.currency ?? 'USD');
 const router = useRouter();
 const editing = computed(() => entryEditor.entry);
 const isTransfer = computed(() => form.value.kind === 'transfer');
+/**
+ * Which categories it goes on, and so its tax: the money's own side, or the
+ * other one for a refund (money back from a supplier comes off an expense).
+ */
+const side = computed<'income' | 'expense'>(() => {
+  const own = form.value.kind === 'income' ? 'income' : 'expense';
+  return form.value.refund && !isTransfer.value ? (own === 'income' ? 'expense' : 'income') : own;
+});
+const refundLabel = computed(() => (form.value.kind === 'income' ? 'Refund from a supplier' : 'Refund to a customer'));
 
 const kindOptions = [
   { label: 'Expense', value: 'expense', icon: 'mdi:arrow-up-bold-circle-outline' },
@@ -84,7 +95,7 @@ const toAccountOptions = computed(() => accountOptions.value.filter((o) => o.val
 
 const categoryOptions = computed(() =>
   usable(
-    categories.value.filter((c) => c.kind === form.value.kind),
+    categories.value.filter((c) => c.kind === side.value),
     [editing.value?.categoryId ?? null],
   ).map((c) => ({ label: c.path, value: c.id, description: c.class === 'pnl' ? undefined : CLASS_INFO[c.class].label })),
 );
@@ -97,11 +108,16 @@ const contactGroups = computed(() => {
   const opt = (c: Contact) => ({ label: c.name, value: c.id });
   const vendors = { title: 'Vendors', options: active.filter((c) => c.kind === 'vendor').map(opt) };
   const customers = { title: 'Customers', options: active.filter((c) => c.kind === 'customer').map(opt) };
-  const groups = form.value.kind === 'income' ? [customers, vendors] : [vendors, customers];
+  const groups = side.value === 'income' ? [customers, vendors] : [vendors, customers];
   return groups.filter((g) => g.options.length);
 });
 
 const labels = computed(() => {
+  if (form.value.refund && !isTransfer.value) {
+    return form.value.kind === 'income'
+      ? { account: 'Deposited to', contact: 'Refunded by', title: 'refund received' }
+      : { account: 'Paid from', contact: 'Refunded to', title: 'refund paid' };
+  }
   switch (form.value.kind) {
     case 'income':
       return { account: 'Deposited to', contact: 'Received from', title: 'income' };
@@ -114,7 +130,7 @@ const labels = computed(() => {
 
 // ---- tax ----------------------------------------------------------------------
 const tax = computed(() => booksTax());
-const taxKind = computed(() => (form.value.kind === 'income' ? 'income' : 'expense'));
+const taxKind = side;
 // US purchases carry no tax to claim, so there's nothing to pick.
 const taxOn = computed(
   () => !!tax.value && !isTransfer.value && !offBas.value && tracksTax(booksProfile().tax, taxKind.value),
@@ -128,7 +144,7 @@ const taxOptions = computed(() =>
 );
 // US sales can be at one of several rates (Settings → Other sales tax rates).
 const taxRates = ref<TaxRate[]>([]);
-const usSale = computed(() => session.books?.country === 'US' && form.value.kind === 'income' && taxOn.value);
+const usSale = computed(() => session.books?.country === 'US' && side.value === 'income' && taxOn.value);
 const rateOptions = computed(() => [
   { label: `${session.books?.taxRateName || 'Your rate'} (${ratePercent(session.books?.taxRatePpm ?? 0)}%)`, value: null },
   ...taxRates.value
@@ -188,14 +204,14 @@ const suggested = ref<{ pattern: string; categoryId: number; contactId: number |
 let ruleTimer: ReturnType<typeof setTimeout> | undefined;
 
 watch(
-  () => [form.value.memo, form.value.kind] as const,
+  () => [form.value.memo, isTransfer.value ? 'transfer' : side.value] as const,
   ([memo, kind]) => {
     clearTimeout(ruleTimer);
     if (kind === 'transfer' || editing.value) return;
     ruleTimer = setTimeout(async () => {
       const text = memo.trim();
       const match = text.length >= 2 ? (await api.matchRules([{ text, kind }]).catch(() => [null]))[0] : null;
-      if (form.value.memo.trim() !== text || form.value.kind !== kind) return;
+      if (form.value.memo.trim() !== text || isTransfer.value || side.value !== kind) return;
       const prev = suggested.value;
       const ours = (field: 'categoryId' | 'contactId') => form.value[field] === null || (!!prev && form.value[field] === prev[field]);
       if (!match) {
@@ -263,6 +279,7 @@ function reset() {
       accountId: e.accountId,
       toAccountId: e.toAccountId,
       categoryId: e.categoryId,
+      refund: !!e.refund,
       contactId: e.contactId,
       memo: e.memo ?? '',
       taxCode: e.taxCode,
@@ -285,6 +302,7 @@ function reset() {
     accountId: entryEditor.accountId ?? defaultAccount(kind),
     toAccountId: entryEditor.toAccountId,
     categoryId: draft?.categoryId ?? null,
+    refund: false,
     contactId: null,
     memo: draft?.memo ?? '',
     taxCode: null,
@@ -310,13 +328,17 @@ watch(
   () => form.value.kind,
   (kind, prev) => {
     if (kind === prev) return;
-    const cat = categories.value.find((c) => c.id === form.value.categoryId);
-    if (cat && cat.kind !== kind) form.value.categoryId = null;
     if (kind !== 'transfer') form.value.toAccountId = null;
-    if (kind === 'transfer') form.value.categoryId = null;
+    if (kind === 'transfer') (form.value.categoryId = null), (form.value.refund = false);
     errors.value = {};
   },
 );
+// A category on the wrong side for what it now is can't stay.
+watch(side, (now, prev) => {
+  if (now === prev) return;
+  const cat = categories.value.find((c) => c.id === form.value.categoryId);
+  if (cat && cat.kind !== now) form.value.categoryId = null;
+});
 
 watch(
   () => form.value.accountId,
@@ -368,6 +390,7 @@ async function save(andNew = false) {
       accountId: f.accountId!,
       toAccountId: isTransfer.value ? f.toAccountId : null,
       categoryId: isTransfer.value ? null : f.categoryId,
+      refund: !isTransfer.value && f.refund,
       contactId: isTransfer.value ? null : f.contactId,
       memo: f.memo,
       ...(taxOn.value
@@ -401,6 +424,7 @@ async function save(andNew = false) {
           accountId: f.accountId,
           toAccountId: isTransfer.value ? f.toAccountId : null,
           categoryId: isTransfer.value ? null : f.categoryId,
+          refund: !isTransfer.value && f.refund,
           contactId: isTransfer.value ? null : f.contactId,
           memo: f.memo || null,
           ...(taxOn.value ? { taxCode: f.taxCode } : {}),
@@ -459,7 +483,7 @@ async function addContact() {
   const name = newContact.value?.name.trim();
   if (!name) return;
   try {
-    const id = await api.saveContact({ name, kind: form.value.kind === 'income' ? 'customer' : 'vendor' });
+    const id = await api.saveContact({ name, kind: side.value === 'income' ? 'customer' : 'vendor' });
     contacts.value = await api.listContacts();
     form.value.contactId = id;
     newContact.value = null;
@@ -484,6 +508,12 @@ async function addContact() {
     <ModalSection>
       <FormLayout>
         <SegmentedControl v-model="form.kind" :options="kindOptions" full-width />
+        <ToggleSwitch
+          v-if="!isTransfer"
+          v-model="form.refund"
+          :label="refundLabel"
+          :help-text="form.refund ? `Comes off the ${side} category you pick${taxOn ? `, and off its ${tax?.short}` : ''}.` : ''"
+        />
 
         <FormLayoutGroup>
           <TextField
@@ -521,7 +551,7 @@ async function addContact() {
           <Select
             v-else
             v-model="form.categoryId"
-            label="Category"
+            :label="form.refund ? `${side === 'income' ? 'Income' : 'Expense'} category` : 'Category'"
             :options="categoryOptions"
             searchable
             show-description
@@ -562,7 +592,7 @@ async function addContact() {
           <div v-if="newContact" class="Contact__new">
             <TextField
               v-model="newContact.name"
-              :label="`New ${form.kind === 'income' ? 'customer' : 'vendor'}`"
+              :label="`New ${side === 'income' ? 'customer' : 'vendor'}`"
               placeholder="Name"
               @keydown.enter.prevent="addContact"
             />
@@ -584,7 +614,7 @@ async function addContact() {
         </div>
 
         <p v-if="offBas && category" class="subdued OffBas">
-          {{ CLASS_INFO[category.class].label }}: not counted as {{ form.kind === 'income' ? 'income' : 'an expense' }} and left off the BAS.
+          {{ CLASS_INFO[category.class].label }}: not counted as {{ side === 'income' ? 'income' : 'an expense' }} and left off the BAS.
         </p>
 
         <TextField v-model="form.memo" label="Description (optional)" placeholder="What was it for?" @keydown.enter="save(false)" />

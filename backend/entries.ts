@@ -20,6 +20,12 @@ export interface EntryInput {
   accountId: number;
   toAccountId?: number | null;
   categoryId?: number | null;
+  /**
+   * Money back on the other side: income with an expense category (a supplier
+   * refunded you) or an expense with an income category (you refunded a
+   * customer). It takes away from that category and its tax.
+   */
+  refund?: boolean;
   contactId?: number | null;
   memo?: string | null;
   /** Defaults to the category's code. */
@@ -61,7 +67,7 @@ const SELECT_COLUMNS = `
   e.contact_id AS contactId, ct.name AS contactName,
   e.tax_code AS taxCode, e.tax_amount AS taxAmount, e.tax_rate_id AS taxRateId, e.tax_rate_ppm AS taxRatePpm,
   e.invoice_id AS invoiceId, inv.number AS invoiceNumber, inv.doc_type AS invoiceType,
-  c.class AS categoryClass, e.rec_id AS recId, e.to_rec_id AS toRecId, e.schedule_id AS scheduleId,
+  c.class AS categoryClass, (c.kind IS NOT NULL AND c.kind <> e.kind) AS refund, e.rec_id AS recId, e.to_rec_id AS toRecId, e.schedule_id AS scheduleId,
   (SELECT COUNT(*) FROM attachments x WHERE x.entry_id = e.id) AS attachments, e.updated_at AS updatedAt`;
 
 const JOINS = `
@@ -117,6 +123,8 @@ function filters(q: EntryQuery, col = TABLE_COLS) {
   return { where, args };
 }
 
+const withRefund = (r: any) => ({ ...r, refund: !!r.refund });
+
 export function listEntries(q: EntryQuery) {
   const { db } = getBooks();
   const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
@@ -152,7 +160,7 @@ export function listEntries(q: EntryQuery) {
          COALESCE(SUM(CASE WHEN signed > 0 THEN signed END), 0) AS inflow,
          COALESCE(SUM(CASE WHEN signed < 0 THEN -signed END), 0) AS outflow
        FROM bal ${whereSql}`, ...head, ...args)!;
-    return { rows, total: agg.total, inflow: agg.inflow, outflow: agg.outflow };
+    return { rows: rows.map(withRefund), total: agg.total, inflow: agg.inflow, outflow: agg.outflow };
   }
 
   const rows = all(db,
@@ -165,7 +173,7 @@ export function listEntries(q: EntryQuery) {
        COALESCE(SUM(CASE WHEN e.kind = 'income' THEN e.amount END), 0) AS inflow,
        COALESCE(SUM(CASE WHEN e.kind = 'expense' THEN e.amount END), 0) AS outflow
      FROM entries e ${JOINS} ${whereSql}`, ...args)!;
-  return { rows, total: agg.total, inflow: agg.inflow, outflow: agg.outflow };
+  return { rows: rows.map(withRefund), total: agg.total, inflow: agg.inflow, outflow: agg.outflow };
 }
 
 function requireRow(table: string, id: unknown, what: string) {
@@ -222,7 +230,12 @@ export function saveEntry(input: EntryInput) {
     toAccountId = to.id;
   } else {
     const cat = requireRow('categories', input.categoryId, 'a category');
-    if (cat.kind !== kind) throw new Error(`“${cat.name}” is an ${cat.kind} category.`);
+    // The category's side, which sets its tax: a refund is on the other side to the money.
+    const side: 'income' | 'expense' = cat.kind;
+    if (!input.refund && side !== kind) throw new Error(`“${cat.name}” is an ${side} category.`);
+    if (input.refund && side === kind) {
+      throw new Error(kind === 'income' ? 'Money back from a supplier goes on an expense category.' : 'Money back to a customer goes on an income category.');
+    }
     if (cat.is_archived && existing?.category_id !== cat.id) {
       throw new Error(`“${cat.name}” is archived. Restore it or pick another category.`);
     }
@@ -230,7 +243,7 @@ export function saveEntry(input: EntryInput) {
     // Tax payments, owner's money and loans are never on the BAS.
     if (settings.taxEnabled && OFF_BAS.includes(cat.class)) taxCode = 'NTR';
     else if (settings.taxEnabled) {
-      const code = taxCodeOr(countryProfile(settings.country).tax, kind, isTaxCode(input.taxCode) ? input.taxCode : cat.tax_code) ?? 'NTR';
+      const code = taxCodeOr(countryProfile(settings.country).tax, side, isTaxCode(input.taxCode) ? input.taxCode : cat.tax_code) ?? 'NTR';
       taxCode = code;
       const override = input.taxAmount;
       // India, Canada and the UK: each transaction has its own rate.
@@ -242,10 +255,10 @@ export function saveEntry(input: EntryInput) {
         if (taxAmount < 0 || taxAmount > amount) throw new Error("Tax can't be more than the amount.");
       } else {
         // US sales can be at one of several rates; everything else is at the books' rate.
-        const rate = settings.country === 'US' && kind === 'income' ? resolveTaxRate(input.taxRateId ?? null) : { id: null, ppm: settings.taxRatePpm };
+        const rate = settings.country === 'US' && side === 'income' ? resolveTaxRate(input.taxRateId ?? null) : { id: null, ppm: settings.taxRatePpm };
         taxAmount = taxFromInclusive(amount, code, taxRatePpm ?? rate.ppm);
       }
-      if (settings.country === 'US' && kind === 'income' && TAX_CODE_MAP[code].taxable) taxRateId = resolveTaxRate(input.taxRateId ?? null).id;
+      if (settings.country === 'US' && side === 'income' && TAX_CODE_MAP[code].taxable) taxRateId = resolveTaxRate(input.taxRateId ?? null).id;
     }
   }
 

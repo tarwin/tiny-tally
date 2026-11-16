@@ -23,6 +23,11 @@ export interface ImportCategory {
   kind: 'income' | 'expense';
   /** Default 'pnl'. */
   class?: ImportCategoryClass;
+  /**
+   * A sub-category: its parent's key, earlier in the batch. `name` is then its
+   * own part only ("Meals" in "Travel: Meals").
+   */
+  parent?: string;
 }
 
 export interface ImportContact {
@@ -45,6 +50,8 @@ export interface ImportEntry {
   /** Category key from the batch, or an existing category id chosen in the review step. */
   categoryKey?: string;
   categoryId?: number;
+  /** Money back on the category's other side: income on an expense category, or the reverse. */
+  refund?: boolean;
   contactName?: string;
   memo?: string;
   /** The tax the source recorded, so it isn't worked out again from the category. */

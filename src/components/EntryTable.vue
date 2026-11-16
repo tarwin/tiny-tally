@@ -61,6 +61,7 @@ function category(e: Entry) {
     const word = e.invoiceType === 'bill' ? 'Bill payment' : e.invoiceType === 'credit' ? 'Refund' : 'Payment';
     return `${word} · ${e.invoiceNumber}`;
   }
+  if (e.refund) return `Refund · ${e.categoryName}`;
   if (e.kind !== 'transfer') return e.categoryName ?? 'Uncategorised';
   if (!props.accountId) return `${e.accountName} → ${e.toAccountName}`;
   return e.toAccountId === props.accountId ? `From ${e.accountName}` : `To ${e.toAccountName}`;
