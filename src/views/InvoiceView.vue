@@ -587,7 +587,6 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
       :loading="savingPayment"
       :primary-action="{ label: payWords.action, onAction: savePayment }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (paying = false) }]"
-      overflow-visible
       @close="paying = false"
     >
       <ModalSection>
@@ -632,7 +631,6 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
       :title="invoice?.docType === 'credit' ? 'Use credit on an invoice' : 'Apply a credit note'"
       :primary-action="{ label: 'Apply credit', onAction: saveApply }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (applying = false) }]"
-      overflow-visible
       @close="applying = false"
     >
       <ModalSection>

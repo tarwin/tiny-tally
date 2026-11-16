@@ -502,7 +502,6 @@ async function addContact() {
     :secondary-actions="editing ? [{ label: 'Cancel', onAction: close }] : [{ label: 'Save & new', onAction: () => save(true) }]"
     :tertiary-actions="editing ? [{ label: 'Delete', type: 'destructive', onAction: remove }, { label: 'History', onAction: showHistory }] : []"
     :dialog-style="{ width: '560px' }"
-    overflow-visible
     @close="close"
   >
     <ModalSection>

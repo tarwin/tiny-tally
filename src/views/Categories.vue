@@ -117,16 +117,15 @@ const form = ref({
 
 /** Top-level categories of the same side and type; one with sub-categories of its own stays top level. */
 const hasChildren = computed(() => !!form.value.id && categories.value.some((c) => c.parentId === form.value.id));
-const parentOptions = computed(() => [
-  { label: 'Nothing (top level)', value: null },
-  ...categories.value
+const parentOptions = computed(() =>
+  categories.value
     .filter((c) => c.kind === form.value.kind && c.class === form.value.class && !c.parentId && c.id !== form.value.id)
     .filter((c) => !c.archived || c.id === form.value.parentId)
     .map((c) => ({ label: c.name, value: c.id })),
-]);
+);
 // Changing side or type can leave the chosen parent no longer fitting.
 watch(parentOptions, (opts) => {
-  if (!opts.some((o) => o.value === form.value.parentId)) form.value.parentId = null;
+  if (form.value.parentId !== null && !opts.some((o) => o.value === form.value.parentId)) form.value.parentId = null;
 });
 const offBas = computed(() => CLASS_INFO[form.value.class].offBas);
 const nameError = ref<string | null>(null);
@@ -192,6 +191,7 @@ const maxHeight = useFillHeight(tableBox);
         :rows="rows"
         :loading="loading"
         empty-text="No categories here yet."
+        @dblclick-row="(row: Category) => openEditor(row)"
         :row-actions="(row: Category) => [
           { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => openEditor(row) },
           row.archived
@@ -211,7 +211,6 @@ const maxHeight = useFillHeight(tableBox);
       :loading="saving"
       :primary-action="{ label: form.id ? 'Save' : 'Add category', onAction: save }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (editing = false) }]"
-      overflow-visible
       @close="editing = false"
     >
       <ModalSection>
@@ -237,6 +236,8 @@ const maxHeight = useFillHeight(tableBox);
             v-model="form.parentId"
             label="Inside (optional)"
             :options="parentOptions"
+            clearable
+            placeholder="Nothing (top level)"
             help-text="Make it a sub-category. Reports show it under the parent, and the parent's total includes it."
           />
           <p v-else class="subdued Hint">Has sub-categories, so it stays at the top level.</p>

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@octans/ui':
-        specifier: ^1.12.0
-        version: 1.12.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(rollup@4.67.3)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))
+        specifier: ^1.14.0
+        version: 1.14.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(rollup@4.67.3)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))
       vue:
         specifier: ^3.5.44
         version: 3.5.44(typescript@6.0.3)
@@ -376,8 +376,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@octans/ui@1.12.0':
-    resolution: {integrity: sha512-XINnF+0zEPseWpK/E/umUJvhLXKieAuo1F3v6mi+VZvKdJa1UBZF3tS939FUr7hNeacMw/YATcrBY/VKwWav5Q==}
+  '@octans/ui@1.14.0':
+    resolution: {integrity: sha512-J+XB3mProbgG4HvTImfSOtp5khlkpCTVZkGS+6a5bj3I/N75fe+UDEtFbaZIdiB7s7aryf4cqBjIlhA3xuqtiA==}
     engines: {node: '>=24'}
     hasBin: true
     peerDependencies:
@@ -1736,7 +1736,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@octans/ui@1.12.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(rollup@4.67.3)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))':
+  '@octans/ui@1.14.0(vue-router@5.4.0(@vue/compiler-sfc@3.5.44)(rolldown@1.2.15)(rollup@4.67.3)(vite@8.3.5(@types/node@24.19.2))(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@iconify/vue': 5.0.5(vue@3.5.44(typescript@6.0.3))

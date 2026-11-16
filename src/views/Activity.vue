@@ -270,7 +270,6 @@ const subtitle = computed(() => {
       :loading="archiveBusy"
       :primary-action="{ label: 'Archive', onAction: doArchive }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (archiving = false) }]"
-      overflow-visible
       @close="archiving = false"
     >
       <ModalSection>

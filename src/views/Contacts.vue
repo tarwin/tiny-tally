@@ -204,6 +204,7 @@ const maxHeight = useFillHeight(tableBox);
         :rows="rows"
         :loading="loading"
         empty-text="No contacts yet. Add one here, or while recording a transaction."
+        @dblclick-row="(row: Contact) => openEditor(row)"
         :row-actions="(row: Contact) => [
           { label: 'Edit', icon: 'mdi:pencil-outline', onAction: () => openEditor(row) },
           { label: 'Statement', icon: 'mdi:file-document-multiple-outline', onAction: () => router.push(`/contacts/${row.id}/statement`) },

@@ -608,7 +608,6 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
       :title="refund ? `Refund from ${form.authority}` : `Pay ${form.authority}`"
       :primary-action="{ label: refund ? 'Record refund' : 'Record payment', onAction: savePay }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (paying = false) }]"
-      overflow-visible
       @close="paying = false"
     >
       <ModalSection>
@@ -624,7 +623,6 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
       :title="adjustIndex === null ? 'Add a GST adjustment' : 'Edit GST adjustment'"
       :primary-action="{ label: adjustIndex === null ? 'Add' : 'Save', onAction: saveAdjustment }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (adjusting = false) }]"
-      overflow-visible
       @close="adjusting = false"
     >
       <ModalSection>

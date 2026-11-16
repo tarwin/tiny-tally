@@ -239,7 +239,6 @@ const maxHeight = useFillHeight(tableBox);
           : []
       "
       :dialog-style="{ width: '860px' }"
-      overflow-visible
       @close="visible = false"
     >
       <ModalSection>

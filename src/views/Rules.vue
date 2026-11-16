@@ -102,7 +102,6 @@ const maxHeight = useFillHeight(tableBox);
       :title="form.id ? 'Edit rule' : 'Add rule'"
       :primary-action="{ label: 'Save', onAction: save }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (editing = false) }]"
-      overflow-visible
       @close="editing = false"
     >
       <ModalSection>

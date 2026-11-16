@@ -80,7 +80,6 @@ async function save() {
     :loading="saving"
     :primary-action="{ label: schedule ? 'Save' : 'Make recurring', onAction: save }"
     :secondary-actions="[{ label: 'Cancel', onAction: () => emit('close') }]"
-    overflow-visible
     @close="emit('close')"
   >
     <ModalSection>
