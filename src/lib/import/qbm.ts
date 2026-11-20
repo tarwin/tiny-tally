@@ -246,6 +246,16 @@ const ACCOUNT_TYPES = ['BANK', 'AR', 'OCASSET', 'FIXASSET', 'OASSET', 'AP', 'CCA
 /** Audit history, and forms that never post to the books. */
 const NOT_POSTED = /^abmc_(audit|estimate|purchase_order|sales_order)_/;
 
+/**
+ * Reckon codes that belong to one side only, and the code meant on the other.
+ * A purchase coded GST (a sales code) is left off Reckon's BAS, though the
+ * GST on it is real; the same goes the other way round.
+ */
+const SALES_ONLY: Record<string, string> = { GST: 'NCG', EXP: 'NCF', INP: 'NCI', WGST: 'NCG' };
+const PURCHASES_ONLY: Record<string, string> = { NCG: 'GST', NCF: 'FRE', CAG: 'GST', CAF: 'FRE', NCI: 'INP', CAI: 'INP' };
+const SALES_ACCOUNTS = new Set(['INC', 'EXINC']);
+const PURCHASE_ACCOUNTS = new Set(['EXP', 'COGS', 'EXEXP']);
+
 /** Reckon's Australian tax codes, in Tiny Tally's terms. */
 const TAX_CODE_NAMES: Record<string, string> = {
   GST: 'GST', NCG: 'GST', ADJ: 'GST', WGST: 'GST', CDG: 'GST',
@@ -448,6 +458,32 @@ export function parseQbm(bytes: Uint8Array, taxMode: TaxMode = 'merge'): IifPars
     allocations.set(link.transaction_id, to);
   }
   const typeOfAccount = (id: string) => ACCOUNT_TYPES[Number(accountById.get(id)?.type || 0)];
+  // ---- tax codes on the wrong side ----
+  const codeMismatches: NonNullable<IifParse['codeMismatches']> = [];
+  for (const t of txns.values()) {
+    for (const l of t.lines) {
+      if (!l.account_id || l.is_source_bool === '1' || l.is_trans_tax_bool === '1') continue;
+      const type = typeOfAccount(l.account_id);
+      const side = SALES_ACCOUNTS.has(type) ? 'sale' : PURCHASE_ACCOUNTS.has(type) ? 'purchase' : null;
+      const code = taxCodeNames.get(l.tax_code_id || l.sales_tax_code_id) ?? '';
+      const expected = side === 'purchase' ? SALES_ONLY[code] : side === 'sale' ? PURCHASES_ONLY[code] : undefined;
+      if (!side || !expected) continue;
+      const tax = Math.abs(money(l.tax_amount_amt));
+      codeMismatches.push({
+        date: t.date,
+        side,
+        code,
+        expected,
+        account: fullName(l.account_id),
+        who: nameOf(l) || nameOf(t.head),
+        memo: l.memo || t.head?.memo || '',
+        amount: Math.abs(money(l.gross_amount_amt)) || Math.abs(money(l.amount_amt)) + tax,
+        tax,
+      });
+    }
+  }
+  codeMismatches.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
   const payments: NonNullable<LedgerSource['payments']> = [];
   /** What's left of a payment after its documents, by transaction: all of it unless allocated. */
   const unallocated = new Map<string, number>();
@@ -527,6 +563,7 @@ export function parseQbm(bytes: Uint8Array, taxMode: TaxMode = 'merge'): IifPars
     taxMode,
   );
   result.source = 'qbm';
+  if (codeMismatches.length) result.codeMismatches = codeMismatches;
   if (notDocuments) result.skipped.push({ reason: 'Invoices, bills or credit notes with nothing to bring across, such as a zero total', count: notDocuments });
   if (unreadable) result.skipped.push({ reason: 'Inventory lines Tiny Tally can’t read yet', count: unreadable });
   if (offBalance) result.skipped.push({ reason: 'Accounts whose transactions don’t add up to the balance in the file. Some may be missing, so check them after importing.', count: offBalance });

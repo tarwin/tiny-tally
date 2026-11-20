@@ -85,7 +85,7 @@ const load = (table: string, file: string, columns: string[]) =>
 const LINE = ['transaction_id', 'transaction_date', 'account_id', 'amount_amt', 'tax_amount_amt', 'tax_code_id', 'is_trans_tax_bool', 'is_source_bool', 'vendor_id', 'customer_id', 'memo'];
 
 /** A $110 purchase with $10 GST, and a $110 invoice with $10 GST that $66 has been paid on. */
-function company(balance = '-44.00') {
+function company(balance = '-44.00', purchaseCode = '12') {
   const sql = [
     load('abmc_account_user', '1.dat', ['account_id', 'name', 'parent_id', 'type']),
     load('abmc_account_internal', '2.dat', ['account_id', 'ending_balance_amt']),
@@ -111,7 +111,7 @@ function company(balance = '-44.00') {
     '4.dat': "7,,'a@example.com','02 1234','1 Long''s St'\r\n",
     '5.dat': [
       "9,'2026-02-03 00:00',1,-110.00,,,0,1,7,,",
-      "9,'2026-02-03 00:00',3,100,10,12,0,0,7,,'Paper'",
+      `9,'2026-02-03 00:00',3,100,10,${purchaseCode},0,0,7,,'Paper'`,
       "9,'2026-02-03 00:00',4,10,,,1,0,7,,",
     ].join('\r\n') + '\r\n',
     '6.dat': "9,'Receipt 45',0\r\n",
@@ -290,6 +290,17 @@ test('with tax off, documents and entries are simply what was charged', async ()
     assert.deepEqual([inv.net, inv.tax, inv.total], [11000, 0, 11000]);
   });
   books.close();
+});
+
+test('tax codes on the wrong side are pointed out', () => {
+  assert.equal(parseQbm(company()).codeMismatches, undefined);
+  // The $110 of paper coded GST, Reckon's sales code, where a purchase takes NCG.
+  const p = parseQbm(company('-44.00', '9'));
+  assert.deepEqual(p.codeMismatches, [{
+    date: '2026-02-03', side: 'purchase', code: 'GST', expected: 'NCG', account: 'Office:Paper', who: 'Officeworks – City', memo: 'Paper', amount: 11000, tax: 1000,
+  }]);
+  // It still comes across, with its GST.
+  assert.equal(p.entries[0].taxAmount, 1000);
 });
 
 test('lines that disagree with the stored balance are reported, not hidden', () => {

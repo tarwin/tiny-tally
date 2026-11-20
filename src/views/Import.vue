@@ -218,6 +218,25 @@ const taxReview = computed(() => {
   const r = parsed.value?.taxReview;
   return r && r.inferred && r.fit < 0.9 ? r : null;
 });
+/**
+ * Lines whose tax code is for the other side (a purchase coded GST rather
+ * than NCG): Reckon's BAS leaves them out, Tiny Tally counts their GST.
+ * Newest first, since those are the returns still being worked on.
+ */
+const codeMismatches = computed(() => [...(parsed.value?.codeMismatches ?? [])].reverse());
+const showAllMismatches = ref(false);
+const mismatchesShown = computed(() => (showAllMismatches.value ? codeMismatches.value : codeMismatches.value.slice(0, 8)));
+const mismatchSummary = computed(() => {
+  const list = codeMismatches.value;
+  const purchases = list.filter((m) => m.side === 'purchase').length;
+  const sales = list.length - purchases;
+  const parts = [
+    purchases && `${purchases} purchase${purchases === 1 ? ' has' : 's have'} a sales tax code (such as GST where a purchase takes NCG)`,
+    sales && `${sales} sale${sales === 1 ? ' has' : 's have'} a purchase tax code (such as NCG where a sale takes GST)`,
+  ].filter(Boolean);
+  return `${parts.join(', and ')}.`;
+});
+
 /** Double-entry sources: categories come from the file, not payee groups. */
 const ledgerFile = computed(() => format.value === 'iif' || format.value === 'qbm' || format.value === 'qbo');
 const iif = computed(() => (parsed.value && 'hasTransactions' in parsed.value ? parsed.value : null));
@@ -765,6 +784,39 @@ const clearedSummary = computed(() => {
             </CardSection>
           </Card>
 
+          <Card v-if="codeMismatches.length" :title="`Tax codes to check (${codeMismatches.length})`">
+            <CardSection>
+              <Banner status="warning">
+                {{ mismatchSummary }}
+                {{ iif?.product ?? 'QuickBooks' }} leaves these off its BAS. Tiny Tally goes by the GST on them, so its BAS will differ for the periods they're in.
+                To make them match, change the codes in {{ iif?.product ?? 'QuickBooks' }} and import the file again.
+              </Banner>
+              <table class="Mismatches">
+                <thead>
+                  <tr><th>Date</th><th>Account</th><th>Who / memo</th><th class="num">Amount</th><th>Code</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(m, i) in mismatchesShown" :key="i">
+                    <td class="Nowrap">{{ formatShortDay(m.date) }}</td>
+                    <td>{{ m.account }}</td>
+                    <td>
+                      {{ m.who }}<span v-if="m.who && m.memo" class="subdued"> · </span><span class="subdued">{{ m.memo }}</span>
+                    </td>
+                    <td class="num money Nowrap">
+                      {{ money(m.amount) }}<span v-if="m.tax" class="subdued Small"><br />{{ money(m.tax) }} GST</span>
+                    </td>
+                    <td class="Nowrap">
+                      {{ m.code }} <span class="subdued Small">({{ m.side }}: usually {{ m.expected }})</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <Button v-if="codeMismatches.length > 8" type="plain" @click="showAllMismatches = !showAllMismatches">
+                {{ showAllMismatches ? 'Show fewer' : `Show all ${codeMismatches.length}` }}
+              </Button>
+            </CardSection>
+          </Card>
+
           <!-- Accounts -->
           <Card v-if="batch.accounts.length && !(format === 'csv' && csvMode !== 'bank')" title="Accounts">
             <CardSection>
@@ -968,6 +1020,31 @@ const clearedSummary = computed(() => {
 </template>
 
 <style scoped>
+.Mismatches {
+  width: 100%;
+  margin: 12px 0 4px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.Mismatches th {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--octans-border);
+  color: var(--octans-text-subdued);
+  font-weight: 600;
+  text-align: left;
+}
+
+.Mismatches td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--octans-border);
+  vertical-align: top;
+}
+
+.Mismatches .num {
+  text-align: right;
+}
+
 .CleanHelp {
   margin: 6px 0 8px;
 }

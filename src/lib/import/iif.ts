@@ -59,6 +59,27 @@ export interface IifParse extends ImportBatch {
   /** The program that wrote the file, for the review screen. */
   product: 'Reckon Accounts' | 'QuickBooks Desktop';
   taxReview: TaxReview;
+  /**
+   * Lines whose tax code is for the other side: a purchase with a sales code
+   * (GST rather than NCG) or a sale with a purchase code. Tiny Tally counts
+   * them by the GST on them; Reckon's BAS leaves them out, so the two differ.
+   */
+  codeMismatches?: CodeMismatch[];
+}
+
+export interface CodeMismatch {
+  date: string;
+  side: 'purchase' | 'sale';
+  /** The code as the file has it: 'GST', 'NCG'. */
+  code: string;
+  /** The code it would normally be ('NCG' for a purchase with GST). */
+  expected: string;
+  account: string;
+  who: string;
+  memo: string;
+  /** Including tax, in cents. */
+  amount: number;
+  tax: number;
 }
 
 /** Lists that mean nothing to Tiny Tally, so there's no point reporting them as left out. */
