@@ -28,6 +28,7 @@ import {
   type ImportTarget,
 } from '../lib/api';
 import { backupBooks } from '../lib/books';
+import { csvMoney, saveCsv } from '../lib/csv';
 import { CLASS_INFO } from '../lib/categoryClass';
 
 import { formatShortDay } from '../lib/dates';
@@ -226,6 +227,14 @@ const taxReview = computed(() => {
 const codeMismatches = computed(() => [...((parsed.value && 'codeMismatches' in parsed.value && parsed.value.codeMismatches) || [])].reverse());
 const showAllMismatches = ref(false);
 const mismatchesShown = computed(() => (showAllMismatches.value ? codeMismatches.value : codeMismatches.value.slice(0, 8)));
+/** Every flagged line, oldest first, to work through in QuickBooks or Reckon. */
+function exportMismatches() {
+  void saveCsv(`Tax codes to check - ${fileName.value.replace(/\.[^.]+$/, '')}`, [
+    ['Date', 'Purchase or sale', 'Account', 'Who', 'Memo', 'Amount', 'GST', 'Tax code', 'Usually'],
+    ...[...codeMismatches.value].reverse().map((m) => [m.date, m.side, m.account, m.who, m.memo, csvMoney(m.amount), csvMoney(m.tax), m.code, m.expected]),
+  ]);
+}
+
 const mismatchSummary = computed(() => {
   const list = codeMismatches.value;
   const purchases = list.filter((m) => m.side === 'purchase').length;
@@ -811,9 +820,12 @@ const clearedSummary = computed(() => {
                   </tr>
                 </tbody>
               </table>
-              <Button v-if="codeMismatches.length > 8" type="plain" @click="showAllMismatches = !showAllMismatches">
-                {{ showAllMismatches ? 'Show fewer' : `Show all ${codeMismatches.length}` }}
-              </Button>
+              <div class="MismatchActions">
+                <Button v-if="codeMismatches.length > 8" size="small" @click="showAllMismatches = !showAllMismatches">
+                  {{ showAllMismatches ? 'Show the latest 8' : `Show all ${codeMismatches.length}` }}
+                </Button>
+                <Button size="small" icon="mdi:file-delimited-outline" @click="exportMismatches">Export CSV</Button>
+              </div>
             </CardSection>
           </Card>
 
@@ -1039,6 +1051,11 @@ const clearedSummary = computed(() => {
   padding: 5px 6px;
   border-bottom: 1px solid var(--octans-border);
   vertical-align: top;
+}
+
+.MismatchActions {
+  display: flex;
+  gap: 8px;
 }
 
 .Mismatches .num {
