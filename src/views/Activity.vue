@@ -4,7 +4,7 @@
 // document (?table=…&id=…), and archived history (.tallylog files).
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Banner, Button, Card, CardSection, DatePicker, Icon, Modal, ModalSection, Page, Spinner, toast } from '@octans/ui';
+import { Banner, Button, Card, CardSection, DatePicker, Icon, Modal, ModalSection, Page, SegmentedControl, Spinner, toast } from '@octans/ui';
 import { api, errorMessage, type Change, type ChangeBatch } from '../lib/api';
 import {
   ACTION_WORD,
@@ -102,21 +102,34 @@ const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour
 const archiving = ref(false);
 const archiveBusy = ref(false);
 const archiveDate = ref('');
+/** Everything up to now, or only what's older than a date. */
+const archiveScope = ref<'all' | 'before'>('all');
+const size = ref<{ bytes: number; changes: number; oldest: string | null } | null>(null);
+
+/** 17.1 MB, 840 KB. */
+function fileSize(bytes: number) {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 function startArchive() {
-  // Up to the lock date by default: that history is frozen anyway.
+  // With books locked, up to the lock date: that history is frozen anyway.
+  // Otherwise everything, which is what makes the file smallest.
+  archiveScope.value = books.value.lockDate ? 'before' : 'all';
   archiveDate.value = books.value.lockDate ? addDays(books.value.lockDate, 1) : addDays(today(), -365);
+  size.value = null;
+  void api.historySize().then((s) => (size.value = s)).catch(() => {});
   archiving.value = true;
 }
 
 async function doArchive() {
   archiveBusy.value = true;
   try {
-    const r = await api.archiveHistory(archiveDate.value, dayStartInstant(archiveDate.value));
+    const all = archiveScope.value === 'all';
+    const r = await api.archiveHistory(all ? today() : archiveDate.value, all ? new Date().toISOString() : dayStartInstant(archiveDate.value));
     archiving.value = false;
     toast({
       title: `Archived ${r.changes.toLocaleString()} changes`,
-      content: r.file.slice(r.file.lastIndexOf('/') + 1),
+      content: `${r.file.slice(r.file.lastIndexOf('/') + 1)}. The books file went from ${fileSize(r.sizeBefore)} to ${fileSize(r.sizeAfter)}.`,
       tone: 'success',
       actions: [{ label: 'Show', onAction: () => reveal(r.file) }],
     });
@@ -127,6 +140,17 @@ async function doArchive() {
     archiveBusy.value = false;
   }
 }
+
+// File → Make File Smaller… opens the dialog here.
+watch(
+  () => route.query.archive,
+  (v) => {
+    if (v !== '1') return;
+    void router.replace({ query: { ...route.query, archive: undefined } });
+    if (!row.value) startArchive();
+  },
+  { immediate: true },
+);
 
 async function openArchive() {
   const path = await tiny.dialog.openFile({ types: ['tallylog'] });
@@ -151,7 +175,7 @@ const subtitle = computed(() => {
     :subtitle="subtitle"
     size="fullWidth"
     :breadcrumbs="row ? [{ label: 'Activity', onAction: () => router.push('/activity') }] : undefined"
-    :primary-action="row || archive ? undefined : { label: 'Archive older history…', icon: 'mdi:archive-arrow-down-outline', onAction: startArchive }"
+    :primary-action="row || archive ? undefined : { label: 'Archive history…', icon: 'mdi:archive-arrow-down-outline', onAction: startArchive }"
     :secondary-actions="
       row
         ? []
@@ -266,7 +290,7 @@ const subtitle = computed(() => {
 
     <Modal
       :visible="archiving"
-      title="Archive older history"
+      title="Archive history"
       :loading="archiveBusy"
       :primary-action="{ label: 'Archive', onAction: doArchive }"
       :secondary-actions="[{ label: 'Cancel', onAction: () => (archiving = false) }]"
@@ -274,13 +298,33 @@ const subtitle = computed(() => {
     >
       <ModalSection>
         <p class="Lead">
-          Moves the history from before this date into a separate file next to your books, then shrinks the books
+          Moves the record of changes into a separate history file next to your books, then shrinks the books
           file. Your transactions and documents don't change, only the record of how they got that way.
         </p>
-        <DatePicker v-model="archiveDate" type="date" model-format="YYYY-MM-DD" label="Archive history before" :max="today()" />
+        <p v-if="size" class="Lead">
+          This books file is <strong>{{ fileSize(size.bytes) }}</strong>, with {{ size.changes.toLocaleString() }}
+          recorded change{{ size.changes === 1 ? '' : 's' }}{{ size.oldest ? ` going back to ${formatWhen(size.oldest)}` : '' }}.
+          An import records every row it brings in, so the history is often most of the file.
+        </p>
+        <SegmentedControl
+          v-model="archiveScope"
+          :options="[{ label: 'Everything up to now', value: 'all' }, { label: 'Before a date', value: 'before' }]"
+        />
+        <DatePicker
+          v-if="archiveScope === 'before'"
+          v-model="archiveDate"
+          type="date"
+          model-format="YYYY-MM-DD"
+          label="Archive history before"
+          :max="today()"
+          class="ArchiveDate"
+        />
         <p class="subdued Small">
-          {{ books.lockDate ? `Suggested: the day after your books were locked (${formatDay(books.lockDate)}).` : 'Suggested: a year ago.' }}
-          The archive opens from this page with Open archive…. Keep it with your backups.
+          <template v-if="archiveScope === 'before'">
+            {{ books.lockDate ? `Suggested: the day after your books were locked (${formatDay(books.lockDate)}).` : 'Suggested: a year ago.' }}
+          </template>
+          <template v-else>Activity starts again from here, and keeps recording new changes as usual.</template>
+          Keep the history file with your backups. To read it later, use Open archive… on this page.
         </p>
       </ModalSection>
     </Modal>
@@ -288,6 +332,10 @@ const subtitle = computed(() => {
 </template>
 
 <style scoped>
+.ArchiveDate {
+  margin-top: 12px;
+}
+
 .Loading {
   display: grid;
   place-items: center;

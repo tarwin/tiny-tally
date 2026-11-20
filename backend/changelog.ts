@@ -204,6 +204,18 @@ export async function sha256(text: string) {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** The books file's size in bytes, as SQLite has it laid out. */
+function fileBytes(db: Database) {
+  return one<{ n: number }>(db, 'SELECT page_count * page_size AS n FROM pragma_page_count(), pragma_page_size()')!.n;
+}
+
+/** How big the books file is and how much history it holds, for the archive dialog. */
+export function historySize() {
+  const { db } = getBooks();
+  const r = one<{ changes: number; oldest: string | null }>(db, 'SELECT COUNT(*) AS changes, MIN(at) AS oldest FROM change_log')!;
+  return { bytes: fileBytes(db), changes: r.changes, oldest: r.oldest };
+}
+
 /**
  * Moves history from before `before` (a local date; `beforeAt` is its
  * midnight as a UTC instant) into a .tallylog file next
@@ -228,6 +240,11 @@ export function archivePrepare(p: { before: string; beforeAt: string }) {
 
 export function archiveCommit(p: { dest: string; before: string; day: string; hash: string }) {
   const { db } = getBooks();
+  const sizeBefore = fileBytes(db);
+  // Create the file first: ATTACH opens it with the books' own flags, and the
+  // books are opened without "create", so attaching a new file fails with
+  // "unable to open database file".
+  new Database(p.dest, { create: true }).close();
   run(db, 'ATTACH DATABASE ? AS arch', p.dest);
   try {
     db.transaction(() => {
@@ -254,7 +271,14 @@ export function archiveCommit(p: { dest: string; before: string; day: string; ha
   } finally {
     run(db, 'DETACH DATABASE arch');
   }
-  // Give the space back. Can't run inside a transaction.
+  // Give the space back. Can't run inside a transaction. VACUUM writes the
+  // whole file through the write-ahead log, so fold that back in and empty it
+  // too, or the space only moves to the -wal file.
   db.exec('VACUUM');
-  return { file: p.dest };
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  } catch {
+    // Another window is reading: the log empties when it's done.
+  }
+  return { file: p.dest, sizeBefore, sizeAfter: fileBytes(db) };
 }

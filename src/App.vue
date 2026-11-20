@@ -121,7 +121,7 @@ const isMain = tiny.win.id === 'main';
 
 /** Menu items that need open books. */
 const BOOKS_ITEMS = [
-  'books-close', 'books-backup', 'books-reveal', 'books-settings', 'import', 'search', 'tab-new', 'tab-next', 'tab-previous',
+  'books-close', 'books-backup', 'books-shrink', 'books-reveal', 'books-settings', 'import', 'search', 'tab-new', 'tab-next', 'tab-previous',
   'new-expense', 'new-income', 'new-transfer', 'new-invoice', 'new-quote', 'new-bill',
 ];
 
@@ -249,6 +249,7 @@ async function buildMenu() {
         { separator: true },
         { id: 'import', label: 'Import…' },
         { id: 'books-backup', label: 'Back Up Now' },
+        { id: 'books-shrink', label: 'Make File Smaller…' },
         { id: 'books-reveal', label: REVEAL_LABEL },
         { separator: true },
         { id: 'books-settings', label: 'Books Settings…', key: 'alt+,' },
@@ -502,6 +503,10 @@ function onMenu(id: string) {
       break;
     case 'books-backup':
       if (session.books) void backupBooks();
+      break;
+    case 'books-shrink':
+      // Moving the change history out is what shrinks it: the dialog is on Activity.
+      if (session.books) void router.push({ path: '/activity', query: { archive: '1' } });
       break;
     case 'new-expense':
     case 'new-income':

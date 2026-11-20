@@ -36,6 +36,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   { id: 'books-close', label: 'Close books', group: 'Books', key: '' },
   { id: 'import', label: 'Import', group: 'Books', key: '' },
   { id: 'books-backup', label: 'Back up now', group: 'Books', key: '' },
+  { id: 'books-shrink', label: 'Make file smaller', group: 'Books', key: '' },
   { id: 'books-settings', label: 'Books settings', group: 'Books', key: 'alt+,' },
   { id: 'app-settings', label: 'App settings', group: 'View', key: ',' },
   { id: 'zoom-in', label: 'Zoom in', group: 'View', key: '=' },

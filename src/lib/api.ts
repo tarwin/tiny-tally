@@ -1415,7 +1415,9 @@ export const api = {
     call<{ rows: ChangeBatch[]; total: number; oldest: string | null }>('changes.batches', p),
   batchChanges: (batchId: number, archive?: string | null) => call<Change[]>('changes.batch', { batchId, archive }),
   rowHistory: (table: string, id: number) => call<Change[]>('changes.row', { table, id }),
-  archiveHistory: (before: string, beforeAt: string) => call<{ file: string; changes: number }>('changes.archive', { before, beforeAt }),
+  archiveHistory: (before: string, beforeAt: string) =>
+    call<{ file: string; changes: number; sizeBefore: number; sizeAfter: number }>('changes.archive', { before, beforeAt }),
+  historySize: () => call<{ bytes: number; changes: number; oldest: string | null }>('changes.size'),
 
   getPref: <T>(key: string) => call<T | null>('prefs.get', { key }),
   setPref: (key: string, value: unknown) => call<true>('prefs.set', { key, value }),

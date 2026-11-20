@@ -24,7 +24,7 @@ Every change is recorded with the time and the computer it was made on. **Activi
 
 History is a record, not an undo: to put something back, change it again.
 
-Years of history make the file bigger. **Archive older history…** moves everything before a date you choose into a `.tallylog` file beside the books, and **Open archive…** reads it later.
+History makes the file bigger: years of it, or one big import, which records every row it brings in. To shrink the file, choose **File → Make File Smaller…**, or **Archive history…** on the Activity page. It shows how big the file is, then moves the history (**everything up to now**, or only what's **before a date** you choose) into a `.tallylog` file beside the books, and compacts the books file. Your transactions and documents don't change. **Open archive…** on the Activity page reads the history file later, so keep it with your backups.
 
 ## Locking past periods
 

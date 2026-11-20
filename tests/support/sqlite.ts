@@ -6,7 +6,10 @@ export class Database {
   #depth = 0;
 
   constructor(path: string, opts: { create?: boolean; readOnly?: boolean } = {}) {
-    this.#db = new DatabaseSync(path, { readOnly: !!opts.readOnly });
+    // `create: false` as tjs has it: the file must exist. (Under tjs, a database
+    // ATTACHed later can't be created either; node:sqlite still allows that.)
+    const target = opts.create === false && !opts.readOnly ? new URL(`file:${encodeURI(path)}?mode=rw`) : path;
+    this.#db = new DatabaseSync(target, { readOnly: !!opts.readOnly });
   }
 
   exec(sql: string) {

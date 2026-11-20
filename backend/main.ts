@@ -105,6 +105,7 @@ import { deleteJournal, getJournal, listJournals, saveJournal, type JournalInput
 import {
   archiveCommit,
   archivePrepare,
+  historySize,
   batchChanges,
   beginBatch,
   endBatch,
@@ -905,6 +906,7 @@ Object.assign(api, {
   'changes.batches': async (p: Parameters<typeof listBatches>[0]) => listBatches(p ?? {}),
   'changes.batch': async (p: Parameters<typeof batchChanges>[0]) => batchChanges(p),
   'changes.row': async (p: Parameters<typeof rowHistory>[0]) => rowHistory(p),
+  'changes.size': async () => historySize(),
   /** Moves history before a date into a .tallylog file beside the books file. */
   'changes.archive': async (p: { before: string; beforeAt: string }, _app, { window: win }) => {
     const prep = archivePrepare(p);
