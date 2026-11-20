@@ -47,6 +47,11 @@ const Field: FunctionalComponent<{ label: string; code: string; value: number | 
 
 /** A box to mark with an X. */
 const Tick: FunctionalComponent<{ on?: boolean }> = (p) => h('span', { class: 'Tick' }, p.on ? 'X' : '');
+
+// Declared, so a bare attribute (`<Tick on />`, `percent`) arrives as true rather than ''.
+Digits.props = { value: { type: Number, default: null }, width: Number, percent: Boolean };
+Field.props = { label: String, code: String, value: { type: Number, default: null }, width: Number, percent: Boolean };
+Tick.props = { on: Boolean };
 </script>
 
 <template>
@@ -138,7 +143,7 @@ const Tick: FunctionalComponent<{ on?: boolean }> = (p) => h('span', { class: 'T
           <div class="Box Box--unused">
             <div class="Box__title"><Tick /> Option 2: Calculate PAYG instalment using income times rate</div>
             <Field label="PAYG instalment income" code="T1" :value="null" />
-            <Field label="Instalment rate" code="T2" :value="null" :width="5" :percent="true" />
+            <Field label="Instalment rate" code="T2" :value="null" :width="5" percent />
             <Field label="T1 × T2 (or × T3)" code="T11" :value="null" />
           </div>
         </div>
