@@ -4,7 +4,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { Button, Modal, ModalSection, SegmentedControl, ToggleSwitch, type ThemePreferenceType } from '@octans/ui';
-import { DENSITY_OPTIONS, ZOOM_OPTIONS, appSettings, appSettingsPanel, updateAppSettings, type Density } from '../lib/appSettings';
+import { DENSITY_OPTIONS, ZOOM_OPTIONS, appSettings, appSettingsPanel, shortcutsPanel, updateAppSettings, type Density } from '../lib/appSettings';
 import { session } from '../lib/session';
 import { THEME_OPTIONS, applyTheme, themePreference } from '../lib/theme';
 
@@ -65,6 +65,11 @@ function booksSettings() {
             @update:model-value="(v: number) => updateAppSettings({ zoom: v })"
           />
           <p class="subdued Hint">Makes text and everything else bigger or smaller.</p>
+        </section>
+
+        <section>
+          <h3>Keyboard shortcuts</h3>
+          <Button size="small" icon="mdi:keyboard-outline" @click="shortcutsPanel.visible = true">Change shortcuts…</Button>
         </section>
 
         <section class="Toggles">

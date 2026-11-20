@@ -378,7 +378,7 @@ function exportCsv() {
           <TextField v-model="form.name" label="What it is" placeholder="e.g. MacBook Pro, Ute, Office desk" required />
           <FormLayoutGroup>
             <DatePicker v-model="form.bought" type="date" model-format="YYYY-MM-DD" :label="country === 'US' ? 'Placed in service' : 'First used'" />
-            <TextField v-model="form.cost" label="Cost" :prefix="books.currency" align="right" :help-text="registered ? 'Before GST' : undefined" />
+            <TextField inputmode="decimal" v-model="form.cost" label="Cost" :prefix="books.currency" align="right" :help-text="registered ? 'Before GST' : undefined" />
             <TextField v-model="form.businessPct" label="Business use" suffix="%" />
           </FormLayoutGroup>
           <Select v-model="form.method" label="Depreciation" :options="methodOptions" show-description />
@@ -393,7 +393,7 @@ function exportCsv() {
           />
           <FormLayoutGroup v-if="form.broughtIn">
             <Select v-model="form.openingYear" :label="`From ${yearWord.toLowerCase()}`" :options="yearOptions" />
-            <TextField v-model="form.openingValue" label="Its value at the start of that year" :prefix="books.currency" align="right" help-text="The value left for tax, from last year's return." />
+            <TextField inputmode="decimal" v-model="form.openingValue" label="Its value at the start of that year" :prefix="books.currency" align="right" help-text="The value left for tax, from last year's return." />
           </FormLayoutGroup>
           <TextField v-model="form.notes" label="Notes" placeholder="Serial number, where it is…" />
         </FormLayout>
@@ -411,7 +411,7 @@ function exportCsv() {
         <FormLayout>
           <FormLayoutGroup>
             <DatePicker v-model="sale.date" type="date" model-format="YYYY-MM-DD" label="When it went" />
-            <TextField v-model="sale.amount" label="Money received" :prefix="books.currency" align="right" placeholder="0" :help-text="registered ? 'Including GST' : 'Nothing if it was scrapped'" />
+            <TextField inputmode="decimal" v-model="sale.amount" label="Money received" :prefix="books.currency" align="right" placeholder="0" :help-text="registered ? 'Including GST' : 'Nothing if it was scrapped'" />
           </FormLayoutGroup>
           <Select v-if="sale.amount" v-model="sale.accountId" label="Into" :options="accounts" />
           <p class="subdued Small">

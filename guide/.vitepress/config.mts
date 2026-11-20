@@ -70,7 +70,7 @@ export default defineConfig({
       {
         text: 'More',
         items: [
-          { text: 'Tabs, windows and search', link: '/tabs-and-search' },
+          { text: 'Tabs, windows, search and calculator', link: '/tabs-and-search' },
           { text: 'Keyboard shortcuts', link: '/shortcuts' },
           { text: 'For your accountant', link: '/accountants' },
           { text: 'Settings', link: '/settings' },

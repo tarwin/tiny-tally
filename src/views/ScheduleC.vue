@@ -248,7 +248,7 @@ function exportCsv() {
                   <td class="Line">35</td>
                   <td>Inventory at beginning of year<div class="subdued Small no-print">On hand at the end of {{ formatDay(report.partIII.openingDate) }}: last year's line 41</div></td>
                   <td class="num">
-                    <TextField v-model="typed.opening" align="right" placeholder="0" class="no-print Input" @blur="saveInventory('opening')" @keydown.enter="saveInventory('opening')" />
+                    <TextField inputmode="decimal" v-model="typed.opening" align="right" placeholder="0" class="no-print Input" @blur="saveInventory('opening')" @keydown.enter="saveInventory('opening')" />
                     <span class="print-only">{{ money(report.partIII.openingInventory) }}</span>
                   </td>
                 </tr>
@@ -267,7 +267,7 @@ function exportCsv() {
                   <td class="Line">41</td>
                   <td>Inventory at end of year<div class="subdued Small no-print">On hand at the end of {{ formatDay(range.to) }}, at cost</div></td>
                   <td class="num">
-                    <TextField v-model="typed.closing" align="right" placeholder="0" class="no-print Input" @blur="saveInventory('closing')" @keydown.enter="saveInventory('closing')" />
+                    <TextField inputmode="decimal" v-model="typed.closing" align="right" placeholder="0" class="no-print Input" @blur="saveInventory('closing')" @keydown.enter="saveInventory('closing')" />
                     <span class="print-only">{{ money(report.partIII.closingInventory) }}</span>
                   </td>
                 </tr>

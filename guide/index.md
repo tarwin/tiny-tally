@@ -32,6 +32,6 @@ features:
     details: Australian BAS, NZ, Indian and Canadian GST returns, UK VAT, US Schedule C and sales tax.
     link: /tax
   - title: Work your way
-    details: Tabs, windows, ⌘K search and keyboard shortcuts.
+    details: Tabs, windows, ⌘K search, a calculator and keyboard shortcuts you can change.
     link: /tabs-and-search
 ---

@@ -172,6 +172,7 @@ onBooksChanged(load);
             help-text="Usually the start of your financial year, or the day you open the account."
           />
           <TextField
+            inputmode="decimal"
             v-model="form.opening"
             :label="openingLabel"
             :prefix="currency"

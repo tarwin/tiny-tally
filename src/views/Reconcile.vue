@@ -226,6 +226,7 @@ const differenceText = computed(() => {
             <FormLayoutGroup>
               <DatePicker v-model="start.date" type="date" model-format="YYYY-MM-DD" label="Statement end date" :max="today()" />
               <TextField
+                inputmode="decimal"
                 v-model="start.balance"
                 :label="isCard ? 'Amount owed on the statement' : 'Closing balance on the statement'"
                 :prefix="currency"

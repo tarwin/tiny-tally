@@ -266,10 +266,10 @@ const maxHeight = useFillHeight(tableBox);
                 </td>
                 <td><TextField v-model="l.memo" :label="false" placeholder="Optional" /></td>
                 <td class="Lines__money">
-                  <TextField :model-value="l.debit" :label="false" align="right" placeholder="0.00" @update:model-value="(v) => setSide(l, 'debit', String(v ?? ''))" />
+                  <TextField inputmode="decimal" :model-value="l.debit" :label="false" align="right" placeholder="0.00" @update:model-value="(v) => setSide(l, 'debit', String(v ?? ''))" />
                 </td>
                 <td class="Lines__money">
-                  <TextField :model-value="l.credit" :label="false" align="right" placeholder="0.00" @update:model-value="(v) => setSide(l, 'credit', String(v ?? ''))" />
+                  <TextField inputmode="decimal" :model-value="l.credit" :label="false" align="right" placeholder="0.00" @update:model-value="(v) => setSide(l, 'credit', String(v ?? ''))" />
                 </td>
                 <td class="Lines__actions">
                   <Button

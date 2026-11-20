@@ -194,6 +194,7 @@ async function recordPayment() {
               @keydown.enter="saveInputs"
             />
             <TextField
+              inputmode="decimal"
               v-model="typed.wages"
               label="Wages from a job this year"
               :prefix="books.currency"
@@ -203,6 +204,7 @@ async function recordPayment() {
               @keydown.enter="saveInputs"
             />
             <TextField
+              inputmode="decimal"
               v-model="typed.priorYearTax"
               label="Last year's total tax"
               :prefix="books.currency"

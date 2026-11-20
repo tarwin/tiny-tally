@@ -1,4 +1,5 @@
-import { reactive } from 'vue';
+import { computed, reactive } from 'vue';
+import { SHORTCUT_COMMANDS, normalizeKey, resolveShortcuts } from '../shared/shortcuts';
 
 // App-wide preferences (not per set of books), kept in tiny.store beside the theme.
 // The backend reads `reopenLast` from the same key at startup (app.start).
@@ -13,9 +14,11 @@ export interface AppSettings {
   zoom: number;
   /** Open the last books again on launch. */
   reopenLast: boolean;
+  /** Keyboard shortcuts changed from the defaults, by menu item id ('' for none). */
+  shortcuts: Record<string, string>;
 }
 
-const DEFAULTS: AppSettings = { density: 'regular', zoom: 1, reopenLast: true };
+const DEFAULTS: AppSettings = { density: 'regular', zoom: 1, reopenLast: true, shortcuts: {} };
 
 export const DENSITY_OPTIONS: { label: string; value: Density; icon: string; help: string }[] = [
   { label: 'Compact', value: 'compact', icon: 'mdi:view-headline', help: 'More rows on screen, tighter margins.' },
@@ -42,6 +45,15 @@ export function stepZoom(dir: -1 | 0 | 1) {
 
 export const appSettings = reactive<AppSettings>({ ...DEFAULTS });
 
+/** Every command's shortcut, in normal form ('shift+n'), with the person's changes. */
+export const shortcutKeys = computed(() => resolveShortcuts(appSettings.shortcuts));
+
+/** The keyboard shortcuts editor (Help › Keyboard Shortcuts, App settings). */
+export const shortcutsPanel = reactive({ visible: false });
+
+/** Set while the shortcuts editor waits for a key: the menu drops its keys so the press isn't also run. */
+export const shortcutRecording = reactive({ on: false });
+
 /** The app settings panel; App.vue renders it, the menu and Settings page open it. */
 export const appSettingsPanel = reactive({ visible: false });
 
@@ -56,6 +68,12 @@ export async function restoreAppSettings() {
     if (DENSITY_OPTIONS.some((o) => o.value === saved.density)) appSettings.density = saved.density!;
     if (ZOOM_OPTIONS.some((o) => o.value === saved.zoom)) appSettings.zoom = saved.zoom!;
     if (typeof saved.reopenLast === 'boolean') appSettings.reopenLast = saved.reopenLast;
+    const known = new Set(SHORTCUT_COMMANDS.map((c) => c.id));
+    appSettings.shortcuts = Object.fromEntries(
+      Object.entries(saved.shortcuts && typeof saved.shortcuts === 'object' ? saved.shortcuts : {})
+        .filter(([id, k]) => known.has(id) && typeof k === 'string')
+        .map(([id, k]) => [id, normalizeKey(k as string)]),
+    );
   }
   apply();
 }
@@ -63,5 +81,5 @@ export async function restoreAppSettings() {
 export function updateAppSettings(patch: Partial<AppSettings>) {
   Object.assign(appSettings, patch);
   apply();
-  void tiny.store.set(STORE_KEY, { ...appSettings }).then(() => tiny.api.call('app.settingsChanged')).catch(() => {});
+  void tiny.store.set(STORE_KEY, JSON.parse(JSON.stringify(appSettings))).then(() => tiny.api.call('app.settingsChanged')).catch(() => {});
 }

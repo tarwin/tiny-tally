@@ -233,7 +233,7 @@ const maxHeight = useFillHeight(tableBox);
             help-text="Leave blank to use the name."
           />
           <FormLayoutGroup>
-            <TextField v-model="form.price" label="Price" align="right" placeholder="0.00" />
+            <TextField inputmode="decimal" v-model="form.price" label="Price" align="right" placeholder="0.00" />
             <div v-if="taxOn(form.kind)">
               <div class="Label">Price is</div>
               <SegmentedControl

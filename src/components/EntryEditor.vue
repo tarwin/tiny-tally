@@ -516,6 +516,7 @@ async function addContact() {
 
         <FormLayoutGroup>
           <TextField
+            inputmode="decimal"
             ref="amountField"
             v-model="form.amount"
             label="Amount"
@@ -563,6 +564,7 @@ async function addContact() {
         <FormLayoutGroup v-if="taxOn">
           <Select v-model="form.taxCode" label="Tax code" :options="taxOptions" show-description @update:model-value="form.taxAmount = null" />
           <TextField
+            inputmode="decimal"
             v-model="taxDisplay"
             :label="`${tax?.name} included`"
             :prefix="currency"

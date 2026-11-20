@@ -592,6 +592,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
       <ModalSection>
         <FormLayout>
           <TextField
+            inputmode="decimal"
             v-model="payment.amount"
             :label="payWords.amount"
             :prefix="fxPayment ?? currency"
@@ -601,6 +602,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
             @keydown.enter="savePayment"
           />
           <TextField
+            inputmode="decimal"
             v-if="fxPayment"
             v-model="payment.received"
             :label="`What landed in ${currency}`"
@@ -610,6 +612,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
             @keydown.enter="savePayment"
           />
           <TextField
+            inputmode="decimal"
             v-if="withholds"
             v-model="payment.withheld"
             :label="noAbnBill ? 'No-ABN tax withheld' : books.country === 'IN' ? 'TDS deducted by the client' : 'Tax withheld by the client'"
@@ -641,7 +644,7 @@ const contactLink = computed(() => `/contacts/${invoice.value?.contactId}/statem
             :options="applyOptions"
             @update:model-value="syncApplyAmount"
           />
-          <TextField v-model="apply.amount" label="Amount" :prefix="currency" align="right" :error="applyError" />
+          <TextField inputmode="decimal" v-model="apply.amount" label="Amount" :prefix="currency" align="right" :error="applyError" />
           <DatePicker v-model="apply.date" type="date" model-format="YYYY-MM-DD" label="Date" />
         </FormLayout>
       </ModalSection>

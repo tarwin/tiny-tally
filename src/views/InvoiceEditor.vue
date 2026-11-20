@@ -653,6 +653,7 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
               <FormLayoutGroup v-if="!isBill">
                 <Select v-model="form.currency" label="Currency" :options="currencyOptions" searchable />
                 <TextField
+                  inputmode="decimal"
                   v-if="foreign"
                   v-model="form.fxRate"
                   :label="`1 ${form.currency} in ${books.currency}`"
@@ -730,8 +731,8 @@ const isSent = computed(() => existing.value?.rawStatus === 'sent');
               <div v-for="(line, i) in form.lines" :key="line.key" class="Line">
                 <div class="Line__main">
                   <TextField v-model="line.description" :placeholder="isBill ? 'What was it for?' : 'What did you do or sell?'" multiline="1" />
-                  <TextField v-model="line.qty" align="right" placeholder="1" />
-                  <TextField v-model="line.price" align="right" placeholder="0.00" />
+                  <TextField inputmode="decimal" v-model="line.qty" align="right" placeholder="1" />
+                  <TextField inputmode="decimal" v-model="line.price" align="right" placeholder="0.00" />
                   <span class="num money Line__amount">
                     {{ money(form.pricesIncludeTax ? computedLines[i]?.gross ?? 0 : computedLines[i]?.net ?? 0) }}
                   </span>

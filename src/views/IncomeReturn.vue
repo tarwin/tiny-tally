@@ -177,7 +177,7 @@ function exportCsv() {
                 <tr>
                   <td class="Line">{{ au ? 'K' : '3' }}</td>
                   <td>Opening stock<div class="subdued Small">On hand {{ formatDay(report.stock.openingDate) }}</div></td>
-                  <td class="num"><TextField v-model="typed.opening" class="Input no-print" align="right" :prefix="books.currency" @blur="saveStock('opening')" @keydown.enter="saveStock('opening')" /><span class="print-only">{{ money(report.stock.opening) }}</span></td>
+                  <td class="num"><TextField inputmode="decimal" v-model="typed.opening" class="Input no-print" align="right" :prefix="books.currency" @blur="saveStock('opening')" @keydown.enter="saveStock('opening')" /><span class="print-only">{{ money(report.stock.opening) }}</span></td>
                 </tr>
                 <tr v-for="l in costOfSales" :key="l.key">
                   <td class="Line">{{ l.code }}</td>
@@ -187,7 +187,7 @@ function exportCsv() {
                 <tr>
                   <td class="Line">{{ au ? 'M' : '5' }}</td>
                   <td>Closing stock<div class="subdued Small">On hand {{ formatDay(range.to) }}</div></td>
-                  <td class="num"><TextField v-model="typed.closing" class="Input no-print" align="right" :prefix="books.currency" @blur="saveStock('closing')" @keydown.enter="saveStock('closing')" /><span class="print-only">{{ money(report.stock.closing) }}</span></td>
+                  <td class="num"><TextField inputmode="decimal" v-model="typed.closing" class="Input no-print" align="right" :prefix="books.currency" @blur="saveStock('closing')" @keydown.enter="saveStock('closing')" /><span class="print-only">{{ money(report.stock.closing) }}</span></td>
                 </tr>
                 <tr class="Report__total"><td /><td>Cost of sales</td><td class="num">{{ money(report.totals.costOfSales) }}</td></tr>
                 <tr class="Report__total"><td>{{ au ? '' : '6' }}</td><td>Gross profit</td><td class="num">{{ money(report.totals.grossProfit) }}</td></tr>
@@ -227,7 +227,7 @@ function exportCsv() {
             <div v-else class="HomeFields">
               <TextField v-model="typed.officeArea" label="Office area" suffix="m²" @blur="saveHome" @keydown.enter="saveHome" />
               <TextField v-model="typed.homeArea" label="Whole home" suffix="m²" @blur="saveHome" @keydown.enter="saveHome" />
-              <TextField v-model="typed.premises" label="Rates, rent or mortgage interest" :prefix="books.currency" help-text="For the year" @blur="saveHome" @keydown.enter="saveHome" />
+              <TextField inputmode="decimal" v-model="typed.premises" label="Rates, rent or mortgage interest" :prefix="books.currency" help-text="For the year" @blur="saveHome" @keydown.enter="saveHome" />
               <p class="subdued Small">
                 Square metre method: the office's share of rates, rent and mortgage interest, plus {{ money(nzRules.homeOfficePerSqm) }} a m²
                 for utilities{{ nzRules.homeOfficeSet ? '' : " (IRD hasn't set this year's rate yet)" }}. Nothing else for the home can be claimed with it.

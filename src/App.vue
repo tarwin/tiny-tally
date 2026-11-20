@@ -3,6 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router';
 import { AppFrame, Navigation, Spinner, UiProvider, toast, type NavigationSectionType } from '@octans/ui';
 import AppSettings from './components/AppSettings.vue';
+import Calculator from './components/Calculator.vue';
+import NumberTape from './components/NumberTape.vue';
+import ShortcutsEditor from './components/ShortcutsEditor.vue';
 import EntryEditor from './components/EntryEditor.vue';
 import PageHost from './components/PageHost.vue';
 import TabStrip from './components/TabStrip.vue';
@@ -15,7 +18,11 @@ import { DOCS } from './lib/documents';
 import { hasIncomeRules } from './shared/countries';
 import { HANDOFF_EXT } from './shared/invoiceHandoff';
 import { dropAttachments } from './lib/attachments';
-import { DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, updateAppSettings, type Density, stepZoom } from './lib/appSettings';
+import {
+  DENSITY_OPTIONS, appSettings, appSettingsPanel, restoreAppSettings, shortcutKeys, shortcutRecording, shortcutsPanel, updateAppSettings, type Density, stepZoom,
+} from './lib/appSettings';
+import { toggleCalculator } from './lib/calculator';
+import { menuKey } from './shared/shortcuts';
 import { backupBooks, closeBooks, newBooks, openBooksAt, pickAndOpenBooks, refreshSession, runScheduledBackup } from './lib/books';
 import { today } from './lib/dates';
 import { newEntry } from './lib/entryEditor';
@@ -192,11 +199,32 @@ function recentItems() {
   });
 }
 
+/**
+ * Each configurable item gets the person's key (shared/shortcuts.ts). While
+ * the shortcuts editor waits for a key press, items get none, so the press
+ * goes to the editor rather than running the command.
+ */
+function withShortcuts(menus: TinyMenu[]): TinyMenu[] {
+  const keys = shortcutKeys.value;
+  const walk = (items: TinyMenuItem[]): TinyMenuItem[] =>
+    items.map((it) => {
+      const out = { ...it };
+      if (out.id && out.id in keys) {
+        const k = shortcutRecording.on ? '' : menuKey(keys[out.id]);
+        if (k) out.key = k;
+        else delete out.key;
+      }
+      if (out.submenu) out.submenu = walk(out.submenu);
+      return out;
+    });
+  return menus.map((m) => (m.items ? { ...m, items: walk(m.items) } : m));
+}
+
 // The menu is rebuilt whenever the recent list changes (Open Recent), so
 // ticks and enabled states are re-applied after each set().
 async function buildMenu() {
   const recent = recentItems();
-  await tiny.win.menu.set([
+  await tiny.win.menu.set(withShortcuts([
     {
       role: 'app',
       items: [
@@ -252,6 +280,7 @@ async function buildMenu() {
         { id: 'nav-forward', label: 'Forward', key: ']' },
         { separator: true },
         { id: 'search', label: 'Search…', key: 'k' },
+        { id: 'calculator', label: 'Calculator', key: 'C' },
         { separator: true },
         { id: 'tab-next', label: 'Show Next Tab', key: 'shift+]' },
         { id: 'tab-previous', label: 'Show Previous Tab', key: 'shift+[' },
@@ -281,11 +310,12 @@ async function buildMenu() {
       title: 'Help',
       items: [
         { id: 'help', label: 'Tiny Tally Help' },
+        { id: 'shortcuts', label: 'Keyboard Shortcuts…' },
         // macOS has Check for Updates… in the app menu.
         ...(isMac ? [] : [{ separator: true }, { id: 'check-updates', label: 'Check for Updates…' }]),
       ],
     },
-  ]);
+  ]));
   syncThemeMenu();
   syncDensityMenu();
   await syncMenus();
@@ -295,6 +325,8 @@ watch(
   () => [session.recent.map((r) => r.path).join('\n'), session.books?.path, session.recent.map((r) => r.name).join('\n')],
   () => void buildMenu(),
 );
+// Shortcuts changed, here or in another window, or the editor started or stopped listening.
+watch(() => [JSON.stringify(shortcutKeys.value), shortcutRecording.on], () => void buildMenu());
 
 async function clearRecent() {
   for (const r of [...session.recent]) await api.forgetBooks(r.path).catch(() => {});
@@ -419,6 +451,12 @@ function onMenu(id: string) {
       break;
     case 'search':
       topBar.value?.focusSearch();
+      break;
+    case 'calculator':
+      toggleCalculator();
+      break;
+    case 'shortcuts':
+      shortcutsPanel.visible = true;
       break;
     case 'app-settings':
       appSettingsPanel.visible = true;
@@ -619,6 +657,10 @@ onBeforeUnmount(() => {
       <EntryEditor />
     </AppFrame>
     <AppSettings :nav-min="navMin" @update:nav-min="setNavMin" />
+    <ShortcutsEditor :visible="shortcutsPanel.visible" @close="shortcutsPanel.visible = false" />
+    <!-- Last, so it opens over any other dialog. -->
+    <Calculator />
+    <NumberTape />
     <UpdateBanner />
   </UiProvider>
 </template>

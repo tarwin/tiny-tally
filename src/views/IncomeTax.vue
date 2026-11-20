@@ -199,6 +199,7 @@ async function recordPayment() {
         <CardSection>
           <div v-if="au" class="Inputs">
             <TextField
+              inputmode="decimal"
               v-model="typed.amount"
               label="Instalment amount on your notice"
               :prefix="books.currency"
@@ -219,6 +220,7 @@ async function recordPayment() {
           </div>
           <div v-else class="Inputs">
             <TextField
+              inputmode="decimal"
               v-model="typed.prior"
               label="Last year's residual income tax"
               :prefix="books.currency"
@@ -228,6 +230,7 @@ async function recordPayment() {
               @keydown.enter="saveProv"
             />
             <TextField
+              inputmode="decimal"
               v-model="typed.twoYears"
               label="Two years ago, if last year's return isn't filed"
               :prefix="books.currency"
@@ -236,6 +239,7 @@ async function recordPayment() {
               @keydown.enter="saveProv"
             />
             <TextField
+              inputmode="decimal"
               v-if="prov?.method === 'estimation'"
               v-model="typed.estimate"
               label="Your estimate of this year's residual income tax"
