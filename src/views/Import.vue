@@ -223,7 +223,7 @@ const taxReview = computed(() => {
  * than NCG): Reckon's BAS leaves them out, Tiny Tally counts their GST.
  * Newest first, since those are the returns still being worked on.
  */
-const codeMismatches = computed(() => [...(parsed.value?.codeMismatches ?? [])].reverse());
+const codeMismatches = computed(() => [...((parsed.value && 'codeMismatches' in parsed.value && parsed.value.codeMismatches) || [])].reverse());
 const showAllMismatches = ref(false);
 const mismatchesShown = computed(() => (showAllMismatches.value ? codeMismatches.value : codeMismatches.value.slice(0, 8)));
 const mismatchSummary = computed(() => {
