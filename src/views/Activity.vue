@@ -129,8 +129,10 @@ async function doArchive() {
     archiving.value = false;
     toast({
       title: `Archived ${r.changes.toLocaleString()} changes`,
-      content: `${r.file.slice(r.file.lastIndexOf('/') + 1)}. The books file went from ${fileSize(r.sizeBefore)} to ${fileSize(r.sizeAfter)}.`,
-      tone: 'success',
+      content: r.compactError
+        ? `${fileName(r.file)}. The history moved, but the books file couldn't be compacted (${r.compactError}), so it hasn't got smaller yet. Try again after reopening the books.`
+        : `${fileName(r.file)}. The books file went from ${fileSize(r.sizeBefore)} to ${fileSize(r.sizeAfter)}.`,
+      tone: r.compactError ? 'warning' : 'success',
       actions: [{ label: 'Show', onAction: () => reveal(r.file) }],
     });
     await load();
@@ -159,7 +161,9 @@ async function openArchive() {
 
 const reveal = (path: string) => void tiny.app.shell.reveal(path);
 
-const archiveName = computed(() => archive.value?.slice(archive.value.lastIndexOf('/') + 1) ?? '');
+/** The file name from a path, Windows or not. */
+const fileName = (path: string) => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+const archiveName = computed(() => (archive.value ? fileName(archive.value) : ''));
 
 const subtitle = computed(() => {
   if (row.value) return `Everything that changed on this ${(TABLES[row.value.table] ?? 'item').toLowerCase()}.`;

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { makeBooks } from './support/books.ts';
 import { getBooks, inWindow, one, openBooks, run } from '../backend/db.ts';
-import { archiveCommit, archivePrepare, beginBatch, endBatch, historySize } from '../backend/changelog.ts';
+import { archiveCommit, archivePrepare, beginBatch, endBatch, historySize, splitPath } from '../backend/changelog.ts';
 
 test('archiving everything up to now moves all the history out and shrinks the file', async () => {
   const b = await makeBooks({ country: 'AU', fiscalYearStart: '07-01', taxEnabled: true });
@@ -51,4 +51,10 @@ test('archiving everything up to now moves all the history out and shrinks the f
     arch.close();
   });
   b.close();
+});
+
+test('the history file goes beside the books, whichever way the path is written', () => {
+  assert.deepEqual(splitPath('C:\\Users\\Daan\\Documents\\Daan Test.tally'), { dir: 'C:\\Users\\Daan\\Documents', name: 'Daan Test.tally', sep: '\\' });
+  assert.deepEqual(splitPath('C:\\Users\\Daan\\AppData\\Roaming\\tiny-tally/books/Daan Test.tally'), { dir: 'C:\\Users\\Daan\\AppData\\Roaming\\tiny-tally/books', name: 'Daan Test.tally', sep: '/' });
+  assert.deepEqual(splitPath('/Users/daan/Daan Test.tally'), { dir: '/Users/daan', name: 'Daan Test.tally', sep: '/' });
 });

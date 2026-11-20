@@ -204,6 +204,21 @@ export async function sha256(text: string) {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** A path's folder and file name, whichever separator it uses (Windows paths may have only `\\`). */
+export function splitPath(path: string) {
+  const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return { dir: path.slice(0, Math.max(i, 0)), name: path.slice(i + 1), sep: i >= 0 ? path[i] : '/' };
+}
+
+/** Runs one step of the archive, saying which step it was if it fails. */
+function step<T>(what: string, fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    throw new Error(`${what}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 /** The books file's size in bytes, as SQLite has it laid out. */
 function fileBytes(db: Database) {
   return one<{ n: number }>(db, 'SELECT page_count * page_size AS n FROM pragma_page_count(), pragma_page_size()')!.n;
@@ -231,9 +246,8 @@ export function archivePrepare(p: { before: string; beforeAt: string }) {
     `SELECT (SELECT COUNT(*) FROM change_batches WHERE at < ?1) AS batches,
             (SELECT COUNT(*) FROM change_log WHERE at < ?1) AS changes`, before)!;
   if (!counts.changes) throw new Error('There is no history before that date.');
-  const dir = path.slice(0, path.lastIndexOf('/'));
-  const base = path.slice(path.lastIndexOf('/') + 1).replace(/\.tally$/, '');
-  const dest = `${dir}/${base} history to ${p.before}.tallylog`;
+  const { dir, name, sep } = splitPath(path);
+  const dest = `${dir}${sep}${name.replace(/\.tally$/i, '')} history to ${p.before}.tallylog`;
   const rows = all(db, 'SELECT * FROM change_log WHERE at < ? ORDER BY id', before);
   return { dest, before, day: p.before, counts, text: JSON.stringify(rows) };
 }
@@ -244,10 +258,14 @@ export function archiveCommit(p: { dest: string; before: string; day: string; ha
   // Create the file first: ATTACH opens it with the books' own flags, and the
   // books are opened without "create", so attaching a new file fails with
   // "unable to open database file".
-  new Database(p.dest, { create: true }).close();
-  run(db, 'ATTACH DATABASE ? AS arch', p.dest);
+  step(`Couldn't create the history file ${p.dest}`, () => new Database(p.dest, { create: true }).close());
+  step(`Couldn't open the history file ${p.dest}`, () => run(db, 'ATTACH DATABASE ? AS arch', p.dest));
+  // Copying and compacting need SQLite's temporary files, which it can fail to
+  // create on Windows ("unable to open database file"). Keep them in memory:
+  // books files are small enough.
+  db.exec('PRAGMA temp_store = MEMORY');
   try {
-    db.transaction(() => {
+    step("Couldn't move the history", () => db.transaction(() => {
       db.exec(`
         CREATE TABLE IF NOT EXISTS arch.change_batches (
           id INTEGER PRIMARY KEY, at TEXT NOT NULL, action TEXT NOT NULL, host TEXT, summary TEXT, count INTEGER NOT NULL DEFAULT 0);
@@ -267,18 +285,26 @@ export function archiveCommit(p: { dest: string; before: string; day: string; ha
         JSON.stringify({ file: p.dest, before: p.day, changes: moved, sha256: p.hash }));
       // The marker is dated just before the cut, so it sits where the archived history was.
       run(db, "UPDATE change_batches SET at = strftime('%Y-%m-%dT%H:%M:%fZ', julianday(?) - 0.001 / 86400) WHERE id = last_insert_rowid()", p.before);
-    })();
+    })());
   } finally {
     run(db, 'DETACH DATABASE arch');
   }
   // Give the space back. Can't run inside a transaction. VACUUM writes the
   // whole file through the write-ahead log, so fold that back in and empty it
-  // too, or the space only moves to the -wal file.
-  db.exec('VACUUM');
+  // too, or the space only moves to the -wal file. The history has moved by
+  // now, so a failure here is reported rather than thrown.
+  let compactError: string | null = null;
   try {
-    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  } catch {
-    // Another window is reading: the log empties when it's done.
+    db.exec('VACUUM');
+    try {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch {
+      // Another window is reading: the log empties when it's done.
+    }
+  } catch (e) {
+    compactError = e instanceof Error ? e.message : String(e);
+  } finally {
+    db.exec('PRAGMA temp_store = DEFAULT');
   }
-  return { file: p.dest, sizeBefore, sizeAfter: fileBytes(db) };
+  return { file: p.dest, sizeBefore, sizeAfter: fileBytes(db), compactError };
 }
