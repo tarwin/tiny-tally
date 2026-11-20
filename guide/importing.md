@@ -35,6 +35,16 @@ Before anything is saved, you choose:
 
 Importing the same file twice is safe: transactions already brought in are skipped, and the result tells you how many.
 
+### Clean import {#clean-import}
+
+Importing usually adds to what's there. To start again from a QuickBooks or Reckon file instead, say after a trial import, turn on **Clean import** in the Summary. Tiny Tally first clears each list the file brings, such as your transactions, journal entries, invoices and bills, contacts, categories and money accounts, then imports the file's.
+
+- Everything in those lists goes, not just what's in the file. You're asked to back up first.
+- An account or category you've matched to one of yours is kept, and so is a category still used by something that stays.
+- Settings, templates, numbering, trading names, items, assets and trips stay as they are. Rules and budgets for categories that are cleared go with them.
+- It's all one step: if the import fails, nothing is cleared.
+- It's only offered for whole-company files (portable company files, IIF and Journal reports), not bank statements.
+
 ## Rules {#rules}
 
 A rule says *when the description contains this, it's that category* (and optionally, that contact), for money out or money in. For example, "contains Officeworks → Office Supplies".

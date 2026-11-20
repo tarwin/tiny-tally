@@ -118,6 +118,31 @@ export interface ImportPlan {
   categories: Record<string, ImportTarget>;
   /** Used for entries whose category is missing or skipped. */
   fallbackCategory: { income: number | null; expense: number | null };
+  /** A clean import: clear the lists this file brings (cleanLists) before bringing them in. */
+  clean?: boolean;
+}
+
+export type CleanList = 'entries' | 'journals' | 'documents' | 'contacts' | 'categories' | 'accounts';
+
+export const CLEAN_LABELS: Record<CleanList, string> = {
+  entries: 'transactions',
+  journals: 'journal entries',
+  documents: 'invoices, bills and credit notes',
+  contacts: 'contacts',
+  categories: 'categories',
+  accounts: 'money accounts',
+};
+
+/** The lists a clean import of this file clears: the ones it has something for. */
+export function cleanLists(batch: ImportBatch): CleanList[] {
+  const out: CleanList[] = [];
+  if (batch.entries.length) out.push('entries');
+  if (batch.journals?.length) out.push('journals');
+  if (batch.documents?.length) out.push('documents');
+  if (batch.contacts.length || batch.documents?.length) out.push('contacts');
+  if (batch.categories.length) out.push('categories');
+  if (batch.accounts.length) out.push('accounts');
+  return out;
 }
 
 export interface ImportResult {
@@ -133,6 +158,8 @@ export interface ImportResult {
   /** Rows that couldn't be imported, with the reason (first 50). */
   failed: { ref: string; date: string; reason: string }[];
   failedCount: number;
+  /** A clean import: how many of each list were cleared first. */
+  cleared?: Partial<Record<CleanList, number>>;
 }
 
 /** Short, stable hash for building import refs when the source has no ids (CSV). */

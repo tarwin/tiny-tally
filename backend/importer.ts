@@ -9,7 +9,7 @@ import { resolveTradingName, snapshotOf } from './tradingNames';
 import { assertUnlocked, getSettings } from './settings';
 import { countryProfile } from '../src/shared/countries';
 import { taxCodeOr } from '../src/shared/tax';
-import type { ImportPlan, ImportResult } from '../src/shared/import';
+import { cleanLists, type ImportPlan, type ImportResult } from '../src/shared/import';
 
 const MAX_FILE = 25 * 1024 * 1024;
 
@@ -100,6 +100,8 @@ export function commitImport(plan: ImportPlan): ImportResult {
   };
 
   db.transaction(() => {
+    if (plan.clean) result.cleared = clearForImport(plan);
+
     // ---- accounts ----
     const accountIds = new Map<string, number>();
     for (const a of batch.accounts) {
@@ -378,6 +380,78 @@ export function commitImport(plan: ImportPlan): ImportResult {
   })();
 
   return result;
+}
+
+/**
+ * A clean import: clear each list the file brings, inside the import's own
+ * transaction, so a failure leaves the books as they were. Settings,
+ * templates, numbering, trading names, items, rules and the rest are left
+ * alone. Two things stay in a list being cleared: what the import was told
+ * to use (an account matched to one of yours), and what something kept
+ * still needs (a category on transactions this file doesn't replace).
+ * Optional links to what's cleared (an item's category) are emptied.
+ */
+function clearForImport(plan: ImportPlan) {
+  const { db } = getBooks();
+  const lists = new Set(cleanLists(plan.batch));
+  const cleared: NonNullable<ImportResult['cleared']> = {};
+  const count = (sql: string) => one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM ${sql}`)!.n;
+  const mapped = (targets: ImportPlan['accounts']) =>
+    Object.values(targets).flatMap((t) => ('existingId' in t ? [t.existingId] : []));
+  const ids = (list: number[]) => (list.length ? list.join(',') : 'NULL');
+
+  if (lists.has('entries')) {
+    cleared.entries = count('entries');
+    // Attachments go with them; assets keep their details without the link.
+    run(db, 'UPDATE entries SET rec_id = NULL, to_rec_id = NULL, fx_of = NULL');
+    run(db, 'DELETE FROM entries');
+    run(db, 'DELETE FROM reconciliations');
+  }
+  if (lists.has('journals')) {
+    cleared.journals = count('journals');
+    run(db, 'DELETE FROM journals');
+    // Depreciation posted as journals is gone with them: the asset register offers to post it again.
+    run(db, "DELETE FROM meta WHERE key = 'depreciation_journals'");
+  }
+  if (lists.has('documents')) {
+    cleared.documents = count('invoices');
+    run(db, 'UPDATE entries SET invoice_id = NULL');
+    run(db, 'UPDATE invoices SET source_id = NULL');
+    run(db, 'DELETE FROM invoices');
+  }
+  if (lists.has('contacts')) {
+    const gone = 'SELECT id FROM contacts WHERE id NOT IN (SELECT contact_id FROM invoices)';
+    cleared.contacts = count(`(${gone})`);
+    run(db, `UPDATE entries SET contact_id = NULL WHERE contact_id IN (${gone})`);
+    run(db, `DELETE FROM contacts WHERE id IN (${gone})`);
+  }
+  if (lists.has('categories')) {
+    // Kept: matched by the import, in use by what stays, and the parents of those.
+    const used = `
+      SELECT id FROM categories WHERE id IN (${ids(mapped(plan.categories))})
+      UNION SELECT category_id FROM entries WHERE category_id IS NOT NULL
+      UNION SELECT category_id FROM invoice_lines WHERE category_id IS NOT NULL
+      UNION SELECT category_id FROM journal_lines WHERE category_id IS NOT NULL`;
+    const keep = `SELECT id FROM (${used}) UNION SELECT parent_id FROM categories WHERE id IN (${used}) AND parent_id IS NOT NULL`;
+    const gone = `SELECT id FROM categories WHERE id NOT IN (${keep})`;
+    cleared.categories = count(`(${gone})`);
+    run(db, `UPDATE items SET category_id = NULL WHERE category_id IN (${gone})`);
+    run(db, `UPDATE assets SET category_id = NULL WHERE category_id IN (${gone})`);
+    run(db, `UPDATE categories SET parent_id = NULL WHERE parent_id IN (${gone})`);
+    // Budgets and rules for them go too (ON DELETE CASCADE).
+    run(db, `DELETE FROM categories WHERE id IN (${gone})`);
+  }
+  if (lists.has('accounts')) {
+    // Kept: matched by the import, in use, or set aside for something (client withholding).
+    const keep = `
+      SELECT id FROM accounts WHERE id IN (${ids(mapped(plan.accounts))}) OR holds IS NOT NULL
+      UNION SELECT account_id FROM entries UNION SELECT to_account_id FROM entries WHERE to_account_id IS NOT NULL`;
+    const gone = `SELECT id FROM accounts WHERE id NOT IN (${keep})`;
+    cleared.accounts = count(`(${gone})`);
+    run(db, `DELETE FROM reconciliations WHERE account_id IN (${gone})`);
+    run(db, `DELETE FROM accounts WHERE id IN (${gone})`);
+  }
+  return cleared;
 }
 
 function uniqueName(table: 'accounts', base: string) {

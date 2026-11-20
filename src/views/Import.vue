@@ -49,7 +49,7 @@ import {
 import { booksDateOrder, detectDateOrder, parseCsv, type DateOrder } from '../lib/import/parse';
 import { looksLikeQboReport, parseQboReport } from '../lib/import/qboReport';
 import { readXlsx, readXlsxBundle } from '../lib/import/xlsx';
-import { hashRef, type ImportCategory } from '../shared/import';
+import { CLEAN_LABELS, cleanLists, hashRef, type ImportCategory } from '../shared/import';
 
 const route = useRoute();
 const router = useRouter();
@@ -470,13 +470,27 @@ const openingClash = computed(() => {
 const result = ref<ImportResult | null>(null);
 const rulesSaved = ref(0);
 
+/**
+ * A clean import: clear the lists this file brings (transactions, contacts,
+ * categories and so on) first, so the books end up matching it. Only for a
+ * whole company's file; settings, templates, numbering, trading names, items
+ * and the rest stay as they are.
+ */
+const clean = ref(false);
+// A new file starts without it (not a change of options on the same file).
+watch([qbmBytes, text, format], () => (clean.value = false));
+const cleanWhat = computed(() => {
+  const labels = cleanLists(batch.value).map((l) => CLEAN_LABELS[l]);
+  return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}` : (labels[0] ?? '');
+});
+
 /** A whole company's worth of records at once is worth a copy of the books first. */
 const askBackup = ref(false);
 /** What the overlay says while the books are being changed. */
 const working = ref<string | null>(null);
 
 function startImport() {
-  if (ledgerFile.value) askBackup.value = true;
+  if (ledgerFile.value || clean.value) askBackup.value = true;
   else void commit();
 }
 
@@ -502,6 +516,7 @@ async function commit() {
       accounts: Object.fromEntries(b.accounts.map((a) => [a.key, targetOf(accountTargets.value[a.key])])),
       categories: Object.fromEntries(b.categories.map((c) => [c.key, targetOf(categoryTargets.value[c.key])])),
       fallbackCategory: { income: fallbackIncome.value, expense: fallbackExpense.value },
+      clean: clean.value && ledgerFile.value,
     });
     rememberMapping();
     let rules = 0;
@@ -526,6 +541,7 @@ function reset() {
   text.value = '';
   qbmBytes.value = null;
   result.value = null;
+  clean.value = false;
 }
 
 const formatLabel = computed(() => {
@@ -554,6 +570,13 @@ const doneSummary = computed(() => {
     r.categoriesCreated && plural(r.categoriesCreated, 'new category', 'new categories'),
   ].filter(Boolean);
   return parts.length ? `${parts.join(', ')}.` : 'Nothing new to add.';
+});
+/** What a clean import cleared first. */
+const clearedSummary = computed(() => {
+  const c = result.value?.cleared;
+  if (!c) return '';
+  const parts = (Object.keys(c) as (keyof typeof c)[]).filter((k) => c[k]).map((k) => `${c[k]} ${CLEAN_LABELS[k]}`);
+  return parts.length ? `Cleared first: ${parts.join(', ')}.` : '';
 });
 </script>
 
@@ -867,9 +890,17 @@ const doneSummary = computed(() => {
                 <li v-for="s in batch.skipped" :key="s.reason" class="subdued Small">{{ s.count }} × {{ s.reason }}</li>
               </ul>
             </CardSection>
+            <CardSection v-if="ledgerFile && cleanWhat">
+              <ToggleSwitch v-model="clean" label="Clean import" />
+              <p class="subdued Small CleanHelp">
+                Clears your {{ cleanWhat }} first, so the books match this file. Accounts and categories you've matched above are kept.
+                Settings, templates, numbering, trading names, items and assets stay as they are.
+              </p>
+              <Banner v-if="clean" status="critical">Everything in those lists is deleted, not just what this file has. You'll be asked to back up first.</Banner>
+            </CardSection>
             <CardSection>
-              <Button type="primary" full-width :loading="busy" :disabled="!canImport" @click="startImport">
-                {{ canImport ? 'Import' : lockBlocks ? 'Unlock the books to import' : 'Nothing to import' }}
+              <Button :type="clean ? 'destructive' : 'primary'" full-width :loading="busy" :disabled="!canImport" @click="startImport">
+                {{ canImport ? (clean ? 'Clear and import' : 'Import') : lockBlocks ? 'Unlock the books to import' : 'Nothing to import' }}
               </Button>
             </CardSection>
           </Card>
@@ -884,6 +915,7 @@ const doneSummary = computed(() => {
           <div class="Done">
             <Icon icon="mdi:check-circle" class="Done__icon" />
             <h2>Import finished</h2>
+            <p v-if="clearedSummary">{{ clearedSummary }}</p>
             <p>{{ doneSummary }}</p>
             <p v-if="result.duplicates" class="subdued">{{ result.duplicates }} were already imported before and were skipped.</p>
             <p v-if="result.skipped" class="subdued">{{ result.skipped }} were left out because of your choices.</p>
@@ -908,13 +940,20 @@ const doneSummary = computed(() => {
     </template>
     <Modal
       :visible="askBackup"
-      title="Back up first?"
-      :primary-action="{ label: 'Back up, then import', onAction: backUpAndImport }"
-      :secondary-actions="[{ label: 'Import without a backup', onAction: commit }, { label: 'Cancel', onAction: () => (askBackup = false) }]"
+      :title="clean ? 'Clear and import?' : 'Back up first?'"
+      :primary-action="{ label: clean ? 'Back up, then clear and import' : 'Back up, then import', onAction: backUpAndImport }"
+      :secondary-actions="[
+        { label: clean ? 'Clear and import without a backup' : 'Import without a backup', onAction: commit },
+        { label: 'Cancel', onAction: () => (askBackup = false) },
+      ]"
       @close="askBackup = false"
     >
       <ModalSection>
-        <p>This file brings in a lot at once. A backup puts a dated copy of these books in the Backups folder beside them, so you can go back to them as they are now.</p>
+        <p v-if="clean">
+          This deletes all your {{ cleanWhat }}, then brings in this file's. A backup puts a dated copy of these books in the Backups folder
+          beside them, so you can go back to them as they are now.
+        </p>
+        <p v-else>This file brings in a lot at once. A backup puts a dated copy of these books in the Backups folder beside them, so you can go back to them as they are now.</p>
       </ModalSection>
     </Modal>
 
@@ -929,6 +968,10 @@ const doneSummary = computed(() => {
 </template>
 
 <style scoped>
+.CleanHelp {
+  margin: 6px 0 8px;
+}
+
 /* Over the whole window, menu included: nothing here should change while the books do. */
 .Working {
   position: fixed;
