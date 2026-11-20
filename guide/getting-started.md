@@ -36,7 +36,7 @@ Choose **Create books** on the welcome screen (or **New Books…**, <kbd>⇧⌘N
 
 ::: tabs
 == Australia
-Tiny Tally works out your BAS: G1, 1A and 1B for Simpler BAS, or the full set if you report monthly. See [Tax returns](./tax).
+Tiny Tally works out your BAS: G1, 1A and 1B for Simpler BAS, with the full labels (G2, G10, G11 and so on) shown for reference. See [Tax returns](./tax).
 == New Zealand
 Tiny Tally works out your GST return, boxes 5 to 15, for 2-monthly, monthly or 6-monthly filing. See [Tax returns](./tax).
 == United States

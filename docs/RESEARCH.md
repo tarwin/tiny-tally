@@ -264,7 +264,7 @@ Sources: [QuickBooks Online Simple Start](https://quickbooks.intuit.com/oa/onlin
   - 1B: GST on purchases.
   - W1, W2 and T7 (wages, withholding, PAYG instalment) are entered by hand.
   - Totals: 8A = 1A + W2 + T7, 8B = 1B, 9 = net.
-- **Simpler BAS** (GST turnover under $10M, quarterly) only needs G1, 1A and 1B. Monthly reporting shows the full set.
+- **Simpler BAS** (GST turnover under $10M, monthly or quarterly) only needs G1, 1A and 1B. The app always shows Simpler BAS, with G2, G3, G4, G10 and G11 below it as reference rows that aren't lodged.
 - **Whole dollars:** BAS amounts are reported with the cents dropped.
 - **Lodging:** marking a BAS lodged snapshots its figures and sets a lock date, so the books can't drift from what was lodged. Reopening clears the lock.
 - **Tax invoices:** must say "Tax invoice" and show the seller's ABN, the date, item descriptions and the GST. Invoices of $1,000 or more also need the buyer's identity or ABN.

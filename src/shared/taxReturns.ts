@@ -29,6 +29,8 @@ export interface ReturnRow {
   /** Starts a new section with this heading. */
   section?: string;
   grand?: boolean;
+  /** Shown for reference only: not a box on the form being lodged. */
+  info?: boolean;
 }
 
 export interface ReturnForm {
@@ -94,6 +96,12 @@ const BAS: ReturnForm = {
       { section: 'Summary', code: '8A', label: `Amounts you owe the ATO (1A + W2${f.W4 ? ' + W4' : ''} + T7)`, value: a8 },
       { code: '8B', label: 'Amounts the ATO owes you (1B)', value: b8 },
       { code: '9', label: nine >= 0 ? 'Payable to the ATO' : 'Refund from the ATO', value: Math.abs(nine), grand: true },
+      // The full BAS labels, for a look at where G1 and 1B come from. Not lodged.
+      { section: 'For reference: full BAS labels, not on Simpler BAS', code: 'G2', label: 'Export sales', value: f.G2 ?? 0, info: true },
+      { code: 'G3', label: 'Other GST-free sales', value: f.G3 ?? 0, info: true },
+      { code: 'G4', label: 'Input taxed sales', value: f.G4 ?? 0, info: true },
+      { code: 'G10', label: 'Capital purchases', help: 'Including GST', value: f.G10 ?? 0, info: true },
+      { code: 'G11', label: 'Non-capital purchases', help: 'Including GST', value: f.G11 ?? 0, info: true },
     ];
   },
   net: (f, inputs) => dollars(f['1A']) + dollars(inputs.w2 ?? 0) + dollars(f.W4 ?? 0) + dollars(inputs.t7 ?? 0) - dollars(f['1B']),
@@ -108,7 +116,7 @@ const BAS: ReturnForm = {
   ],
   note:
     'Amounts are in whole dollars with cents dropped, as the ATO asks. Sales include GST. This is Simpler BAS (G1, 1A and 1B), ' +
-    'for GST turnover under $10 million. The transactions below can still be filtered by the full labels (G2, G10, G11…).',
+    'for GST turnover under $10 million. The full labels (G2, G3, G4, G10, G11) are shown at the end for reference only, and the transactions below can be filtered by them.',
 };
 
 /** GST in a GST-inclusive amount at 15%: three twenty-thirds (IR375). */

@@ -213,8 +213,8 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
       account: 'GST',
       report: 'bas',
       frequencies: [
-        { value: 'quarterly', label: 'Quarterly', description: 'Most small businesses. Uses Simpler BAS (G1, 1A, 1B).' },
-        { value: 'monthly', label: 'Monthly', description: 'Required if GST turnover is $20 million or more; shows the full set of labels.' },
+        { value: 'quarterly', label: 'Quarterly', description: 'Most small businesses.' },
+        { value: 'monthly', label: 'Monthly', description: 'Required if GST turnover is $20 million or more.' },
         { value: 'annual', label: 'Annually', description: 'For voluntary registrations under $75,000.' },
       ],
       defaultFrequency: 'quarterly',

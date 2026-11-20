@@ -125,9 +125,11 @@ test('BAS keeps whole dollars and the Simpler BAS labels', () => {
   const form = RETURN_FORMS.bas;
   const f = { G1: 1100099, G2: 0, G3: 0, G4: 0, G10: 0, G11: 0, '1A': 100099, '1B': 50050 };
   assert.equal(form.net(f, { t7: 12599 }), 100000 - 50000 + 12500);
-  // Simpler BAS whatever the frequency: no G2, G10 or G11 boxes.
-  assert.deepEqual(form.rows(f, {}).map((r) => r.code).slice(0, 3), ['G1', '1A', '1B']);
-  assert.ok(!form.rows(f, {}).some((r) => r.code === 'G11'));
+  // Simpler BAS whatever the frequency: the full labels come after, marked for reference only.
+  const rows = form.rows(f, {});
+  assert.deepEqual(rows.map((r) => r.code).slice(0, 3), ['G1', '1A', '1B']);
+  assert.deepEqual(rows.filter((r) => r.info).map((r) => r.code), ['G2', 'G3', 'G4', 'G10', 'G11']);
+  assert.ok(rows.findIndex((r) => r.info) > rows.findIndex((r) => r.code === '9'));
 });
 
 test('NZ GST adjustments (IR372)', () => {

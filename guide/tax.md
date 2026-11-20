@@ -6,7 +6,7 @@ Find it in **Reports**. Only your own country's return is shown.
 
 ::: tabs
 == Australia
-**BAS & GST** shows the BAS for a quarter, a month or a year, depending on how you report (set in Settings). Quarterly is Simpler BAS: G1, 1A and 1B. Monthly reporters get the full set of labels.
+**BAS & GST** shows the BAS for a quarter, a month or a year, depending on how you report (set in Settings). It's Simpler BAS (G1, 1A and 1B), which the ATO uses for GST turnover under $10 million whether you report monthly or quarterly. The full labels (G2, G3, G4, G10 and G11) are shown greyed out at the end for reference. They're not on Simpler BAS, so you don't copy them across.
 
 ![A BAS worked out from the demo books](/shots/tax-return.webp)
 

@@ -216,6 +216,10 @@ html[data-density='spacious'] :is(.Side, .Main, .Tiles, .Grid, .Stack, .Columns)
   border-bottom: 0;
 }
 
+.Report .Report__info td {
+  color: var(--octans-text-subdued);
+}
+
 .Report .Report__indent {
   padding-left: 28px;
 }

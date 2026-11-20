@@ -375,7 +375,7 @@ function exportFigures() {
   if (!report.value) return;
   void saveCsv(`${form.value.short} figures ${period.value.from} to ${period.value.to}`, [
     ['Period start', 'Period end', 'Box', 'Description', 'Amount'],
-    ...rows.value.map((r) => [period.value.from, period.value.to, r.code, r.label, csvMoney(r.value)]),
+    ...rows.value.filter((r) => !r.info).map((r) => [period.value.from, period.value.to, r.code, r.label, csvMoney(r.value)]),
   ]);
 }
 
@@ -459,15 +459,15 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
             <table v-if="figures" class="Report">
               <tbody>
                 <template v-for="r in rows" :key="r.code">
-                  <tr v-if="r.section" class="Report__section"><td colspan="3">{{ r.section }}</td></tr>
-                  <tr :class="{ Report__grand: r.grand }">
+                  <tr v-if="r.section" class="Report__section" :class="{ Report__info: r.info }"><td colspan="3">{{ r.section }}</td></tr>
+                  <tr :class="{ Report__grand: r.grand, Report__info: r.info }">
                     <td class="Code">{{ r.code }}</td>
                     <td>
                       {{ r.label }} <span v-if="r.help" class="subdued Small">{{ r.help }}</span>
                       <span v-if="r.input === 't7' && paygT7 && !lodged" class="subdued Small no-print">From PAYG instalments: {{ formatMoney(paygT7, books.currency) }}</span>
                     </td>
                     <td class="num">
-                      <TextField v-if="r.input && !lodged" v-model="typed[r.input]" align="right" placeholder="0" class="no-print Input" />
+                      <TextField inputmode="decimal" v-if="r.input && !lodged" v-model="typed[r.input]" align="right" placeholder="0" class="no-print Input" />
                       <template v-else>{{ boxMoney(r.value) }}</template>
                     </td>
                   </tr>
@@ -612,7 +612,7 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
     >
       <ModalSection>
         <FormLayout>
-          <TextField v-model="pay.amount" label="Amount" :prefix="books.currency" align="right" :error="payError" />
+          <TextField inputmode="decimal" v-model="pay.amount" label="Amount" :prefix="books.currency" align="right" :error="payError" />
           <DatePicker v-model="pay.date" type="date" model-format="YYYY-MM-DD" :label="refund ? 'Date received' : 'Date paid'" />
           <Select v-model="pay.accountId" :label="refund ? 'Received into' : 'Paid from'" :options="payAccounts" />
         </FormLayout>
@@ -639,6 +639,7 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
             />
           </template>
           <TextField
+            inputmode="decimal"
             v-else
             v-model="adj.amount"
             :label="adjDef?.how === 'inclusive' ? 'Amount including GST' : 'GST amount'"
