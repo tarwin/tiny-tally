@@ -5,6 +5,10 @@
    re-check the official guidance named in `checkedAgainst` (ATO GST reporting
    and Simpler BAS pages, IRD IR375 and IR372, IRS Instructions for Schedule C,
    CRA RC4022, HMRC VAT Notices 700/12 and 700/22).
+   The printable BAS form view (`src/components/BasForm.vue`) follows the ATO's
+   BAS A layout named in `BAS_FORM_LAYOUT` (src/shared/basForm.ts). If the ATO
+   has published a newer BAS A (a later NAT 4189 date), compare its sections,
+   boxes and wording, update the component, and move `BAS_FORM_LAYOUT` on.
    No change: move `checkedUntil` on and update `checkedAgainst`. A changed form
    or new line numbers: add a new rule set or year from the date it applies,
    and keep the old one so earlier returns still work out the same.
@@ -65,6 +69,7 @@ update the file, run `pnpm test`, and do a release so apps pick it up.
 | June | IRD home office square metre rate | `nzTaxYears.ts` |
 | June – July | IRS mid-year mileage changes, if any | `usTaxYears.ts` |
 | June – July | ATO BAS and GST rules: move `checkedUntil` on | `taxReturns.ts` |
+| June – July | ATO BAS A statement layout (NAT 4189): compare the form view, move `BAS_FORM_LAYOUT` on | `BasForm.vue`, `basForm.ts` |
 | Late Sept – Nov | IRD kilometre rates for the year just ended (31 March) | `nzTaxYears.ts` |
 | October – November | IRS: Social Security wage base, 1099 threshold, new Schedule C instructions | `usTaxYears.ts`, `scheduleC.ts` |
 | December | IRS standard mileage rate for the next calendar year | `usTaxYears.ts` |

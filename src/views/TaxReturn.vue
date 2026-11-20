@@ -31,6 +31,7 @@ import { addDays, formatDay, today } from '../lib/dates';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { booksTaxPeriods } from '../lib/periods';
 import { printElement } from '../lib/print';
+import BasForm from '../components/BasForm.vue';
 import { booksProfile, session } from '../lib/session';
 import { taxCodeLabel, type TaxCode } from '../shared/tax';
 import { basDue, nzGstDue } from '../shared/dueDates';
@@ -94,6 +95,18 @@ const returns = ref<TaxReturn[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const sheet = ref<HTMLElement | null>(null);
+const formSheet = ref<HTMLElement | null>(null);
+
+// The BAS shows as the table of boxes, or laid out like the ATO's statement. Kept between visits.
+const VIEW_KEY = 'basView';
+const view = ref<'table' | 'form'>('table');
+const showForm = computed(() => kind.value === 'bas' && view.value === 'form');
+void tiny.store.get(VIEW_KEY).then((v) => { if (v === 'form') view.value = 'form'; }).catch(() => {});
+watch(view, (v) => void tiny.store.set(VIEW_KEY, v).catch(() => {}));
+const formPeriod = computed(() => (period.value ? `${period.value.label} (${formatDay(period.value.from)} – ${formatDay(period.value.to)})` : ''));
+const formStatus = computed(() =>
+  lodged.value ? `Lodged${saved.value?.lodgedAt ? ` ${formatDay(saved.value.lodgedAt.slice(0, 10))}` : ''}` : saved.value ? 'Draft, not lodged' : 'Not lodged',
+);
 /** The hand-typed boxes, as typed. */
 const typed = ref<Record<string, string>>({});
 
@@ -410,7 +423,7 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
       : { label: 'Export detail CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
     :secondary-actions="[
       ...(form.exportsFigures ? [{ label: 'Export detail CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }] : []),
-      { label: 'Print', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) },
+      { label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(showForm ? formSheet : sheet) },
     ]"
   >
     <Banner v-if="!books.taxEnabled" status="info" :title="`${taxName} is turned off`">
@@ -426,6 +439,10 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
           :disabled="lodged"
           :options="[{ label: 'Cash', value: 'cash' }, { label: 'Accrual', value: 'accrual' }]"
         />
+      </div>
+      <div v-if="kind === 'bas'">
+        <div class="Label">Show as</div>
+        <SegmentedControl v-model="view" :options="[{ label: 'Table', value: 'table' }, { label: 'Form', value: 'form' }]" />
       </div>
       <Badge v-if="lodged" status="success">Lodged {{ saved?.lodgedAt ? formatDay(saved.lodgedAt.slice(0, 10)) : '' }}</Badge>
       <Badge v-else-if="saved">Draft saved</Badge>
@@ -446,7 +463,24 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
     <div class="Grid">
       <Card>
         <CardSection>
-          <div ref="sheet" class="Sheet" :class="{ Loading: loading }">
+          <div v-if="showForm && figures" class="FormView" :class="{ Loading: loading }">
+            <p v-if="!lodged && form.inputs.length" class="subdued Small no-print FormView__hint">
+              Wages (W1, W2) and the PAYG instalment (T7) are typed in on the table view.
+            </p>
+            <div ref="formSheet">
+              <BasForm
+                :rows="rows"
+                :business="books.name"
+                :abn="books.taxId"
+                :period="formPeriod"
+                :due="dueDate && !lodged ? formatDay(dueDate) : null"
+                :basis="basis"
+                :status="formStatus"
+                :prepared="formatDay(today())"
+              />
+            </div>
+          </div>
+          <div v-show="!showForm" ref="sheet" class="Sheet" :class="{ Loading: loading }">
             <div class="ReportHead">
               <h2>{{ books.name }}: {{ form.title }}</h2>
               <p>
@@ -658,6 +692,17 @@ const historyHeads = computed(() => form.value.headline({}).map((h) => h.label))
 </template>
 
 <style scoped>
+.FormView {
+  padding: 16px;
+  margin: -16px;
+  background: var(--octans-surface-sunken);
+}
+
+.FormView__hint {
+  max-width: 860px;
+  margin: 0 auto 12px;
+}
+
 .ByRate {
   margin-top: 16px;
 }

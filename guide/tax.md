@@ -12,6 +12,8 @@ Find it in **Reports**. Only your own country's return is shown.
 
 Fill in wages (W1, W2) and any PAYG instalment (T7) if they apply. Switch between **Cash** and **Accrual** accounting. Add **GST adjustments** for anything that needs one.
 
+**Show as Form** lays the BAS out like the ATO's quarterly statement: GST options, PAYG withheld, PAYG instalment, the summary (1A, 4, 5A, 8A, 1B, 8B) and the amount at 9, in whole-dollar boxes, with G2, G3, G10 and G11 filled in for reference. Boxes the books don't know, such as W3, 7 and 5B, are left blank to fill in by hand. **Print / Save PDF** prints whichever view is showing, so you can keep a copy of what you lodged or send it to your agent. It's a record of the figures, not a form the ATO accepts: lodge online, through your agent, or on the paper statement the ATO sends you. Tiny Tally remembers which view you last used.
+
 **Business schedule** sets out your Profit & Loss by the labels on item P8 of your tax return (business and professional items). Each category maps to a label (new books start mapped; change it on the category). Type your stock on hand if you sell goods, and the hours you worked from home for the fixed rate method. Depreciation comes from the [asset register](./assets).
 
 ![The business schedule from the demo books](/shots/income-tax-return.webp)
