@@ -2,6 +2,7 @@
 // in the page — the txiki backend has no Intl.
 
 import { reactive } from 'vue';
+import { amountText } from '../shared/calc';
 
 /**
  * How the currency shows: '$1.00', 'A$1.00' or 'AUD 1.00'. Each set of books
@@ -61,8 +62,10 @@ export function formatMoney(minor: number, currency: string, display: CurrencyDi
 /** "1,234.5" → 123450 (for a 2-digit currency). Returns null if unparseable. */
 export function parseMoney(input: string | number | null | undefined, currency: string): number | null {
   if (input === null || input === undefined) return null;
-  const s = String(input).replace(/[^\d.,-]/g, '');
-  if (s === '' || s === '-') return null;
+  const core = amountText(String(input));
+  if (core === null) return null;
+  const s = core.replace(/[^\d.,-]/g, '');
+  if (s === '' || s === '-' || !/\d/.test(s)) return null;
   // Treat the last , or . as the decimal point only if 1–3 digits follow it
   // and it isn't the only kind of separator used as thousands grouping.
   const lastSep = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
