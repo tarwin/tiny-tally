@@ -5,12 +5,13 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 export { iso as toIso };
 
-export type PeriodKey = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'thisYear' | 'lastYear' | 'all';
+export type PeriodKey = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'thisYear' | 'lastYear' | 'all';
 
 export const PERIOD_OPTIONS: { label: string; value: PeriodKey }[] = [
   { label: 'This month', value: 'thisMonth' },
   { label: 'Last month', value: 'lastMonth' },
   { label: 'This quarter', value: 'thisQuarter' },
+  { label: 'Last quarter', value: 'lastQuarter' },
   { label: 'This financial year', value: 'thisYear' },
   { label: 'Last financial year', value: 'lastYear' },
   { label: 'All dates', value: 'all' },
@@ -59,8 +60,10 @@ export function periodRange(key: PeriodKey, ys: YearStart = DEFAULT_YEAR_START, 
       return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
     case 'lastMonth':
       return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) };
-    case 'thisQuarter': {
-      const q = Math.floor(m / 3) * 3;
+    case 'thisQuarter':
+    case 'lastQuarter': {
+      // Calendar quarters. Month -3 rolls back into last year in January.
+      const q = Math.floor(m / 3) * 3 - (key === 'lastQuarter' ? 3 : 0);
       return { from: iso(new Date(y, q, 1)), to: iso(new Date(y, q + 3, 0)) };
     }
     case 'thisYear':

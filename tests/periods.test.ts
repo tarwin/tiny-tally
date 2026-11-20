@@ -38,6 +38,13 @@ test('this and last financial year', () => {
   assert.deepEqual(periodRange('thisYear', '04-06', day('2026-04-06')), { from: '2026-04-06', to: '2027-04-05' });
 });
 
+test('this and last quarter', () => {
+  assert.deepEqual(periodRange('thisQuarter', '07-01', day('2026-11-20')), { from: '2026-10-01', to: '2026-12-31' });
+  assert.deepEqual(periodRange('lastQuarter', '07-01', day('2026-11-20')), { from: '2026-07-01', to: '2026-09-30' });
+  // January: last quarter is the previous year's October to December.
+  assert.deepEqual(periodRange('lastQuarter', '07-01', day('2027-01-15')), { from: '2026-10-01', to: '2026-12-31' });
+});
+
 test('quarterly periods from 1 July (unchanged from the month-only version)', () => {
   const p = taxPeriods('quarterly', '07-01', 3, day('2026-11-01'));
   assert.deepEqual(

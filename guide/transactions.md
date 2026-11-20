@@ -46,7 +46,7 @@ Turn on **Repeat this** for things that happen on a schedule, such as rent or a 
 
 ## Finding and filtering
 
-The Transactions page filters by **Period**, **Account**, a **Search** and the *All / Expenses / Income / Transfers* switch, with the money in, out and net for what's showing. The list loads more as you scroll. **Export CSV** saves everything that matches, not just what's loaded.
+The Transactions page filters by **Period** (or **Custom dates**, with a from and to date), **Account**, a **Search** and the *All / Expenses / Income / Transfers* switch, with the money in, out and net for what's showing. The list loads more as you scroll. **Export CSV** saves everything that matches, not just what's loaded.
 
 ## Changing and deleting
 

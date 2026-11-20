@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Page, SegmentedControl, Select, TextField } from '@octans/ui';
+import { DatePicker, Page, SegmentedControl, Select, TextField } from '@octans/ui';
 import EntryTable from '../components/EntryTable.vue';
 import { api, type Account, type EntryKind } from '../lib/api';
 import { newEntry } from '../lib/entryEditor';
@@ -18,7 +18,9 @@ const route = useRoute();
 
 const accounts = ref<Account[]>([]);
 
-const period = ref<PeriodKey>((route.query.period as PeriodKey) || 'thisYear');
+const period = ref<PeriodKey | 'custom'>((route.query.period as PeriodKey) || 'thisYear');
+const custom = ref(periodRange('thisYear', session.books!.fiscalYearStart) as { from: string; to: string });
+const periodOptions = [...PERIOD_OPTIONS, { label: 'Custom dates', value: 'custom' as const }];
 const kind = ref<EntryKind | 'all'>('all');
 const accountId = ref<number | null>(null);
 const search = ref(typeof route.query.q === 'string' ? route.query.q : '');
@@ -40,7 +42,7 @@ const accountOptions = computed(() => [
 /** What the filters ask for, before paging. */
 function query() {
   return {
-    ...periodRange(period.value, session.books!.fiscalYearStart),
+    ...(period.value === 'custom' ? custom.value : periodRange(period.value, session.books!.fiscalYearStart)),
     kind: kind.value === 'all' ? undefined : kind.value,
     q: search.value || undefined,
     // An account filter here is a plain filter, not register mode.
@@ -57,6 +59,7 @@ watch(search, () => {
   searchTimer = setTimeout(load, 250);
 });
 watch([period, kind, accountId], load);
+watch(custom, load, { deep: true });
 // The books changed: the same rows, refreshed, rather than back to the top.
 watch(dataVersion, () => void reload(true));
 
@@ -92,8 +95,12 @@ async function exportCsv() {
       { label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv },
     ]"
   >
-    <div class="Filters">
-      <Select v-model="period" :options="PERIOD_OPTIONS" label="Period" />
+    <div class="Filters" :class="{ 'Filters--custom': period === 'custom' }">
+      <Select v-model="period" :options="periodOptions" label="Period" />
+      <template v-if="period === 'custom'">
+        <DatePicker v-model="custom.from" type="date" model-format="YYYY-MM-DD" label="From" />
+        <DatePicker v-model="custom.to" type="date" model-format="YYYY-MM-DD" label="To" />
+      </template>
       <Select v-model="accountId" :options="accountOptions" label="Account" />
       <TextField v-model="search" label="Search" placeholder="Description, contact or category" />
     </div>
@@ -128,6 +135,10 @@ async function exportCsv() {
   grid-template-columns: 200px 220px 1fr;
   gap: 12px;
   margin-bottom: 12px;
+}
+
+.Filters--custom {
+  grid-template-columns: 200px 160px 160px 220px 1fr;
 }
 
 .Bar {

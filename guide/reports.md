@@ -4,7 +4,7 @@
 
 ![The reports page](/shots/reports.webp)
 
-Most reports take a **Period** (this month, last month, this quarter, this or last financial year, or your own dates) and have **Print / Save PDF** and **Export CSV**.
+Most reports take a **Period** (this month, last month, this or last quarter, this or last financial year, or your own dates) and have **Print / Save PDF** and **Export CSV**.
 
 ## Profit & Loss
 
