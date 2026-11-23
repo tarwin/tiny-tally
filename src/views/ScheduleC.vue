@@ -7,12 +7,13 @@ import { useRouter } from 'vue-router';
 import { Banner, Button, Card, CardSection, DatePicker, Page, SegmentedControl, Select, TextField } from '@octans/ui';
 import { api, type Basis, type ScheduleCReport } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
-import { formatDay } from '../lib/dates';
+import { formatDay, today } from '../lib/dates';
 import { onBooksChanged } from '../lib/live';
 import { formatMoney, parseMoney, toInput } from '../lib/money';
 import { periodRange } from '../lib/periods';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
+import ScheduleCForm from '../components/ScheduleCForm.vue';
 
 const router = useRouter();
 const books = computed(() => session.books!);
@@ -32,6 +33,25 @@ const basis = ref<Basis>(books.value.taxBasis);
 const report = ref<ScheduleCReport | null>(null);
 const loading = ref(false);
 const sheet = ref<HTMLElement | null>(null);
+const formSheet = ref<HTMLElement | null>(null);
+
+// The table, or Schedule C laid out like the IRS form. Kept between visits.
+const VIEW_KEY = 'scheduleCView';
+const view = ref<'table' | 'form'>('table');
+void tiny.store.get(VIEW_KEY).then((v) => { if (v === 'form') view.value = 'form'; }).catch(() => {});
+watch(view, (v) => void tiny.store.set(VIEW_KEY, v).catch(() => {}));
+/** The business name and address on the form: the default trading name's. */
+const business = ref<{ name: string; address: string | null } | null>(null);
+void api.listTradingNames().then((t) => {
+  const d = t.find((x) => x.isDefault) ?? t[0];
+  if (d) business.value = { name: d.name, address: d.address };
+}).catch(() => {});
+/** A figure as the form shows it: 12,345.67, no currency sign. */
+const formAmount = (cents: number) => `${cents < 0 ? '−' : ''}${formatMoney(Math.abs(cents), books.value.currency).replace(/[^\d.,]/g, '')}`;
+const formPeriod = computed(() => {
+  const { from, to } = range.value;
+  return from.endsWith('-01-01') && to.endsWith('-12-31') && from.slice(0, 4) === to.slice(0, 4) ? `Tax year ${from.slice(0, 4)}` : `${formatDay(from)} – ${formatDay(to)}`;
+});
 
 async function load() {
   loading.value = true;
@@ -132,7 +152,7 @@ function exportCsv() {
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
     size="fullWidth"
     :primary-action="{ label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
-    :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
+    :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(view === 'form' ? formSheet : sheet) }]"
   >
     <div class="Controls">
       <Select v-model="period" label="Period" :options="periodOptions" />
@@ -143,6 +163,10 @@ function exportCsv() {
       <div>
         <div class="Label">Basis</div>
         <SegmentedControl v-model="basis" :options="[{ label: 'Cash', value: 'cash' }, { label: 'Accrual', value: 'accrual' }]" />
+      </div>
+      <div>
+        <div class="Label">Show as</div>
+        <SegmentedControl v-model="view" :options="[{ label: 'Table', value: 'table' }, { label: 'Form', value: 'form' }]" />
       </div>
     </div>
 
@@ -162,7 +186,27 @@ function exportCsv() {
       <Button @click="router.push('/categories')">Map categories</Button>
     </Banner>
 
-    <Card>
+    <div v-if="view === 'form' && report" class="FormView" :class="{ Loading: loading }">
+      <p class="subdued FormView__hint no-print">
+        Home office square feet and inventory are typed in on the table view. Unmapped categories are left out, as in the table.
+      </p>
+      <div ref="formSheet">
+        <ScheduleCForm
+          :report="report"
+          :amount="formAmount"
+          :proprietor="books.name"
+          :business-name="business && business.name !== books.name ? business.name : null"
+          :ein="books.taxId"
+          :address="business?.address ?? null"
+          :basis="basis"
+          :period="formPeriod"
+          :lines-from="report.rules.name"
+          :prepared="formatDay(today())"
+        />
+      </div>
+    </div>
+
+    <Card v-show="view === 'table'">
       <CardSection>
         <div ref="sheet" :class="{ Loading: loading }">
           <div class="ReportHead">
@@ -306,6 +350,18 @@ function exportCsv() {
 </template>
 
 <style scoped>
+.FormView {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--octans-surface-sunken);
+}
+
+.FormView__hint {
+  max-width: 860px;
+  margin: 0 auto 12px;
+  font-size: 13px;
+}
+
 .Controls {
   display: flex;
   align-items: flex-end;
