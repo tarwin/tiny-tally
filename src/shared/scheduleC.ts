@@ -31,6 +31,11 @@ export interface ScheduleCYear {
   /** Checked for tax years ending up to this date; later ones get a warning. */
   checkedUntil: string;
   lines: ScheduleCLine[];
+  /**
+   * Keys from later years this year has no line for, and the key whose line
+   * they go on instead (vehicle loan interest was "other interest" before 2026).
+   */
+  folds?: Record<string, string>;
 }
 
 // As numbered up to tax year 2024.
@@ -67,6 +72,8 @@ const LINES_2024: ScheduleCLine[] = [
   { key: 'cogs-other', line: '39', label: 'Other costs (cost of goods sold)', kind: 'expense', part: 'III', help: 'Like freight in, or packaging for goods you sell.' },
 ];
 
+const LINES_2025 = LINES_2024.map((l) => (l.key === 'other-expenses' ? { ...l, line: '27b' } : l));
+
 /** Oldest first. Add a year when the IRS changes the form, and move checkedUntil on once it's re-checked. */
 export const SCHEDULE_C_YEARS: ScheduleCYear[] = [
   {
@@ -76,6 +83,7 @@ export const SCHEDULE_C_YEARS: ScheduleCYear[] = [
     from: '2018-01-01',
     checkedUntil: '2024-12-31',
     lines: LINES_2024,
+    folds: { 'vehicle-loan-interest': 'other-interest' },
   },
   {
     id: '2025',
@@ -84,7 +92,31 @@ export const SCHEDULE_C_YEARS: ScheduleCYear[] = [
     from: '2025-01-01',
     checkedUntil: '2025-12-31',
     // Line 27a became the energy efficient commercial buildings deduction.
-    lines: LINES_2024.map((l) => (l.key === 'other-expenses' ? { ...l, line: '27b' } : l)),
+    lines: LINES_2025,
+    folds: { 'vehicle-loan-interest': 'other-interest' },
+  },
+  {
+    id: '2026',
+    name: 'Schedule C (2026)',
+    // The final instructions usually follow in December or January: re-check line 16b against them.
+    checkedAgainst: '2026 Schedule C (Form 1040), final (October 2026), and the draft 2026 Instructions for Schedule C (October 2026)',
+    from: '2026-01-01',
+    checkedUntil: '2026-12-31',
+    // Interest split three ways: 16a mortgage, a new 16b vehicle loan, and other moved to 16c.
+    lines: LINES_2025.flatMap((l) =>
+      l.key === 'other-interest'
+        ? [
+            {
+              key: 'vehicle-loan-interest',
+              line: '16b',
+              label: 'Interest: vehicle loan',
+              kind: 'expense' as const,
+              help: "The business share of interest on a loan for a vehicle you use in the business, whether you use the standard mileage rate or actual costs. From tax year 2026; earlier years report it with other interest.",
+            },
+            { ...l, line: '16c' },
+          ]
+        : [l],
+    ),
   },
 ];
 

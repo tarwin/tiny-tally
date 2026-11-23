@@ -335,7 +335,9 @@ export function scheduleCReport(p: { from: string; to: string; basis: Basis }) {
   for (const r of byCategory as any[]) {
     // Gains on business property sold (the asset register) go on Form 4797.
     if (lineOf.get(r.id) === 'form-4797') continue;
-    const def = keyed.get(lineOf.get(r.id) ?? '');
+    // A line this year doesn't have goes on the one it was part of then.
+    const key = lineOf.get(r.id) ?? '';
+    const def = keyed.get(year.folds?.[key] ?? key);
     if (!def || def.kind !== r.kind) {
       unmapped.push({ id: r.id, name: r.name, kind: r.kind, total: r.total });
       continue;

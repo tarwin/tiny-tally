@@ -91,9 +91,16 @@ test('Schedule C lines are numbered by tax year', () => {
   assert.equal(line('2024-12-31'), '27a');
   assert.equal(line('2025-12-31'), '27b');
   assert.equal(scheduleCFor('2025-12-31').status, 'checked');
-  // A year this version hasn't been checked against keeps the newest lines, with a warning.
-  assert.equal(scheduleCFor('2026-12-31').status, 'unchecked');
   assert.equal(line('2026-12-31'), '27b');
+  // 2026 split interest: a new 16b for vehicle loans, and other interest moved to 16c.
+  const interest = (date: string) => scheduleCFor(date).year.lines.filter((l) => l.key.endsWith('interest')).map((l) => `${l.line} ${l.key}`);
+  assert.deepEqual(interest('2025-12-31'), ['16a mortgage-interest', '16b other-interest']);
+  assert.deepEqual(interest('2026-12-31'), ['16a mortgage-interest', '16b vehicle-loan-interest', '16c other-interest']);
+  assert.equal(scheduleCFor('2025-12-31').year.folds?.['vehicle-loan-interest'], 'other-interest');
+  assert.equal(scheduleCFor('2026-12-31').status, 'checked');
+  // A year this version hasn't been checked against keeps the newest lines, with a warning.
+  assert.equal(scheduleCFor('2027-12-31').status, 'unchecked');
+  assert.equal(line('2027-12-31'), '27b');
 });
 
 test('tax return rules are dated', () => {

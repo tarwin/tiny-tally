@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { makeBooks } from './support/books.ts';
-import { one, getBooks } from '../backend/db.ts';
+import { one, getBooks, run } from '../backend/db.ts';
 import { saveContact, saveEntry } from '../backend/entries.ts';
 import { creditInvoice, getInvoice, recordPayment, saveInvoice, setInvoiceStatus } from '../backend/invoices.ts';
 import { saveItem } from '../backend/items.ts';
@@ -183,6 +183,26 @@ test('US sales tax at 8.875% and Schedule C with half of meals deductible', asyn
     assert.deepEqual(sc.totals, { grossIncome: 105000, totalExpenses: 110000, tentativeProfit: -5000, homeOffice: 0, netProfit: -5000 });
     assert.equal(sc.lines.find((l) => l.label.toLowerCase().includes('meals'))!.deductible, 10000);
     assert.deepEqual(sc.unmapped, []);
+  });
+  b.close();
+});
+
+test('Schedule C: vehicle loan interest has its own line from 2026, and goes with other interest before', async () => {
+  const b = await makeBooks({ country: 'US', fiscalYearStart: '01-01', taxEnabled: false });
+  b.run(() => {
+    run(getBooks().db, "INSERT INTO categories (name, kind, report_line) VALUES ('Van loan interest', 'expense', 'vehicle-loan-interest')");
+    run(getBooks().db, "INSERT INTO categories (name, kind, report_line) VALUES ('Card interest', 'expense', 'other-interest')");
+    money('2025-05-01', 'expense', 40000, 'Van loan interest');
+    money('2025-05-02', 'expense', 1000, 'Card interest');
+    money('2026-05-01', 'expense', 30000, 'Van loan interest');
+    money('2026-05-02', 'expense', 2000, 'Card interest');
+    const lines = (y: number) =>
+      scheduleCReport({ from: `${y}-01-01`, to: `${y}-12-31`, basis: 'cash' }).lines
+        .filter((l) => l.key.endsWith('interest'))
+        .map((l) => [l.line, l.key, l.total]);
+    assert.deepEqual(lines(2025), [['16b', 'other-interest', 41000]]);
+    assert.deepEqual(lines(2026), [['16b', 'vehicle-loan-interest', 30000], ['16c', 'other-interest', 2000]]);
+    assert.deepEqual(scheduleCReport({ from: '2025-01-01', to: '2025-12-31', basis: 'cash' }).unmapped, []);
   });
   b.close();
 });
