@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import {
+  Badge,
   Banner,
   Button,
   Card,
@@ -21,7 +22,7 @@ import { parseRate } from '../lib/money';
 import { openBooksAt, pickAndOpenBooks, refreshSession } from '../lib/books';
 import { today } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
-import { COUNTRIES, COUNTRY_OPTIONS, type Country } from '../shared/countries';
+import { COUNTRIES, COUNTRY_OPTIONS, COUNTRY_STAGE, STAGE_HELP, STAGE_LABEL, type Country } from '../shared/countries';
 import { CA_OTHER_TAX } from '../shared/canada';
 import { CA_PROVINCE_OPTIONS } from '../lib/worldOptions';
 import { MONTHS, session } from '../lib/session';
@@ -69,9 +70,12 @@ const taxId = ref('');
 const homeState = ref('');
 const provinceError = ref<string | null>(null);
 const demoing = ref(false);
-/** The selected country first, so its demo is the obvious one. */
-const DEMO_COUNTRIES = computed(() => [...COUNTRY_OPTIONS].sort((a, b) => Number(b.value === country.value) - Number(a.value === country.value)));
+/** Alphabetical by name, as in the Country list. */
+const DEMO_COUNTRIES = [...COUNTRY_OPTIONS].sort((a, b) => a.label.localeCompare(b.label));
 const pickingDemo = ref(false);
+type Stage = keyof typeof STAGE_LABEL;
+/** Beta in the calm colour, alpha in the one that asks for care. */
+const stageStatus = (stage: Stage) => (stage === 'beta' ? 'info' : 'attention');
 const demoChoice = ref<Country | null>(null);
 
 watch(country, (c) => {
@@ -251,8 +255,25 @@ function shortPath(path: string) {
               placeholder="Choose…"
               required
               :error="countryError ?? undefined"
-              :help-text="profile ? `${profile.summary} Amounts are in ${profile.currency}. This can't be changed later.` : 'Sets the currency and tax rules.'"
-            />
+              :help-text="profile && country ? `${profile.summary} Amounts are in ${profile.currency}. This can't be changed later. ${STAGE_HELP[COUNTRY_STAGE[country]]}` : 'Sets the currency and tax rules.'"
+            >
+              <template #option="{ option }">
+                <span class="CountryOption">
+                  <span class="CountryOption__head">
+                    {{ option.label }}
+                    <Badge :status="stageStatus(option.stage)" size="small">{{ STAGE_LABEL[option.stage as Stage] }}</Badge>
+                  </span>
+                  <span class="subdued CountryOption__desc">{{ option.description }}</span>
+                </span>
+              </template>
+              <template #display="{ selectedOptions }">
+                <span v-if="selectedOptions[0]" class="CountryOption__head">
+                  {{ selectedOptions[0].label }}
+                  <Badge :status="stageStatus(selectedOptions[0].stage)" size="small">{{ STAGE_LABEL[selectedOptions[0].stage as Stage] }}</Badge>
+                </span>
+                <span v-else class="subdued">Choose…</span>
+              </template>
+            </Select>
             <template v-if="profile">
               <FormLayoutGroup>
                 <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />
@@ -321,14 +342,22 @@ function shortPath(path: string) {
         <ModalSection>
           <p class="subdued DemoPick__hint">Which country? You get a small design studio with over a year of sample data, in its own file, separate from your real books.</p>
           <div class="DemoPick">
-            <Button
+            <button
               v-for="c in DEMO_COUNTRIES"
               :key="c.value"
-              full-width
-              :loading="demoChoice === c.value"
-              :disabled="demoing && demoChoice !== c.value"
+              type="button"
+              class="DemoOption"
+              :disabled="demoing"
+              :aria-busy="demoChoice === c.value"
               @click="tryDemo(c.value)"
-            >{{ c.label }}</Button>
+            >
+              <span class="DemoOption__head">
+                <strong>{{ c.label }}</strong>
+                <Badge :status="stageStatus(c.stage)" size="small">{{ STAGE_LABEL[c.stage] }}</Badge>
+                <span v-if="demoChoice === c.value" class="subdued DemoOption__busy">Setting up…</span>
+              </span>
+              <span class="subdued DemoOption__desc">{{ c.description }}</span>
+            </button>
           </div>
         </ModalSection>
       </Modal>
@@ -358,6 +387,70 @@ function shortPath(path: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.CountryOption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.CountryOption__head {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.CountryOption__desc {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.DemoOption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--octans-border);
+  border-radius: 8px;
+  background: var(--octans-surface);
+  color: var(--octans-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.DemoOption:hover:not(:disabled) {
+  background: var(--octans-surface-hover);
+}
+
+.DemoOption:focus-visible {
+  outline: 2px solid var(--octans-focus-ring);
+  outline-offset: 2px;
+}
+
+.DemoOption:disabled {
+  cursor: default;
+}
+
+.DemoOption:disabled:not([aria-busy='true']) {
+  opacity: 0.5;
+}
+
+.DemoOption__head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.DemoOption__busy {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.DemoOption__desc {
+  font-size: 12.5px;
+  line-height: 1.4;
 }
 
 .DemoPick__hint {

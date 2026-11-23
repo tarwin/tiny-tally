@@ -523,7 +523,25 @@ export const COUNTRIES: Record<Country, CountryProfile> = {
   },
 };
 
-export const COUNTRY_OPTIONS = (['AU', 'CA', 'IN', 'NZ', 'GB', 'US'] as Country[]).map((c) => ({ label: COUNTRIES[c].name, value: c, description: COUNTRIES[c].summary }));
+/**
+ * How far along each country's support is, shown when choosing one. Beta: in
+ * use with real books. Alpha: built from the official guidance, not yet used
+ * in earnest. Move a country on as it gets real use.
+ */
+export const COUNTRY_STAGE: Record<Country, 'beta' | 'alpha'> = { AU: 'beta', CA: 'alpha', IN: 'alpha', NZ: 'alpha', GB: 'alpha', US: 'alpha' };
+export const STAGE_LABEL = { beta: 'Beta', alpha: 'Alpha' } as const;
+/** What each stage means, for help text. */
+export const STAGE_HELP = {
+  beta: 'Beta: in use with real books, and still being polished.',
+  alpha: 'Alpha: built from the official guidance but new, so check the figures with your accountant before relying on them.',
+} as const;
+
+export const COUNTRY_OPTIONS = (['AU', 'CA', 'IN', 'NZ', 'GB', 'US'] as Country[]).map((c) => ({
+  label: COUNTRIES[c].name,
+  value: c,
+  description: COUNTRIES[c].summary,
+  stage: COUNTRY_STAGE[c],
+}));
 
 /** Whether car trips and the asset register are in for this country: they follow its income tax rules. */
 export const hasIncomeRules = (c: string | null | undefined) => c === 'AU' || c === 'NZ' || c === 'US';
