@@ -12,7 +12,7 @@ macOS (Apple Silicon and Intel), Windows and Linux. Free, and it updates itself.
 
 ## Try the demo first
 
-On the welcome screen, **Try demo books** asks which country you want. Each is a small design studio with over a year of transactions, invoices and bills. The Australian, New Zealand and US ones also have car trips and an asset register:
+On the welcome screen, **Try demo books** asks which country you want, with each one's [stage](./countries) and what it includes. Each is a small design studio with over a year of transactions, invoices and bills. The Australian, New Zealand and US ones also have car trips and an asset register:
 
 - **Australia**: *Harbour & Pine Studio*, with quarterly BAS lodged and PAYG instalments.
 - **Canada**: *Birch & Harbour Studio*, in Toronto, with an annual GST/HST return, customers in five provinces at different rates, one in the US, and half the tax claimed on meals.
@@ -28,7 +28,7 @@ Each is a separate file, so poke at anything. When you're ready for your own, cl
 Choose **Create books** on the welcome screen (or **New Books…**, <kbd>⇧⌘N</kbd>) and fill in:
 
 - **Your name**, and **Trading as** if the business has another name. The file is named after it.
-- **Country**: Australia, Canada, India, New Zealand, the United Kingdom or the United States. This sets the currency, the tax rules and the reports you get, and the list says what each country includes. It can't be changed later.
+- **Country**: Australia, Canada, India, New Zealand, the United Kingdom or the United States. This sets the currency, the tax rules and the reports you get, and the list says what each country includes. It can't be changed later. Each country is tagged **Beta** (Australia, used with real books) or **Alpha** (the others, new, so check the figures with your accountant). See [Countries](./countries) for what each includes and how far along it is.
 - **Financial year starts**: filled in for your country; change it if your year is different.
 - **Tax**: in Australia, New Zealand and India, *Registered for GST* (on by default). In Canada, *Registered for GST/HST* and your province. In the UK, *Registered for VAT*. In the US, *Charge sales tax* and your rate.
 - Your **ABN**, **GST number**, **GSTIN**, **Business Number**, **VAT number** or **EIN** if you have one.

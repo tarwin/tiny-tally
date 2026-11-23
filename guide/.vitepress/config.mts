@@ -38,6 +38,7 @@ export default defineConfig({
         items: [
           { text: 'Getting started', link: '/getting-started' },
           { text: 'Your books file', link: '/your-books-file' },
+          { text: 'Countries', link: '/countries' },
         ],
       },
       {

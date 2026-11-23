@@ -12,6 +12,9 @@
    No change: move `checkedUntil` on and update `checkedAgainst`. A changed form
    or new line numbers: add a new rule set or year from the date it applies,
    and keep the old one so earlier returns still work out the same.
+   Country stages: `COUNTRY_STAGE` (src/shared/countries.ts) tags each country
+   Beta or Alpha when choosing one. When a country has been used with real
+   books, move it to Beta and update guide/countries.md to match.
 1. Bump `version` in `tinyjs.json` and `package.json`, commit, push to `main`.
 2. Linux and Windows: run the **release** workflow (Actions → release → Run
    workflow, or `gh workflow run release.yml -f tinyjs_tag=v0.71.1`). It

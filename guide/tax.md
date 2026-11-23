@@ -2,7 +2,7 @@
 
 Tiny Tally works out your return from the tax codes on your transactions, invoices and bills. Check the figures, then copy them into your tax office's site or send them to your accountant. **Tiny Tally doesn't lodge anything for you.**
 
-Find it in **Reports**. Only your own country's return is shown.
+Find it in **Reports**. Only your own country's return is shown. Australia is in Beta and the other countries in Alpha: see [Countries](./countries).
 
 ::: tabs
 == Australia

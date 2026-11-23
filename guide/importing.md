@@ -37,6 +37,8 @@ Before anything is saved, you choose:
 
 Importing the same file twice is safe: transactions already brought in are skipped, and the result tells you how many.
 
+An import records every row it brings in, in the books' [history](./your-books-file#history). After a big one, the last screen shows how big the books file is and offers **Make file smaller…**, which moves that history into a separate file beside your books.
+
 ### Clean import {#clean-import}
 
 Importing usually adds to what's there. To start again from a QuickBooks or Reckon file instead, say after a trial import, turn on **Clean import** in the Summary. Tiny Tally first clears each list the file brings, such as your transactions, journal entries, invoices and bills, contacts, categories and money accounts, then imports the file's.
