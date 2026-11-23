@@ -14,6 +14,7 @@ import {
   changedFields,
   dayStartInstant,
   fieldName,
+  fileSize,
   formatValue,
   formatWhen,
   rowLabel,
@@ -105,11 +106,6 @@ const archiveDate = ref('');
 /** Everything up to now, or only what's older than a date. */
 const archiveScope = ref<'all' | 'before'>('all');
 const size = ref<{ bytes: number; changes: number; oldest: string | null } | null>(null);
-
-/** 17.1 MB, 840 KB. */
-function fileSize(bytes: number) {
-  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
 
 function startArchive() {
   // With books locked, up to the lock date: that history is frozen anyway.

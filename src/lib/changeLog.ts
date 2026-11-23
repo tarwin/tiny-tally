@@ -180,3 +180,11 @@ export function dayStartInstant(day: string) {
   const [y, m, d] = day.split('-').map(Number);
   return new Date(y, m - 1, d).toISOString();
 }
+
+/** A file size for people: 17.1 MB, 840 KB. */
+export function fileSize(bytes: number) {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** From this many recorded changes, an import suggests moving the history out (File → Make File Smaller…). */
+export const SUGGEST_ARCHIVE_CHANGES = 2000;

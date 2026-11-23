@@ -29,6 +29,7 @@ import {
 } from '../lib/api';
 import { backupBooks } from '../lib/books';
 import { csvMoney, saveCsv } from '../lib/csv';
+import { SUGGEST_ARCHIVE_CHANGES, fileSize } from '../lib/changeLog';
 import { CLASS_INFO } from '../lib/categoryClass';
 
 import { formatShortDay } from '../lib/dates';
@@ -555,6 +556,8 @@ async function commit() {
       await api.saveRule({ pattern, kind: g.kind, categoryId }).then(() => rules++, () => {});
     }
     rulesSaved.value = rules;
+    // A big import records every row it brings in: offer to move that history out.
+    history.value = await api.historySize().catch(() => null);
     step.value = 'done';
   } catch (e) {
     toast({ title: 'Import failed. Nothing was changed.', content: errorMessage(e), tone: 'error' });
@@ -564,7 +567,12 @@ async function commit() {
   }
 }
 
+/** The books' history after the import, to suggest making the file smaller. */
+const history = ref<{ bytes: number; changes: number } | null>(null);
+const suggestSmaller = computed(() => (history.value?.changes ?? 0) >= SUGGEST_ARCHIVE_CHANGES);
+
 function reset() {
+  history.value = null;
   step.value = 'pick';
   text.value = '';
   qbmBytes.value = null;
@@ -993,6 +1001,16 @@ const clearedSummary = computed(() => {
             </div>
           </div>
         </CardSection>
+        <CardSection v-if="suggestSmaller && history">
+          <Banner status="info" title="Make the books file smaller?">
+            The books file is now {{ fileSize(history.bytes) }}, and most of that is likely the record of each change:
+            {{ history.changes.toLocaleString() }} of them, since an import records every row it brings in. Moving that
+            history into a separate file next to your books shrinks them. Your transactions don't change.
+            <div class="Done__smaller">
+              <Button icon="mdi:archive-arrow-down-outline" @click="router.push({ path: '/activity', query: { archive: '1' } })">Make file smaller…</Button>
+            </div>
+          </Banner>
+        </CardSection>
         <CardSection v-if="result.failedCount">
           <Banner status="warning" :title="`${result.failedCount} line${result.failedCount === 1 ? '' : 's'} couldn't be imported`">
             <ul class="Failed">
@@ -1032,6 +1050,10 @@ const clearedSummary = computed(() => {
 </template>
 
 <style scoped>
+.Done__smaller {
+  margin-top: 10px;
+}
+
 .Mismatches {
   width: 100%;
   margin: 12px 0 4px;
