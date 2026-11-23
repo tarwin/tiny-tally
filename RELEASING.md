@@ -75,6 +75,8 @@ update the file, run `pnpm test`, and do a release so apps pick it up.
 | June – July | ATO BAS A statement layout (NAT 4189): compare the form view, move `BAS_FORM_LAYOUT` on | `BasForm.vue`, `basForm.ts` |
 | Late Sept – Nov | IRD kilometre rates for the year just ended (31 March) | `nzTaxYears.ts` |
 | October – November | IRS: Social Security wage base, 1099 threshold, new Schedule C instructions | `usTaxYears.ts`, `scheduleC.ts` |
+| October – December | IRS: the next Form 1099-NEC revision (Copy B boxes and Instructions for Recipient). Add it to `nec1099Revision` and move `NEC1099_COPY_CHECKED` on | `nec1099Copy.ts` |
+| December – January | IRS: final Instructions for Schedule C. Compare the form view's lines with the new Schedule C too. For 2026, confirm line 16b (vehicle loan interest) against them; the line set was checked against the draft | `scheduleC.ts` |
 | December | IRS standard mileage rate for the next calendar year | `usTaxYears.ts` |
 | December | NZ: GST rules (IR375 / IR372): move `checkedUntil` on | `taxReturns.ts` |
 | December | Canada: CRA RC4022 and the provincial GST/HST rates: move `checkedUntil` on | `taxReturns.ts`, `canada.ts` |
@@ -96,7 +98,11 @@ against in `docs/TAX-SOURCES.md`:
   date, standard mileage rate (watch for mid-year changes, as in July 2026),
   Social Security wage base, 1040-ES due dates.
 - `src/shared/scheduleC.ts`: line numbers from the new Instructions for
-  Schedule C; move `checkedUntil` on.
+  Schedule C; move `checkedUntil` on. The form view (`scheduleCForm.ts`)
+  lists the lines no category maps to (12 depletion, the energy efficient
+  buildings deduction) by hand: check they still match.
+- `src/shared/nec1099Copy.ts`: the Form 1099-NEC revision each tax year's
+  Copy B is printed on, its boxes and the Instructions for Recipient.
 - `src/shared/usStates.ts`: re-check each state's economic nexus threshold
   against its `source` page and update `NEXUS_CHECKED`.
 - `src/shared/auTaxYears.ts` (each July, and after the May budget): cents per

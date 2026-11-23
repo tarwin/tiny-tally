@@ -52,7 +52,7 @@ Not registered for GST? The dashboard warns you as your sales near $60,000 a yea
 == United States
 **Sales tax** totals your taxable and non-taxable sales and the sales tax you collected, for the period you file. There's nothing to lodge or lock.
 
-**Schedule C** fills in Parts I, II and V from your categories, for the last or current tax year. If a category isn't mapped to a line yet, a **Map categories** warning takes you there. When you pick a category's line, each line says what belongs on it.
+**Schedule C** fills in Parts I, II and V from your categories, for the last or current tax year. If a category isn't mapped to a line yet, a **Map categories** warning takes you there. When you pick a category's line, each line says what belongs on it. Lines are numbered as in the tax year: from 2026, interest on a business vehicle loan has its own line (16b) and other interest moves to 16c, so map a vehicle loan interest category to **Interest: vehicle loan**. Earlier years show it with other interest, as the form did then.
 
 - **Returns and allowances** (line 2) are the credit notes on your sales.
 - **Cost of goods sold** (Part III): map your stock purchases to lines 36 to 39 (new books start with a **Cost of Goods Sold** category), then type your inventory on hand at the start and end of the year. Each year's closing inventory becomes the next year's opening.
@@ -60,9 +60,13 @@ Not registered for GST? The dashboard warns you as your sales near $60,000 a yea
 - **Car and truck expenses** (line 9): log business trips under **Mileage**. With the standard mileage rate, line 9 is your miles at the IRS rate for the day you drove (plus parking and tolls), and actual car costs are left out. Switch to actual costs on the Mileage page.
 - **Business use of home** (line 30): type the square feet you use only for the business, for the simplified method ($5 a square foot, up to 300).
 
+To see it laid out like the IRS form, set **Show as** to **Form**. It has every line of Parts I to V in the form's order, with your name, EIN, business address and accounting method filled in, and **Print / Save PDF** prints it on two pages. It's a record of the figures to copy onto Schedule C or give your tax preparer, not the form itself, so the questions and lines the books don't know (your SSN, business code, depletion) are left for you.
+
 **Estimated tax** works out what to pay each quarter (Form 1040-ES): self-employment tax on your profit, plus income tax at a rate you set. Add last year's tax for the safe harbor. Payments go to the category marked for estimated tax (Income Tax Payment, to start with), and the dashboard reminds you as each due date gets close.
 
 **1099-NEC** lists the vendors you marked as getting a 1099 (on the contact, with their W-9 details) and what you paid them in the year. Payments by credit card are left out, since the card company reports them. It also suggests others you paid enough for services.
+
+Each payee you paid enough has to get their copy of the 1099-NEC (Copy B) by the end of January. Set **Show** to **Recipient copies** for a page for each one, laid out like Copy B with the recipient instructions on the back of the form, then **Print / Save PDF** to print or email them. The IRS accepts these on plain paper. They show your address and phone number from your trading name, and only the last four digits of the payee's TIN. Copy A, the IRS's copy, still goes through IRIS or a filing service.
 
 **Sales by state** totals your sales into each state against its economic nexus threshold, so you know when you have to register there. It uses the state on each customer. Set your own state in Settings. If you charge different rates, add them in Settings under **Other sales tax rates**: give a customer their usual rate, and the Sales tax report totals each rate separately. A customer with a resale or exemption certificate starts with no sales tax.
 

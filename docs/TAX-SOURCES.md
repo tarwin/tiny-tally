@@ -25,6 +25,8 @@ Checked 2026-11-03. Tables: `src/shared/usTaxYears.ts`,
 | 1040-ES due dates 2026 | Apr 15, Jun 15, Sep 15, Jan 15 2027 | [Kiplinger](https://www.kiplinger.com/taxes/tax-deadline/602538/when-estimated-tax-payments-due) (third party) |
 | Simplified home office | $5 a sq ft, up to 300 sq ft | [IRS: simplified option](https://www.irs.gov/node/10336) |
 | Schedule C line numbers (2025: other expenses on 27b) | | [IRS: Instructions for Schedule C](https://www.irs.gov/instructions/i1040sc) |
+| Form 1099-NEC Copy B (recipient statement): boxes, wording and Instructions for Recipient. Tax year 2025 on Rev. April 2025 (box 1); 2026 on Rev. December 2026 (box 1a, with 1b cash tips, 1c TTOC, 1d overtime left empty). Plain-paper substitute statements allowed; recipient's TIN may show the last four digits. Compared 2026-11-24 | | [Form 1099-NEC (Rev. 12-2026)](https://www.irs.gov/pub/irs-pdf/f1099nec.pdf), [Rev. 4-2025](https://www.irs.gov/pub/irs-prior/f1099nec--2025.pdf), [Pub. 1179](https://www.irs.gov/pub/irs-pdf/p1179.pdf) |
+| Schedule C 2026: interest split into 16a mortgage, 16b vehicle loan (new: the business-use share, with either the mileage rate or actual costs), 16c other; nothing else renumbered. Compared 2026-11-24 with the 2025 form | final form (Oct 2026), draft instructions (Oct 2026); re-check 16b against the final instructions | [2026 Schedule C](https://www.irs.gov/pub/irs-pdf/f1040sc.pdf), [draft 2026 instructions](https://www.irs.gov/pub/irs-dft/i1040sc--dft.pdf) |
 | State economic nexus thresholds | per state | Each state's own page, linked in `src/shared/usStates.ts` (`source`) |
 
 Not confirmed: some states' own pages contradict themselves on nexus
