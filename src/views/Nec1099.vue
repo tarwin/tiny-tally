@@ -2,10 +2,11 @@
 // Form 1099-NEC (US): who you paid $2,000 or more for services in a year
 // ($600 before 2026), from the vendors marked as 1099 payees, with what's
 // missing from their W-9 details. Nothing is filed from here: copy the figures
-// into IRIS or a filing service, or send the CSV.
+// into IRIS or a filing service, or send the CSV. Recipient copies (Copy B)
+// print from here on plain paper.
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { Banner, Card, CardSection, DataTable, Page, Select, type DataTableColumnType } from '@octans/ui';
+import { Banner, Card, CardSection, DataTable, Page, SegmentedControl, Select, type DataTableColumnType } from '@octans/ui';
 import { api, type Nec1099Payee, type Nec1099Report } from '../lib/api';
 import { csvMoney, saveCsv } from '../lib/csv';
 import { formatDay } from '../lib/dates';
@@ -14,6 +15,7 @@ import { formatMoney } from '../lib/money';
 import { printElement } from '../lib/print';
 import { session } from '../lib/session';
 import { US_STATE_MAP } from '../shared/usStates';
+import Nec1099CopyB from '../components/Nec1099CopyB.vue';
 
 const router = useRouter();
 const books = computed(() => session.books!);
@@ -26,6 +28,21 @@ const yearOptions = [0, 1, 2, 3].map((i) => ({ label: String(now.getFullYear() -
 const report = ref<Nec1099Report | null>(null);
 const loading = ref(false);
 const sheet = ref<HTMLElement | null>(null);
+const copiesSheet = ref<HTMLElement | null>(null);
+
+// The list, or the recipient copies (Copy B) to print. Kept between visits.
+const VIEW_KEY = 'nec1099View';
+const view = ref<'list' | 'copies'>('list');
+void tiny.store.get(VIEW_KEY).then((v) => { if (v === 'copies') view.value = 'copies'; }).catch(() => {});
+watch(view, (v) => void tiny.store.set(VIEW_KEY, v).catch(() => {}));
+/** The payer's address and phone on Copy B: the default trading name's. */
+const business = ref<{ address: string | null; phone: string | null } | null>(null);
+void api.listTradingNames().then((t) => {
+  const d = t.find((x) => x.isDefault) ?? t[0];
+  if (d) business.value = { address: d.address, phone: d.phone };
+}).catch(() => {});
+/** A figure as the form shows it: 12,345.67, no currency sign. */
+const formAmount = (cents: number) => formatMoney(cents, books.value.currency).replace(/[^\d.,]/g, '');
 
 async function load() {
   loading.value = true;
@@ -51,6 +68,8 @@ const columns: DataTableColumnType[] = [
 
 const needing = computed(() => report.value?.payees.filter((p) => p.needsForm) ?? []);
 const incomplete = computed(() => needing.value.filter((p) => p.missing.length));
+/** Who gets a Copy B: everyone paid enough. */
+const recipients = computed(() => needing.value.map((p) => ({ id: p.id, name: p.legalName ?? p.name, tin: p.tin, address: p.address, paid: p.paid })));
 
 function exportCsv() {
   const r = report.value;
@@ -84,10 +103,14 @@ function status(p: Nec1099Payee) {
     :breadcrumbs="[{ label: 'Reports', onAction: () => router.push('/reports') }]"
     size="fullWidth"
     :primary-action="{ label: 'Export CSV', icon: 'mdi:file-delimited-outline', onAction: exportCsv }"
-    :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(sheet) }]"
+    :secondary-actions="[{ label: 'Print / Save PDF', icon: 'mdi:printer-outline', onAction: () => printElement(view === 'copies' ? copiesSheet : sheet) }]"
   >
     <div class="Controls">
       <Select v-model="year" label="Tax year" :options="yearOptions" />
+      <div>
+        <div class="Label">Show</div>
+        <SegmentedControl v-model="view" :options="[{ label: 'List', value: 'list' }, { label: 'Recipient copies', value: 'copies' }]" />
+      </div>
     </div>
 
     <Banner v-if="report && report.status !== 'checked'" status="warning" title="This year's 1099 threshold hasn't been checked" class="Gap">
@@ -103,7 +126,27 @@ function status(p: Nec1099Payee) {
       <p>Ask them for a Form W-9, then add their TIN and address on the contact.</p>
     </Banner>
 
-    <Card>
+    <div v-if="view === 'copies'" class="CopiesView" :class="{ Loading: loading }">
+      <p class="subdued CopiesView__hint">
+        One page for each payee paid {{ report ? money(report.threshold) : '' }} or more: Copy B, to give or mail them by
+        {{ report ? formatDay(report.due) : '' }}. Copy A still goes to the IRS through IRIS or a filing service.
+        The payer's address and phone come from your trading name.
+      </p>
+      <Banner v-if="!business?.address || !business?.phone" status="warning" :title="`Add your business ${!business?.address && !business?.phone ? 'address and phone number' : !business?.address ? 'address' : 'phone number'}`" class="Gap">
+        <p>Copy B must show the payer's address and a phone number the payee can call with questions. Add them to your trading name in Settings.</p>
+      </Banner>
+      <p v-if="!recipients.length" class="subdued CopiesView__hint">No one was paid enough in {{ year }} to need a 1099-NEC.</p>
+      <div v-else ref="copiesSheet">
+        <Nec1099CopyB
+          :year="year"
+          :payer="{ name: report?.payer.name ?? books.name, address: business?.address ?? null, phone: business?.phone ?? null, tin: report?.payer.tin || null }"
+          :recipients="recipients"
+          :amount="formAmount"
+        />
+      </div>
+    </div>
+
+    <Card v-show="view === 'list'">
       <CardSection>
         <div ref="sheet" :class="{ Loading: loading }">
           <div class="ReportHead">
@@ -138,7 +181,7 @@ function status(p: Nec1099Payee) {
       </CardSection>
     </Card>
 
-    <Card v-if="report?.suggested.length" title="May need a 1099" class="Gap Top">
+    <Card v-if="view === 'list' && report?.suggested.length" title="May need a 1099" class="Gap Top">
       <CardSection>
         <p class="subdued Note First">
           Not marked as getting a 1099, but paid {{ money(report.threshold) }} or more for contract labor, professional
@@ -165,6 +208,28 @@ function status(p: Nec1099Payee) {
 
 .Controls > :first-child {
   min-width: 160px;
+}
+
+.Label {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.CopiesView {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--octans-surface-sunken);
+}
+
+.CopiesView__hint {
+  max-width: 860px;
+  margin: 0 auto 12px;
+  font-size: 13px;
+}
+
+.CopiesView > .Gap {
+  max-width: 860px;
+  margin: 0 auto 12px;
 }
 
 .Gap {
