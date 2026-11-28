@@ -1,6 +1,6 @@
 // Typed front door to the backend (backend/main.ts). Keep names in sync.
 import type { BackupPlan } from '../shared/backups';
-import type { Country, DateFormat, TaxFrequency } from '../shared/countries';
+import type { Country, DateFormat, PaperSize, TaxFrequency } from '../shared/countries';
 import type { Adjustment, AdjustmentContext, ReturnFigures, ReturnInputs, ReturnKind, RuleStatus } from '../shared/taxReturns';
 import type { TaxCode } from '../shared/tax';
 import type { TemplateLayout } from '../shared/templateLayout';
@@ -44,6 +44,7 @@ export interface BooksSettings {
   currencyDisplay: CurrencyDisplay;
   documentCurrencyDisplay: CurrencyDisplay;
   dateFormat: DateFormat;
+  paperSize: PaperSize;
   color: string;
   logo: string;
   lockDate: string | null;

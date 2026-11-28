@@ -1,13 +1,13 @@
 <script setup lang="ts">
-// Shows an A4 page scaled down to fit its column, so the whole width is always
+// Shows a page (the books' paper size) scaled down to fit its column, so the whole width is always
 // visible. With `zoomable`, the page can be zoomed in (buttons, or pinch /
 // ⌘-scroll) and then scrolls inside the frame.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Button } from '@octans/ui';
+import { paperWidthPx } from '../lib/paper';
 
 const props = defineProps<{ zoomable?: boolean }>();
 
-const A4_PX = 794; // 210mm at 96dpi
 const STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 const host = ref<HTMLElement | null>(null);
@@ -21,7 +21,7 @@ onMounted(() => {
   // Applied a frame later: rescaling changes the page height, which can toggle a
   // scrollbar and resize us again inside the same observer callback.
   observer = new ResizeObserver(([entry]) => {
-    const next = Math.min(1, Math.max(0.3, Math.floor((entry.contentRect.width / A4_PX) * 100) / 100));
+    const next = Math.min(1, Math.max(0.3, Math.floor((entry.contentRect.width / paperWidthPx.value) * 100) / 100));
     if (next !== fit.value) requestAnimationFrame(() => (fit.value = next));
   });
   if (host.value) observer.observe(host.value);

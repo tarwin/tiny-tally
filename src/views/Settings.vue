@@ -26,7 +26,7 @@ import type { BackupEvery, BackupPlan } from '../shared/backups';
 import { formatDay } from '../lib/dates';
 import { joinYearStart, splitYearStart, YEAR_START_DAYS } from '../lib/periods';
 import { MONTHS, session } from '../lib/session';
-import { DATE_FORMATS, countryProfile } from '../shared/countries';
+import { DATE_FORMATS, PAPER, PAPER_SIZES, countryProfile } from '../shared/countries';
 import { CURRENCY_DISPLAYS, formatMoney, parseRate, ratePercent } from '../lib/money';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import TradingNames from '../components/TradingNames.vue';
@@ -68,6 +68,7 @@ function fromBooks(c: Books): Form {
     currencyDisplay: c.currencyDisplay,
     documentCurrencyDisplay: c.documentCurrencyDisplay,
     dateFormat: c.dateFormat,
+    paperSize: c.paperSize,
     taxRate: ratePercent(c.taxRatePpm),
     color: c.color,
     logo: c.logo,
@@ -96,6 +97,7 @@ const changed = computed(() => JSON.stringify(form.value) !== JSON.stringify(fro
 const currencyDisplayOptions = computed(() =>
   CURRENCY_DISPLAYS.map((d) => ({ label: formatMoney(150_000, books.value.currency, d), value: d })),
 );
+const paperSizeOptions = PAPER_SIZES.map((p) => ({ label: PAPER[p].label, value: p }));
 const dateFormatOptions = DATE_FORMATS.map((f) => ({ label: formatDay('2026-05-10', f), value: f }));
 const monthOptions = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
 const profile = computed(() => countryProfile(books.value.country));
@@ -243,6 +245,12 @@ async function setLock(date: string | null) {
               label="Dates"
               :options="dateFormatOptions"
               help-text="In the app, in date fields, and on your invoices and statements."
+            />
+            <Select
+              v-model="form.paperSize"
+              label="Paper size"
+              :options="paperSizeOptions"
+              help-text="For invoices, statements, reports and tax forms you print or save as PDF."
             />
             <FormLayoutGroup>
               <Select v-model="fyMonth" label="Financial year starts" :options="monthOptions" />

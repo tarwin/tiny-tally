@@ -16,6 +16,17 @@ import { VAT_RATES, vatNumberError } from './uk';
 export type DateFormat = 'dmy' | 'mdy' | 'ymd';
 export const DATE_FORMATS: DateFormat[] = ['dmy', 'mdy', 'ymd'];
 
+/** What printouts and PDFs are laid out on. */
+export type PaperSize = 'a4' | 'letter';
+export const PAPER_SIZES: PaperSize[] = ['a4', 'letter'];
+/** Width and height in mm, and the name CSS @page knows it by. */
+export const PAPER: Record<PaperSize, { label: string; width: number; height: number; css: string }> = {
+  a4: { label: 'A4 (210 × 297 mm)', width: 210, height: 297, css: 'A4' },
+  letter: { label: 'US Letter (8.5 × 11 in)', width: 215.9, height: 279.4, css: 'letter' },
+};
+/** The paper a country's books start on: Letter in the US and Canada, A4 elsewhere. */
+export const paperFor = (country: string): PaperSize => (country === 'US' || country === 'CA' ? 'letter' : 'a4');
+
 export type Country = 'AU' | 'NZ' | 'US' | 'IN' | 'CA' | 'GB';
 
 /** How often tax returns are filed. */

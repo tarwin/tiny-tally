@@ -8,6 +8,7 @@ import App from './App.vue'
 import { router } from './router'
 import { session } from './lib/session'
 import { DATE_FIELD_FORMATS } from './lib/dates'
+import { followPaperSize } from './lib/paper'
 
 // Brand colours from the Tiny Tally logo.
 const theme = createTheme({ name: 'Tiny Tally', primary: '#2d8c49', secondary: '#193149', warning: '#f99d1f', radius: 'large' })
@@ -18,5 +19,8 @@ applyCustomTheme(theme)
 
 // Date fields follow the books' Dates setting.
 watchEffect(() => setDateFormat(session.books ? DATE_FIELD_FORMATS[session.books.dateFormat] : null))
+
+// Printouts follow the books' Paper size setting.
+followPaperSize()
 
 createApp(App).use(UI).use(router).mount('#app')

@@ -244,8 +244,8 @@ function email() {
   --muted: #6b6f78;
   --rule: #e3e5e9;
   box-sizing: border-box;
-  width: 210mm;
-  min-height: 297mm;
+  width: var(--tt-paper-width, 210mm);
+  min-height: var(--tt-paper-height, 297mm);
   padding: 18mm 16mm;
   background: #fff;
   color: var(--ink);

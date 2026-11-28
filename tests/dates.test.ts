@@ -54,3 +54,18 @@ test('books start with their country\'s order, and can change it', async () => {
     b.close();
   }
 });
+
+test("books start on their country's paper, and can change it", async () => {
+  const start: Record<Country, string> = { AU: 'a4', CA: 'letter', GB: 'a4', IN: 'a4', NZ: 'a4', US: 'letter' };
+  for (const country of Object.keys(COUNTRIES) as Country[]) {
+    const b = await makeBooks({ name: 'Test', country, fiscalYearStart: COUNTRIES[country].fiscalYearStart, taxEnabled: false });
+    b.run(() => {
+      assert.equal(getSettings().paperSize, start[country], country);
+      const other = start[country] === 'a4' ? 'letter' : 'a4';
+      updateSettings({ paperSize: other });
+      assert.equal(getSettings().paperSize, other);
+      assert.throws(() => updateSettings({ paperSize: 'legal' as any }));
+    });
+    b.close();
+  }
+});

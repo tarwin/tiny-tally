@@ -1,5 +1,5 @@
 // Books settings live as key/value rows in `meta`.
-import { DATE_FORMATS, TAX_FREQUENCIES, countryProfile, isCountry, type Country, type DateFormat, type TaxFrequency } from '../src/shared/countries';
+import { DATE_FORMATS, PAPER_SIZES, TAX_FREQUENCIES, countryProfile, isCountry, paperFor, type Country, type DateFormat, type PaperSize, type TaxFrequency } from '../src/shared/countries';
 import { getBooks, one } from './db';
 
 type CurrencyDisplay = 'narrow' | 'symbol' | 'code';
@@ -39,6 +39,8 @@ export interface BooksSettings {
   documentCurrencyDisplay: CurrencyDisplay;
   /** Starts as the country's usual order. */
   dateFormat: DateFormat;
+  /** What printouts and PDFs are laid out on. Starts as the country's usual paper. */
+  paperSize: PaperSize;
   /** '#rrggbb' or '' — the stripe beside the menu that tells open books apart. */
   color: string;
   /** data: URL, or '' — shown top left instead of the app's logo. */
@@ -121,6 +123,7 @@ const FIELDS: Record<keyof BooksSettings, Field> = {
   currencyDisplay: { key: 'currency_display', ...oneOf(CURRENCY_DISPLAYS, 'narrow') },
   documentCurrencyDisplay: { key: 'document_currency_display', ...oneOf(CURRENCY_DISPLAYS, 'symbol') },
   dateFormat: { key: 'date_format', ...oneOf<DateFormat | ''>(DATE_FORMATS, '') },
+  paperSize: { key: 'paper_size', ...oneOf<PaperSize | ''>(PAPER_SIZES, '') },
   logo: {
     key: 'books_logo',
     parse: (v) => v ?? '',
@@ -170,6 +173,7 @@ export function getSettings(): BooksSettings {
   const out: any = {};
   for (const [name, f] of Object.entries(FIELDS)) out[name] = f.parse(map.get(f.key) ?? null);
   out.dateFormat ||= countryProfile(out.country).dateOrder;
+  out.paperSize ||= paperFor(out.country);
   return out;
 }
 

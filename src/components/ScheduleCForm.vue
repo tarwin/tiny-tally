@@ -349,5 +349,27 @@ h1 {
   .Page + .Page {
     break-before: page;
   }
+
+  /* Tighter, so page 1 fits Letter as well as A4. */
+  .Page {
+    gap: 6px;
+  }
+
+  .Head {
+    padding-bottom: 6px;
+  }
+
+  .Field {
+    min-height: 28px;
+  }
+
+  .Band {
+    margin-top: 2px;
+    padding: 2px 6px;
+  }
+
+  .Line {
+    padding: 1.5px 0;
+  }
 }
 </style>
