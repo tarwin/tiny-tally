@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router';
+import { clearPrintout } from './lib/print';
 import type { DocType } from './lib/api';
 
 declare module 'vue-router' {
@@ -72,4 +73,9 @@ export const router = createRouter({
     { path: '/settings', name: 'settings', component: () => import('./views/Settings.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
+});
+
+// The last printout is kept for Save as PDF (lib/print.ts); a new page drops it.
+router.afterEach((to, from) => {
+  if (to.path !== from.path) clearPrintout();
 });
